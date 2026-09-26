@@ -1,8 +1,11 @@
 name: "Auto Update and Merge PRs (FIFO Order)"
+
 on:
   schedule:
+    # Tetap berjalan berkala setiap 30 menit sebagai jaring pengaman
     - cron: '*/30 * * * *'
   pull_request:
+    # Otomatis jalan begitu ada PR yang berhasil di-merge
     types: [closed]
   workflow_dispatch:
 
@@ -11,6 +14,12 @@ jobs:
     # Hanya berjalan jika dipicu cron/manual OR jika dipicu closed PR yang statusnya benar-benar di-merge
     if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
+    
+    # TAMBAHKAN BLOK PERMISSIONS DI BAWAH INI
+    permissions:
+      contents: write      # Dibutuhkan untuk update/sync branch
+      pull-requests: write # Dibutuhkan untuk membaca dan melakukan merge PR
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -40,8 +49,7 @@ jobs:
               # Beri jeda 3 detik agar GitHub memperbarui status internalnya
               sleep 3
               
-              # 2. Aktifkan auto-merge. Pilih salah satu metode penggabungan:
-              # --merge (Merge commit), --squash (Squash and merge), atau --rebase (Rebase and merge)
+              # 2. Aktifkan auto-merge.
               if gh pr merge $pr --auto --merge 2>/dev/null; then
                 echo "🚀 Fitur Auto-Merge berhasil diaktifkan untuk PR #$pr!"
               else
