@@ -123,7 +123,7 @@ final class RoadRunnerRuntime implements RuntimeInterface
                         $this->transitionLifecycle('ready');
                         $this->recordLifecycle('worker.ready');
                     }
-                    $this->worker->respond($response);
+                    $this->worker->respond($this->reconcileContentLength($response));
 
                     try {
                         $telemetry = $this->application->getContainer()->get(Telemetry::class);
@@ -347,10 +347,49 @@ final class RoadRunnerRuntime implements RuntimeInterface
     private function safeRespond(ResponseInterface $response): void
     {
         try {
-            $this->worker->respond($response);
+            $this->worker->respond($this->reconcileContentLength($response));
         } catch (\Throwable $e) {
             $this->reportWorkerFailure($e);
         }
+    }
+
+    /**
+     * ZEF-DEEP-05 safety net: unlike the SAPI path (ResponseEmitter
+     * reconciles lying framing headers), this runtime forwards headers to
+     * the worker VERBATIM. A stale Content-Length — a 304/204/205 built from
+     * a content-bearing 200, or any handler declaring more octets than its
+     * stream holds — desyncs clients and keep-alive proxies (RFC 9110 §8.6
+     * CL.CL smuggling), so the same reconciliation the emitter applies runs
+     * here, centrally, for every outbound response.
+     */
+    private function reconcileContentLength(ResponseInterface $response): ResponseInterface
+    {
+        $status = $response->getStatusCode();
+        if (in_array($status, [204, 205, 304], true)) {
+            // Bodyless statuses never carry a payload: the would-be length
+            // is a stale artefact of the response they were derived from.
+            return $this->withoutContentLength($response);
+        }
+        $declared = $response->getHeaderLine('Content-Length');
+        if ($declared === '') {
+            return $response;
+        }
+        $size = $response->getBody()->getSize();
+        if (!ctype_digit($declared) || $size === null || (int) $declared !== $size) {
+            return $this->withoutContentLength($response);
+        }
+
+        return $response;
+    }
+
+    private function withoutContentLength(ResponseInterface $response): ResponseInterface
+    {
+        $reconciled = $response->withoutHeader('Content-Length');
+        if (!$reconciled instanceof ResponseInterface) {
+            throw new \LogicException('withoutHeader must preserve the response type.');
+        }
+
+        return $reconciled;
     }
 
     private function installSignals(): void
