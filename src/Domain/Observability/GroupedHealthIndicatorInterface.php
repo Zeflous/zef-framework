@@ -27,7 +27,7 @@ interface GroupedHealthIndicatorInterface
 {
     /**
      * @return string 'live' | 'ready' (custom group names are matched exactly
-     *                 by {@see \Zef\Framework\Observability\HealthAggregator::aggregateFor()})
+     *                 by {@see HealthAggregator::aggregateFor()})
      */
     public function healthGroup(): string;
 }

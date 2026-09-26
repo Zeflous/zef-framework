@@ -46,12 +46,13 @@ final readonly class TimeoutHealthIndicator implements HealthIndicatorInterface
     #[\Override]
     public function check(): HealthCheckResult
     {
-        if ($this->timeoutRunner === null) {
+        if (!$this->timeoutRunner instanceof \Closure) {
             return $this->inner->check();
         }
 
         $inner = $this->inner;
         $seconds = $this->timeoutSeconds;
+
         try {
             $result = ($this->timeoutRunner)(
                 static fn (): HealthCheckResult => $inner->check(),

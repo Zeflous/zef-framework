@@ -72,6 +72,7 @@ final readonly class HealthAggregator
      * - any other value → indicators whose group matches exactly.
      *
      * @param  null|int $overallTimeoutMs wall-clock budget for the scrape
+     *
      * @return array{status:string, checks:list<array{name:string,status:string,message:string}>, tookMs:float}
      */
     public function aggregateFor(string $group, ?int $overallTimeoutMs = null): array
@@ -178,6 +179,7 @@ final readonly class HealthAggregator
         if ($group === 'all') {
             return $this->indicators;
         }
+
         return array_values(array_filter(
             $this->indicators,
             static function (HealthIndicatorInterface $indicator) use ($group): bool {
