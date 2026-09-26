@@ -184,12 +184,12 @@ final class PdoConnection implements ConnectionInterface
 
         try {
             $result = $fn($this);
+            $this->commit();
         } catch (\Throwable $e) {
             $this->rollBack();
 
             throw $e;
         }
-        $this->commit();
 
         return $result;
     }

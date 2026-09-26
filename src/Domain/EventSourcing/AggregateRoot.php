@@ -67,7 +67,8 @@ abstract class AggregateRoot
     }
 
     /**
-     * @internal called by AggregateRepository after a successful append
+     * @internal called by AggregateRepository after the shared transaction commits,
+     *           or after a successful append when no shared transaction is configured
      */
     final public function markCommitted(): void
     {
