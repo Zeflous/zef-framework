@@ -1729,12 +1729,6 @@ parameters:
 			path: src/Infrastructure/Security/RedisSharedRateLimitStore.php
 
 		-
-			message: '#^Parameter \#1 \$array \(non\-empty\-list\<string\>\) of array_values is already a list, call has no effect\.$#'
-			identifier: arrayValues.list
-			count: 1
-			path: src/Infrastructure/Security/RotatingKeyRing.php
-
-		-
 			message: '#^Method Zef\\Middleware\\ConfigProvider\:\:getConfig\(\) return type has no value type specified in iterable type array\.$#'
 			identifier: missingType.iterableValue
 			count: 1
