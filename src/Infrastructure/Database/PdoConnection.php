@@ -21,7 +21,9 @@ use Zef\Framework\Observability\MeterInterface;
  *   QueryException (prepare/execute phase), chaining the original;
  * - nested transactions use explicit SAVEPOINTs (`zef_sp2`, `zef_sp3`, …)
  *   tracked with an internal depth counter — PDO::inTransaction() cannot
- *   distinguish nesting and is never consulted;
+ *   distinguish nesting and is only consulted during failure cleanup;
+ * - transaction() cleans up callback and commit failures, preserving the
+ *   original exception; uncertain cleanup makes this adapter unusable;
  * - isolation levels are applied via `SET TRANSACTION ISOLATION LEVEL`
  *   before the outermost BEGIN; SQLite rejects the concept outright;
  * - isolation is a TRANSACTION-SCOPE property, not a SAVEPOINT one: a
@@ -40,6 +42,7 @@ final class PdoConnection implements ConnectionInterface
 
     private ?\PDO $handle = null;
     private int $level = 0;
+    private bool $unusable = false;
 
     public function __construct(
         private readonly ConnectionConfig $config,
@@ -162,7 +165,9 @@ final class PdoConnection implements ConnectionInterface
         }
         if ($this->level === 1) {
             try {
-                $this->pdo()->rollBack();
+                if (!$this->pdo()->rollBack()) {
+                    throw new TransactionException('Failed to roll back transaction.');
+                }
             } catch (\PDOException $e) {
                 throw new TransactionException('Failed to roll back transaction: ' . $e->getMessage(), 0, $e);
             }
@@ -186,12 +191,32 @@ final class PdoConnection implements ConnectionInterface
             $result = $fn($this);
             $this->commit();
         } catch (\Throwable $e) {
-            $this->rollBack();
+            $this->cleanUpFailedTransaction();
 
             throw $e;
         }
 
         return $result;
+    }
+
+    private function cleanUpFailedTransaction(): void
+    {
+        try {
+            $pdo = $this->pdo();
+            if ($pdo->inTransaction()) {
+                $this->rollBack();
+
+                return;
+            }
+        } catch (\Throwable) {
+            // Cleanup must never replace the original callback/commit failure.
+        }
+
+        // The transaction disappeared or rollback could not be confirmed.
+        // Its outcome is uncertain: require a new adapter, never reconnect here.
+        $this->unusable = true;
+        $this->handle = null;
+        $this->level = 0;
     }
 
     /**
@@ -241,6 +266,9 @@ final class PdoConnection implements ConnectionInterface
 
     private function pdo(): \PDO
     {
+        if ($this->unusable) {
+            throw new ConnectionException('Connection is unusable after transaction cleanup failed; create a new connection.');
+        }
         $this->handle ??= $this->connect();
 
         return $this->handle;
