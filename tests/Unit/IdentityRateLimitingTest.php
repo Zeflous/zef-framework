@@ -7,22 +7,18 @@ namespace Zef\Tests\Unit;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
-use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Zef\Framework\Cache\CacheClockInterface;
 use Zef\Framework\Http\Response;
 use Zef\Framework\Http\ServerRequest;
 use Zef\Framework\Http\Uri;
 use Zef\Framework\Security\AuthenticationMiddleware;
-use Zef\Framework\Security\RateLimitMiddleware;
-use Zef\Framework\Security\RateLimitRule;
-use Zef\Framework\Security\SlidingWindowRateLimiter;
-use Zef\Framework\Security\TieredRateLimiter;
 use Zef\Framework\Security\Distributed\AuthenticationResult;
 use Zef\Framework\Security\Distributed\AuthenticationStatus;
 use Zef\Framework\Security\Distributed\AuthorizationPolicyInterface;
 use Zef\Framework\Security\Distributed\AuthorizationResult;
 use Zef\Framework\Security\Distributed\CredentialHandle;
+use Zef\Framework\Security\Distributed\CredentialProviderInterface;
 use Zef\Framework\Security\Distributed\ReplayDecision;
 use Zef\Framework\Security\Distributed\ReplayProtectorInterface;
 use Zef\Framework\Security\Distributed\ReplayResult;
@@ -32,6 +28,10 @@ use Zef\Framework\Security\Distributed\SecurityContext;
 use Zef\Framework\Security\Distributed\SecurityFailure;
 use Zef\Framework\Security\Distributed\SecurityRequest;
 use Zef\Framework\Security\Distributed\SecurityVerdict;
+use Zef\Framework\Security\RateLimitMiddleware;
+use Zef\Framework\Security\RateLimitRule;
+use Zef\Framework\Security\SlidingWindowRateLimiter;
+use Zef\Framework\Security\TieredRateLimiter;
 
 /**
  * v2.31.0 — Identity-aware rate limiting: AuthenticationMiddleware now sets
@@ -256,7 +256,7 @@ final class CapturingHandler implements RequestHandlerInterface
 /**
  * @internal
  */
-final class AuthProviderDouble implements \Zef\Framework\Security\Distributed\CredentialProviderInterface
+final class AuthProviderDouble implements CredentialProviderInterface
 {
     public function __construct(
         private readonly ?SecurityContext $context,
@@ -265,7 +265,7 @@ final class AuthProviderDouble implements \Zef\Framework\Security\Distributed\Cr
     #[\Override]
     public function resolve(CredentialHandle $handle, int $nowMs): AuthenticationResult
     {
-        if ($this->context !== null && $handle->scope === 'bearer') {
+        if ($this->context instanceof SecurityContext && $handle->scope === 'bearer') {
             return new AuthenticationResult(AuthenticationStatus::AUTHENTICATED, $this->context);
         }
 
