@@ -13,8 +13,8 @@ use Zef\Framework\Http\Response;
 use Zef\Framework\Http\ServerRequest;
 use Zef\Framework\Http\Uri;
 use Zef\Framework\Security\CsrfTokenManager;
-use Zef\Framework\Security\RateLimiterInterface;
 use Zef\Framework\Security\RateLimitDecision;
+use Zef\Framework\Security\RateLimiterInterface;
 use Zef\Framework\Security\SecurityPolicy;
 use Zef\Framework\Security\SecurityRuntimeMiddleware;
 
@@ -89,10 +89,10 @@ final class CsrfSpaToolkitTest extends TestCase
         self::assertSame(3, substr_count($token, '.') + 1, 'TTL format: issuedAt.token.mac');
         self::assertTrue($manager->isValid($token), 'a fresh token must validate');
 
-        $expiredToken = (string) ($now - 3601) . '.' . explode('.', $token)[1] . '.' . explode('.', $token)[2];
+        $expiredToken = ($now - 3601) . '.' . explode('.', $token)[1] . '.' . explode('.', $token)[2];
         self::assertFalse($manager->isValid($expiredToken), 'a token past its TTL must be rejected');
 
-        $futureToken = (string) ($now + 5) . '.' . explode('.', $token)[1] . '.' . explode('.', $token)[2];
+        $futureToken = ($now + 5) . '.' . explode('.', $token)[1] . '.' . explode('.', $token)[2];
         self::assertFalse($manager->isValid($futureToken), 'future-dated stamps must be rejected');
     }
 
@@ -305,7 +305,7 @@ final class ArrayEnvDouble implements EnvInterface
     {
         $raw = $this->values[$name] ?? null;
 
-        return $raw === null ? $default : $raw;
+        return $raw ?? $default;
     }
 
     #[\Override]
@@ -316,7 +316,7 @@ final class ArrayEnvDouble implements EnvInterface
             return [];
         }
 
-        return array_values(array_filter(array_map('trim', explode(',', $raw)), static fn (string $v): bool => $v !== ''));
+        return array_values(array_filter(array_map(trim(...), explode(',', $raw)), static fn (string $v): bool => $v !== ''));
     }
 }
 

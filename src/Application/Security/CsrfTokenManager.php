@@ -20,9 +20,6 @@ final readonly class CsrfTokenManager
     private \Closure $clock;
 
     /**
-     * @param string                $secret
-     * @param int                   $tokenBytes
-     * @param int                   $ttlSeconds
      * @param null|(\Closure(): int) $clock
      */
     public function __construct(
@@ -40,7 +37,7 @@ final readonly class CsrfTokenManager
         if ($ttlSeconds < 0) {
             throw new \InvalidArgumentException('ttlSeconds must be >= 0 (0 = no expiry).');
         }
-        $this->clock = $clock ?? static fn (): int => time();
+        $this->clock = $clock ?? time(...);
     }
 
     /**
