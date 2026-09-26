@@ -27,6 +27,12 @@ declare(strict_types=1);
  * Arming globals:
  *   $GLOBALS['__zef_header_calls'] = []         (appended per delegated call)
  *   $GLOBALS['__zef_status_calls'] = []         (appended per delegated call)
+ *
+ * The two delegating `\header(...)` calls below carry in-source nosemgrep
+ * markers for `ban-qualified-global-call`: unlike the nineteen call sites that
+ * rule normalised to the bare form, a bare call HERE would recurse into this
+ * shadow itself — the qualified form is the only safe spelling, so the
+ * disposition is a registered suppression instead of a rewrite.
  */
 
 namespace Zef\Framework;
@@ -39,12 +45,12 @@ if (!\function_exists(__NAMESPACE__ . '\header')) {
         }
 
         if ($response_code === null) {
-            \header($header, $replace);
+            \header($header, $replace); // nosemgrep: ban-qualified-global-call (the shadow MUST delegate with a leading backslash — an unqualified call here would recurse into this shadow itself; the arguments originate from the emitter under test, never from request input)
 
             return;
         }
 
-        \header($header, $replace, $response_code);
+        \header($header, $replace, $response_code); // nosemgrep: ban-qualified-global-call (same recursion-forced qualified form as above — pass-through delegation only)
     }
 }
 

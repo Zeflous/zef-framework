@@ -327,24 +327,42 @@ pinned ruleset and the engine image.
 
 ## 7. Suppression policy
 
-**Registered suppressions: 69**, counted from the markers themselves rather than by
-arithmetic. Breakdown by the rule id named on the marker, as measured with
-`grep -rhoE 'nosemgrep: *[^ ]+' --include=*.php .`:
+**Registered suppressions: 85**, counted from the marker directives themselves —
+marker directives **on call lines only**, i.e. occurrences of
+`grep -rn 'nosemgrep:' --include=*.php .` whose line is not comment-only
+(the raw count including prose mentions is 86 on the tree carrying this revision;
+exactly one occurrence, the explanatory prose above `TinkerSession.php:70`, is
+comment-only and is not a marker). This revision recounts the whole table because
+the previous register (69) had gone stale: rounds 1-4 of the zone burn-down and
+neighbouring fixes added markers without promoting the count. The two newest
+markers — the first ever for `ban-qualified-global-call` — come from
+`tests/Unit/kernel-mid-shadow-functions.php` (issue #90 round 4):
 
 | Rule id on the marker | Count |
 |---|---|
-| `php.lang.security.unlink-use` | 53 |
-| `php.lang.security.unserialize-use` | 1 |
-| `exec-use` | 6 |
+| `php.lang.security.unlink-use` | 67 |
+| `exec-use` | 7 |
 | `unlink-use` (ZEF-local scope) | 4 |
-| `php.lang.security.eval-use` | 3 |
+| `php.lang.security.eval-use` | 2 |
 | `eval-use` | 2 |
-| **Total** | **69** |
+| `ban-qualified-global-call` (ZEF-local scope) | 2 |
+| `php.lang.security.unserialize-use` | 1 |
+| **Total** | **85** |
 
-That is **57 `unlink` + 6 `exec` + 5 `eval` + 1 `unserialize`**. The four newest
+That is **71 `unlink` + 7 `exec` + 4 `eval` + 1 `unserialize` + 2 recursion-forced
+qualified `header` delegations**. The four newest
 `unlink-use` markers live in `tests/Unit/MiddlewareMutationDebtTest.php` (issue
 #90 round 1): each unlinks a `tempnam()` fixture the test itself created for
-asserting on `error_log` output — no request input reaches the path. The count is of
+asserting on `error_log` output — no request input reaches the path. The two
+`ban-qualified-global-call` markers live in
+`tests/Unit/kernel-mid-shadow-functions.php` (issue #90 round 4) and are the first
+suppressions of that rule: the namespace shadow `Zef\Framework\header()` exists
+precisely so ResponseEmitter's unqualified SAPI calls can be observed by tests, and
+its own delegating calls **must** stay backslash-qualified — the bare form inside
+the shadow would recurse into itself. Unlike the nineteen call sites the rule
+normalised to the bare form (safe because no same-named function exists in their
+namespaces), a rewrite is impossible here; the arguments are pass-through values
+already produced by the code under test, never request input. The count is of
 marker directives on call lines: an explanatory comment that merely *mentions* a
 marker, such as the prose line above `TinkerSession.php:70`, is not one. One earlier
 accounting in this document reached 47 by adding four to a 43 that was itself
