@@ -878,6 +878,9 @@ final class EdgeMatrixEventSourcingRound2Test extends TestCase
             'next_attempt_at:BIGINT',
             'last_error:TEXT',
             'created_at:BIGINT',
+            // v2.31.0 lease claiming (nullable, both-or-neither):
+            'lease_owner:VARCHAR(64)',
+            'lease_until:BIGINT',
         ], $shape);
         $indexes = $conn->fetchAll(SqlQuery::raw('PRAGMA index_list("zef_outbox")'));
         $uniqueCount = count(array_filter($indexes, static fn (array $i): bool => RowCast::int($i['unique']) === 1));

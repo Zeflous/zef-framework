@@ -11,6 +11,7 @@ declare(strict_types=1);
 namespace Zef\Framework\EventSourcing;
 
 use Zef\Framework\Database\ConnectionInterface;
+use Zef\Framework\Database\QueryException;
 use Zef\Framework\Database\QueryBuilder;
 use Zef\Framework\Database\SqlExpression;
 use Zef\Framework\Database\SqlQuery;
@@ -25,11 +26,29 @@ use Zef\Framework\Database\SqlQuery;
  * - shares the ambient-transaction contract with PdoEventStore: enqueue
  *   joins an open transaction, so repository.persist commits events and
  * outbox entries atomically over one connection.
+ *
+ * Lease claiming (v2.31.0): implements {@see OutboxClaimInterface} for
+ * concurrent relays — `claimBatch()` runs inside one transaction, takes
+ * row locks with `FOR UPDATE SKIP LOCKED` when the platform supports it
+ * (auto-detected once per connection, with graceful degradation to plain
+ * `FOR UPDATE` and finally to lock-free selects on SQLite), and stamps
+ * lease metadata on the claimed rows. Expired leases are reclaimable, so
+ * a crashed relay's backlog self-heals. `createSchema()` also maintains a
+ * `(status, next_attempt_at, created_at)` relay index and upgrades legacy
+ * tables that predate the lease columns.
  */
-final readonly class PdoOutbox implements OutboxStoreInterface
+final readonly class PdoOutbox implements OutboxStoreInterface, OutboxClaimInterface
 {
-    private const array COLUMNS = ['id', 'message_type', 'payload', 'metadata', 'attempts', 'status', 'next_attempt_at', 'last_error', 'created_at'];
+    private const array COLUMNS = ['id', 'message_type', 'payload', 'metadata', 'attempts', 'status', 'next_attempt_at', 'last_error', 'created_at', 'lease_owner', 'lease_until'];
+
+    /** Row-lock suffixes tried in order by {@see lockSuffix()} (strongest first). */
+    private const string LOCK_SKIP = ' FOR UPDATE SKIP LOCKED';
+    private const string LOCK_UPDATE = ' FOR UPDATE';
+    private const string LOCK_NONE = '';
+
     private string $table;
+
+    private string $quotedTable;
 
     /** @var (\Closure(): int) */
     private \Closure $clock;
@@ -46,16 +65,22 @@ final readonly class PdoOutbox implements OutboxStoreInterface
     ) {
         new QueryBuilder()->quoteIdentifier($table, 'table');
         $this->table = $table;
+        $this->quotedTable = (new QueryBuilder())->quoteIdentifier($table, 'table');
         $this->clock = $clock ?? static fn (): int => (int) (microtime(true) * 1_000_000_000);
     }
 
     /**
      * Create the outbox table (portable DDL, safe to run repeatedly).
+     *
+     * Also (v2.31.0) maintains the relay index and upgrades legacy tables:
+     * a table created before lease claiming gets its lease columns via a
+     * best-effort ALTER (duplicate-column errors are swallowed), so calling
+     * createSchema() once after upgrading is the supported migration path.
      */
     public function createSchema(): void
     {
         $this->connection->execute(SqlQuery::raw(
-            'CREATE TABLE IF NOT EXISTS "' . $this->table . '" ('
+            'CREATE TABLE IF NOT EXISTS ' . $this->quotedTable . ' ('
             . '"id" VARCHAR(64) NOT NULL, '
             . '"message_type" VARCHAR(191) NOT NULL, '
             . '"payload" TEXT NOT NULL, '
@@ -65,8 +90,65 @@ final readonly class PdoOutbox implements OutboxStoreInterface
             . '"next_attempt_at" BIGINT NOT NULL, '
             . '"last_error" TEXT NULL, '
             . '"created_at" BIGINT NOT NULL, '
+            . '"lease_owner" VARCHAR(64) NULL, '
+            . '"lease_until" BIGINT NULL, '
             . 'CONSTRAINT "uq_' . $this->table . '_id" UNIQUE ("id"))',
         ));
+        $this->ensureLeaseColumns();
+        $this->createRelayIndex();
+    }
+
+    /**
+     * Best-effort lease-column upgrade for tables created before v2.31.0.
+     * Duplicate-column errors from every supported driver (sqlite "duplicate
+     * column", mysql "Duplicate column name", pgsql "... already exists")
+     * are treated as "upgrade already applied".
+     */
+    private function ensureLeaseColumns(): void
+    {
+        foreach (['"lease_owner" VARCHAR(64) NULL', '"lease_until" BIGINT NULL'] as $definition) {
+            try {
+                $this->connection->execute(SqlQuery::raw(
+                    'ALTER TABLE ' . $this->quotedTable . ' ADD COLUMN ' . $definition,
+                ));
+            } catch (QueryException $e) {
+                $message = strtolower($e->getMessage());
+                if (!str_contains($message, 'duplicate column') && !str_contains($message, 'already exists')) {
+                    throw $e;
+                }
+            }
+        }
+    }
+
+    /**
+     * Relay index for due()/claimBatch(): (status, next_attempt_at, created_at).
+     * Tried with IF NOT EXISTS first (sqlite/pgsql); MySQL rejects that
+     * syntax, so on a syntax error it falls back to a plain CREATE INDEX
+     * and swallows the duplicate-key error on re-runs.
+     */
+    private function createRelayIndex(): void
+    {
+        $index = (new QueryBuilder())->quoteIdentifier('idx_' . $this->table . '_relay', 'index');
+        $columns = '("status", "next_attempt_at", "created_at")';
+        try {
+            $this->connection->execute(SqlQuery::raw(
+                'CREATE INDEX IF NOT EXISTS ' . $index . ' ON ' . $this->quotedTable . $columns,
+            ));
+
+            return;
+        } catch (QueryException) {
+            // Unsupported syntax (e.g. MySQL) or already exists — retry plain.
+        }
+        try {
+            $this->connection->execute(SqlQuery::raw(
+                'CREATE INDEX ' . $index . ' ON ' . $this->quotedTable . $columns,
+            ));
+        } catch (QueryException $e) {
+            $message = strtolower($e->getMessage());
+            if (!str_contains($message, 'duplicate') && !str_contains($message, 'already exists')) {
+                throw $e;
+            }
+        }
     }
 
     #[\Override]
@@ -124,7 +206,7 @@ final readonly class PdoOutbox implements OutboxStoreInterface
     #[\Override]
     public function markProcessed(string $id): void
     {
-        $this->updateById($id, ['status' => OutboxEntry::STATUS_PROCESSED]);
+        $this->updateById($id, ['status' => OutboxEntry::STATUS_PROCESSED, 'lease_owner' => null, 'lease_until' => null]);
     }
 
     #[\Override]
@@ -136,6 +218,8 @@ final readonly class PdoOutbox implements OutboxStoreInterface
             'attempts' => new SqlExpression('"attempts" + 1'),
             'next_attempt_at' => $retryAtUnixNano,
             'last_error' => $error,
+            'lease_owner' => null,
+            'lease_until' => null,
         ]);
     }
 
@@ -146,6 +230,8 @@ final readonly class PdoOutbox implements OutboxStoreInterface
             'status' => OutboxEntry::STATUS_FAILED,
             'attempts' => new SqlExpression('"attempts" + 1'),
             'last_error' => $error,
+            'lease_owner' => null,
+            'lease_until' => null,
         ]);
     }
 
@@ -205,6 +291,8 @@ final readonly class PdoOutbox implements OutboxStoreInterface
             'status' => OutboxEntry::STATUS_PENDING,
             'attempts' => 0,
             'next_attempt_at' => $now,
+            'lease_owner' => null,
+            'lease_until' => null,
         ]);
         $updated = $this->connection->fetchOne(
             $this->selectQb()->where('id', '=', $id)->build(),
@@ -243,6 +331,8 @@ final readonly class PdoOutbox implements OutboxStoreInterface
     private function hydrate(array $row): OutboxEntry
     {
         $lastError = $row['last_error'] ?? null;
+        $leaseOwner = $row['lease_owner'] ?? null;
+        $leaseUntil = $row['lease_until'] ?? null;
 
         return new OutboxEntry(
             id: RowCast::string($row['id'] ?? null),
@@ -254,6 +344,142 @@ final readonly class PdoOutbox implements OutboxStoreInterface
             nextAttemptAtUnixNano: RowCast::int($row['next_attempt_at'] ?? null),
             lastError: $lastError === null ? null : RowCast::string($lastError),
             createdAtUnixNano: RowCast::int($row['created_at'] ?? null),
+            leaseOwner: $leaseOwner === null ? null : RowCast::string($leaseOwner),
+            leaseUntilUnixNano: $leaseUntil === null ? null : RowCast::int($leaseUntil),
         );
+    }
+
+    // -------------------------------------------------- lease claiming (v2.31.0)
+
+    #[\Override]
+    public function claimBatch(string $owner, int $limit, int $leaseSeconds, ?int $nowUnixNano = null): array
+    {
+        if ($owner === '' || \strlen($owner) > 64) {
+            throw new EventSourcingException('claimBatch() owner must be 1..64 chars.');
+        }
+        if ($limit < 1) {
+            throw new EventSourcingException("claimBatch() limit must be >= 1 (got {$limit}).");
+        }
+        if ($leaseSeconds < 1) {
+            throw new EventSourcingException("claimBatch() leaseSeconds must be >= 1 (got {$leaseSeconds}).");
+        }
+        $now = $nowUnixNano ?? ($this->clock)();
+        $leaseUntil = $now + $leaseSeconds * 1_000_000_000;
+        EventGrammar::assertUnixNano($leaseUntil, 'lease deadline');
+
+        $ids = $this->connection->transaction(function () use ($owner, $limit, $now, $leaseUntil): array {
+            $rows = $this->connection->fetchAll($this->candidatesQuery($now, $limit));
+            $claimed = [];
+            foreach ($rows as $row) {
+                $id = RowCast::string($row['id'] ?? null);
+                if ($id === '') {
+                    continue;
+                }
+                $this->connection->execute(
+                    QueryBuilder::table($this->table)
+                        ->update(['lease_owner' => $owner, 'lease_until' => $leaseUntil])
+                        ->where('id', '=', $id)
+                        ->build(),
+                );
+                $claimed[] = $id;
+            }
+
+            return $claimed;
+        });
+        if ($ids === []) {
+            return [];
+        }
+
+        $entries = [];
+        foreach ($ids as $id) {
+            $row = $this->connection->fetchOne($this->selectQb()->where('id', '=', $id)->build());
+            if ($row !== null) {
+                $entries[] = $this->hydrate($row);
+            }
+        }
+        usort($entries, static fn (OutboxEntry $a, OutboxEntry $b): int => [$a->createdAtUnixNano, $a->id] <=> [$b->createdAtUnixNano, $b->id]);
+
+        return $entries;
+    }
+
+    #[\Override]
+    public function releaseLease(string $owner): int
+    {
+        if ($owner === '') {
+            throw new EventSourcingException('releaseLease() owner must be non-empty.');
+        }
+
+        return $this->connection->execute(
+            QueryBuilder::table($this->table)
+                ->update(['lease_owner' => null, 'lease_until' => null])
+                ->where('lease_owner', '=', $owner)
+                ->build(),
+        );
+    }
+
+    /**
+     * Candidate select for claimBatch(): claimable = pending + due + not
+     * actively leased. Integers are pre-validated; the table name is quoted
+     * at construction. Appends the strongest row-lock suffix the platform
+     * accepts (auto-detected once per connection).
+     */
+    private function candidatesQuery(int $now, int $limit): SqlQuery
+    {
+        $sql = 'SELECT "id" FROM ' . $this->quotedTable
+            . " WHERE \"status\" = '" . OutboxEntry::STATUS_PENDING . "'"
+            . ' AND "next_attempt_at" <= ' . $now
+            . ' AND ("lease_until" IS NULL OR "lease_until" <= ' . $now . ')'
+            . ' ORDER BY "created_at" ASC, "id" ASC'
+            . ' LIMIT ' . $limit
+            . $this->lockSuffix();
+
+        return SqlQuery::raw($sql);
+    }
+
+    /**
+     * Strongest supported row-lock suffix, probed once per connection and
+     * cached in a function-local WeakMap keyed by connection (PdoOutbox is
+     * readonly, so instance/static mutable memoization is not available;
+     * a function-static lives exactly once per process — the semantics we
+     * want for detection caching). Probes run inside throwaway transactions
+     * so a failed probe never leaves an aborted transaction behind.
+     */
+    private function lockSuffix(): string
+    {
+        static $modes = null;
+        if (!$modes instanceof \WeakMap) {
+            $modes = new \WeakMap();
+        }
+        $cached = $modes[$this->connection] ?? null;
+        if (is_string($cached)) {
+            return $cached;
+        }
+        foreach ([self::LOCK_SKIP, self::LOCK_UPDATE, self::LOCK_NONE] as $candidate) {
+            if ($this->lockingSupported($candidate)) {
+                $modes[$this->connection] = $candidate;
+
+                return $candidate;
+            }
+        }
+
+        return self::LOCK_NONE;
+    }
+
+    private function lockingSupported(string $suffix): bool
+    {
+        try {
+            $this->connection->transaction(function () use ($suffix): void {
+                // Rowless probe statement carrying the candidate lock suffix;
+                // a platform that rejects the syntax throws QueryException,
+                // which transaction() converts into a rollback.
+                $this->connection->fetchAll(SqlQuery::raw(
+                    'SELECT "id" FROM ' . $this->quotedTable . ' WHERE 1 = 0' . $suffix,
+                ));
+            });
+
+            return true;
+        } catch (QueryException) {
+            return false;
+        }
     }
 }

@@ -15,6 +15,16 @@ use Zef\Framework\Event\EventBusInterface;
 /**
  * Relays due outbox entries onto the event bus and records the outcome.
  *
+ * Two relay modes:
+ * - {@see relay()} — single-worker pull over {@see OutboxStoreInterface::due()}.
+ *   Every due entry is handed to THIS relay; correct only when exactly one
+ *   relay process runs (N relays would each dispatch every entry).
+ * - {@see relayLeased()} (v2.31.0) — concurrent-safe mode over
+ *   {@see OutboxClaimInterface::claimBatch()}: each worker claims a batch
+ *   under a short lease, so N relays share the backlog without double
+ *   dispatch, and a crashed worker's entries become claimable again once
+ *   its lease expires. Preferred mode for production workers.
+ *
  * Per entry:
  * - dispatch succeeds → {@see OutboxStoreInterface::markProcessed()};
  * - dispatch throws   → attempts+1; below `maxAttempts` the entry stays
@@ -29,9 +39,13 @@ final readonly class OutboxRelay
     public const int DEFAULT_MAX_ATTEMPTS = 5;
     public const int DEFAULT_BACKOFF_BASE_MS = 1_000;
     public const int DEFAULT_BACKOFF_CAP_MS = 60_000;
+    public const int DEFAULT_LEASE_SECONDS = 30;
 
     /** @var (\Closure(): int) */
     private \Closure $clock;
+
+    /** Claim token identifying THIS relay instance across claim/release. */
+    private string $owner;
 
     /**
      * @param OutboxStoreInterface  $outbox        outbox port
@@ -61,6 +75,92 @@ final readonly class OutboxRelay
             );
         }
         $this->clock = $clock ?? static fn (): int => (int) (microtime(true) * 1_000_000_000);
+        $this->owner = bin2hex(random_bytes(8));
+    }
+
+    /**
+     * Claim-based relay for CONCURRENT workers (v2.31.0): claims up to $limit
+     * due entries under a $leaseSeconds lease, dispatches them, and records
+     * the outcome (processed / retry with backoff / dead letter) exactly like
+     * {@see relay()}. Other relay instances running against the same store
+     * never see entries this instance still holds under an active lease.
+     *
+     * The lease is cleared implicitly by every mark* transition. A worker
+     * that dies mid-batch leaves its entries leased until the deadline;
+     * they become claimable again after expiry (at-least-once preserved).
+     * Call {@see releaseLease()} on graceful shutdown to hand unfinished
+     * entries back immediately.
+     *
+     * @param int        $limit        >= 1 — maximum entries to claim and dispatch
+     * @param int        $leaseSeconds >= 1 — lease window; must comfortably exceed
+     *                                 the expected batch dispatch time
+     * @param null|string $owner       claim token override (default: this relay's
+     *                                 instance token generated at construction)
+     *
+     * @return int number of entries successfully dispatched and marked processed
+     *
+     * @throws EventSourcingException when the store does not implement
+     *                                {@see OutboxClaimInterface} or arguments are invalid
+     */
+    public function relayLeased(int $limit = 100, int $leaseSeconds = self::DEFAULT_LEASE_SECONDS, ?string $owner = null): int
+    {
+        if (!$this->outbox instanceof OutboxClaimInterface) {
+            throw new EventSourcingException(
+                'relayLeased() requires an outbox store implementing OutboxClaimInterface ('
+                . $this->outbox::class . ' does not).',
+            );
+        }
+        if ($limit < 1) {
+            throw new EventSourcingException("relayLeased() limit must be >= 1 (got {$limit}).");
+        }
+        if ($leaseSeconds < 1) {
+            throw new EventSourcingException("relayLeased() leaseSeconds must be >= 1 (got {$leaseSeconds}).");
+        }
+        $claimed = $this->outbox->claimBatch($owner ?? $this->owner, $limit, $leaseSeconds);
+        $processed = 0;
+        $now = ($this->clock)();
+        foreach ($claimed as $entry) {
+            try {
+                $this->bus->dispatch(new OutboxMessage($entry));
+            } catch (\Throwable $error) {
+                $this->recordFailure($entry, $error, $now);
+
+                continue;
+            }
+            $this->outbox->markProcessed($entry->id);
+            ++$processed;
+        }
+
+        return $processed;
+    }
+
+    /**
+     * Release the leases held by $owner (default: this relay's token) —
+     * graceful-shutdown helper so a stopping worker hands its unfinished
+     * entries straight back to the pool instead of letting the lease run out.
+     *
+     * @return int number of leases released
+     *
+     * @throws EventSourcingException when the store does not implement {@see OutboxClaimInterface}
+     */
+    public function releaseLease(?string $owner = null): int
+    {
+        if (!$this->outbox instanceof OutboxClaimInterface) {
+            throw new EventSourcingException(
+                'releaseLease() requires an outbox store implementing OutboxClaimInterface ('
+                . $this->outbox::class . ' does not).',
+            );
+        }
+
+        return $this->outbox->releaseLease($owner ?? $this->owner);
+    }
+
+    /**
+     * This relay instance's claim token (stable across its lifetime).
+     */
+    public function owner(): string
+    {
+        return $this->owner;
     }
 
     /**

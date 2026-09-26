@@ -65,6 +65,16 @@
  *   bin/zef doctor                 Read-only environment preflight (PHP,
  *                                  extensions, autoloader, RR binary/bridge,
  *                                  app-boot smoke). Exit 1 only on FAIL.
+ *
+ * v2.31.0 Outbox relay worker (lease-based, concurrent-safe):
+ *   bin/zef outbox:work            Relay outbox entries to the event bus via
+ *                                  lease claiming — safe with N workers.
+ *                                  [--once] drain one batch and exit;
+ *                                  [--batch=<n>] claim size (default 100);
+ *                                  [--lease=<sec>] lease window (default 30);
+ *                                  [--interval=<ms>] idle poll (default 500);
+ *                                  [--max=<n>] stop after n batches.
+ *                                  Requires OutboxRelay wired in the container.
  */
 
 declare(strict_types=1);
@@ -175,6 +185,28 @@ if ($command === 'doctor') {
     exit((new \Zef\Framework\Console\Inspector\Doctor($root, $io, $bootSmoke))->run());
 }
 
+if ($command === 'outbox:work') {
+    $app = \Zef\App\Bootstrap::createApp(false);
+    $app->boot();
+    $container = $app->getContainer();
+    $relayFactory = static function () use ($container): \Zef\Framework\EventSourcing\OutboxRelay {
+        $id = \Zef\Framework\EventSourcing\OutboxRelay::class;
+        if (!$container->has($id)) {
+            throw new \RuntimeException(
+                "OutboxRelay ({$id}) is not wired in the container.\n"
+                . 'Register it from a ConfigProvider, e.g.:'
+                . "\n  new OutboxRelay(\$c->get(OutboxStoreInterface::class), \$c->get(EventBusInterface::class))",
+            );
+        }
+
+        return $container->get($id);
+    };
+
+    exit((new \Zef\Framework\Console\Inspector\OutboxWorker($relayFactory, $io))->run(
+        zef_cli_options(array_slice($args, 2)),
+    ));
+}
+
 if ($command === 'list' || ($command !== null && str_starts_with((string) $command, 'make:'))) {
     exit($maker->run($args));
 }
@@ -188,6 +220,33 @@ fwrite(STDOUT, "ZEF Framework v" . \Zef\Framework\Foundation\ZefVersion::VERSION
 exit(0);
 
 // ---------------------------------------------------------------------------
+
+/**
+ * Parse `--key=value` / `--flag` switches into a string-keyed map
+ * (shared by the v2.31.0 operational commands).
+ *
+ * @param list<string> $argv
+ *
+ * @return array<string, string|bool>
+ */
+function zef_cli_options(array $argv): array
+{
+    $options = [];
+    foreach ($argv as $arg) {
+        if (!str_starts_with((string) $arg, '--')) {
+            continue;
+        }
+        $pair = substr((string) $arg, 2);
+        if (str_contains($pair, '=')) {
+            [$key, $value] = explode('=', $pair, 2);
+            $options[$key] = $value;
+        } else {
+            $options[$pair] = true;
+        }
+    }
+
+    return $options;
+}
 
 function zef_route_list(): int
 {
