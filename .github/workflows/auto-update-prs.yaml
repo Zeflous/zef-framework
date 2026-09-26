@@ -1,0 +1,59 @@
+name: Auto Update and Merge PRs (FIFO Order)
+
+on:
+  schedule:
+    # Tetap berjalan berkala setiap 30 menit sebagai jaring pengaman
+    - cron: '*/30 * * * *'
+  pull_request:
+    # Otomatis jalan begitu ada PR yang berhasil di-merge
+    types: [closed]
+  workflow_dispatch:
+
+jobs:
+  update-and-merge-prs:
+    # Hanya berjalan jika dipicu cron/manual OR jika dipicu closed PR yang statusnya benar-benar di-merge
+    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Process PRs (Oldest First)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Mengambil daftar PR yang open, diurutkan dari yang paling lama..."
+          
+          # Mengambil daftar PR yang tidak berstatus draft, diurutkan dari yang paling lama
+          prs=$(gh pr list --state open --sort created --limit 100 --json number,isDraft --jq '.[] | select(.isDraft == false) | .number')
+          
+          if [ -z "$prs" ]; then
+            echo "Tidak ada PR open yang perlu diproses."
+            exit 0
+          fi
+
+          for pr in $prs; do
+            echo "----------------------------------------"
+            echo "Memproses PR #$pr..."
+            
+            # 1. Update branch agar tidak behind/stale
+            if gh pr update-branch $pr 2>/dev/null; then
+              echo "✅ PR #$pr berhasil diperbarui (di-sync)!"
+              
+              # Beri jeda 3 detik agar GitHub memperbarui status internalnya
+              sleep 3
+              
+              # 2. Aktifkan auto-merge. Pilih salah satu metode penggabungan:
+              # --merge (Merge commit), --squash (Squash and merge), atau --rebase (Rebase and merge)
+              if gh pr merge $pr --auto --merge 2>/dev/null; then
+                echo "🚀 Fitur Auto-Merge berhasil diaktifkan untuk PR #$pr!"
+              else
+                echo "⚠️ Gagal mengaktifkan Auto-Merge. Pastikan fitur ini aktif di pengaturan repositori."
+              fi
+              
+              # Jeda 5 detik tambahan sebelum memproses PR selanjutnya agar antrean rapi
+              sleep 5
+            else
+              echo "⚠️ Gagal memperbarui branch PR #$pr (Mungkin ada merge conflict atau sudah up-to-date)."
+            fi
+          done
