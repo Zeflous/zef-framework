@@ -19,6 +19,10 @@ namespace Zef\Framework\Security;
  *
  * Keys: exactly 32 bytes. Accepts raw, hex (64 chars), or base64 strings;
  * anything else is rejected at construction — no silent hashing of weak keys.
+ * The DECODED 32 bytes are the key material openssl actually uses, so every
+ * representation of the same key (raw / hex / base64) encrypts and decrypts
+ * identically (ZEF-DEEP-01: previously the raw string was used as-is, silently
+ * truncating hex/base64 keys to their ASCII prefix — 128-bit effective entropy).
  */
 final readonly class AesGcmEncryptor implements EncryptionInterface
 {
@@ -27,13 +31,15 @@ final readonly class AesGcmEncryptor implements EncryptionInterface
     private const int IV_BYTES = 12;
     private const int TAG_BYTES = 16;
 
-    public function __construct(
-        private string $key,
-    ) {
+    private string $key;
+
+    public function __construct(string $key)
+    {
         $decoded = $this->decodeKey($key);
         if (strlen($decoded) !== 32) {
             throw new \InvalidArgumentException('Encryption key must decode to exactly 32 bytes (AES-256), got ' . strlen($decoded) . '.');
         }
+        $this->key = $decoded;
     }
 
     #[\Override]
