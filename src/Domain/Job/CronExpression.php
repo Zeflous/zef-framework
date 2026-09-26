@@ -49,8 +49,6 @@ final readonly class CronExpression implements ScheduleInterface
     /** Highest day-of-month each month can reach (February reaches 29 on leap years). */
     private const array MONTH_MAX_DOM = [1 => 31, 2 => 29, 3 => 31, 4 => 30, 5 => 31, 6 => 30, 7 => 31, 8 => 31, 9 => 30, 10 => 31, 11 => 30, 12 => 31];
 
-    private bool $neverFires;
-
     private function __construct(
         /** @var array<int,int> sorted allowed values */
         public array $minutes,
@@ -61,10 +59,8 @@ final readonly class CronExpression implements ScheduleInterface
         public string $expression,
         public bool $domRestricted,
         public bool $dowRestricted,
-        bool $neverFires,
-    ) {
-        $this->neverFires = $neverFires;
-    }
+        private bool $neverFires
+    ) {}
 
     public static function parse(string $expression): self
     {
@@ -158,7 +154,7 @@ final readonly class CronExpression implements ScheduleInterface
         if ($this->neverFires) {
             return false;
         }
-        $local = (new \DateTimeImmutable('@' . $unixSeconds))->setTimezone($timeZone);
+        $local = new \DateTimeImmutable('@' . $unixSeconds)->setTimezone($timeZone);
 
         return $this->matchesFields(
             (int) $local->format('i'),

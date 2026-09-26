@@ -29,16 +29,6 @@ final class JobCronEngineV2Test extends TestCase
         date_default_timezone_set($this->originalTz);
     }
 
-    private function tsUtc(string $iso): int
-    {
-        return (new \DateTimeImmutable($iso))->getTimestamp();
-    }
-
-    private function nano(int $unixSeconds): int
-    {
-        return $unixSeconds * 1_000_000_000;
-    }
-
     // -------------------------------------------------- UTC exactness (C-6)
 
     public function testMatchesUtcIgnoresProcessTimezone(): void
@@ -123,6 +113,7 @@ final class JobCronEngineV2Test extends TestCase
         self::assertFalse($cron->matchesUtc($this->tsUtc('2026-02-01T00:00:00+00:00')));
 
         $start = hrtime(true);
+
         try {
             $cron->nextRunAfter($this->nano($this->tsUtc('2026-01-01T00:00:00+00:00')));
             self::fail('never-firing expression must throw instead of scanning 4 years');
@@ -195,7 +186,7 @@ final class JobCronEngineV2Test extends TestCase
         $ams = new \DateTimeZone('Europe/Amsterdam');
 
         $next = $cron->nextRunAfterIn($ams, $this->nano($this->tsUtc('2026-03-29T00:00:00+00:00')));
-        $nextLocal = (new \DateTimeImmutable('@' . intdiv($next, 1_000_000_000)))->setTimezone($ams);
+        $nextLocal = new \DateTimeImmutable('@' . intdiv($next, 1_000_000_000))->setTimezone($ams);
         self::assertSame('2026-03-30', $nextLocal->format('Y-m-d'), '02:30 local does not exist on the transition day');
         self::assertSame('02:30', $nextLocal->format('H:i'));
     }
@@ -214,5 +205,15 @@ final class JobCronEngineV2Test extends TestCase
     public function testDescribeUnchanged(): void
     {
         self::assertSame('30 2 29 2 * (UTC)', CronExpression::parse('30 2 29 2 *')->describe());
+    }
+
+    private function tsUtc(string $iso): int
+    {
+        return new \DateTimeImmutable($iso)->getTimestamp();
+    }
+
+    private function nano(int $unixSeconds): int
+    {
+        return $unixSeconds * 1_000_000_000;
     }
 }
