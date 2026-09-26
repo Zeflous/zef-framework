@@ -87,9 +87,9 @@ final readonly class PdoJobIdempotencyStore implements JobIdempotencyStoreInterf
             throw new \InvalidArgumentException('Idempotency TTL must be 1..604800 seconds.');
         }
         $now = ($this->clock)();
-        $cached = $this->fetch($key, $now);
+        $cached = $this->fetchRecord($key, $now);
         if ($cached !== null) {
-            return $cached;
+            return $cached['value'];
         }
 
         $value = $producer();
@@ -113,17 +113,22 @@ final readonly class PdoJobIdempotencyStore implements JobIdempotencyStoreInterf
             // re-read here: the producer may have outlasted the winner's
             // TTL, and an expired winner is swept, not adopted. Any other
             // failure rethrows below.
-            $winner = $this->fetch($key, ($this->clock)());
+            $winner = $this->fetchRecord($key, ($this->clock)());
             if ($winner !== null) {
-                return $winner;
+                return $winner['value'];
             }
 
             throw $insertError;
         }
     }
 
-    /** Live cached value for $key, or null when absent/expired. */
-    private function fetch(string $key, int $now): mixed
+    /**
+     * Live cached record for $key, or null when absent/expired.
+     * The record wrapper distinguishes a stored JSON null from a cache miss.
+     *
+     * @return null|array{value: mixed}
+     */
+    private function fetchRecord(string $key, int $now): ?array
     {
         $row = $this->connection->fetchOne(
             QueryBuilder::table($this->table)
@@ -143,7 +148,7 @@ final readonly class PdoJobIdempotencyStore implements JobIdempotencyStoreInterf
         }
 
         try {
-            return json_decode($this->str($row['value'] ?? null), true, 512, \JSON_THROW_ON_ERROR);
+            return ['value' => json_decode($this->str($row['value'] ?? null), true, 512, \JSON_THROW_ON_ERROR)];
         } catch (\JsonException $error) {
             throw new \RuntimeException('Stored idempotency value is not valid JSON.', 0, $error);
         }

@@ -56,6 +56,10 @@ final class CurlS3HttpTransport implements S3HttpTransport
             if ($body !== '') {
                 $options[CURLOPT_POSTFIELDS] = $body;
             }
+            // A HEAD Content-Length describes the object, not a response body.
+            if ($method === 'HEAD') {
+                $options[CURLOPT_NOBODY] = true;
+            }
             curl_setopt_array($handle, $options);
             $responseBody = curl_exec($handle);
             if ($responseBody === false) {

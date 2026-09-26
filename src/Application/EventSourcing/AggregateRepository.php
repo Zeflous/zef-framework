@@ -11,6 +11,7 @@ declare(strict_types=1);
 namespace Zef\Framework\EventSourcing;
 
 use Zef\Framework\Database\ConnectionInterface;
+use Zef\Framework\Database\DatabaseException;
 
 /**
  * Repository base for event-sourced aggregates: load (snapshot + replay),
@@ -20,7 +21,14 @@ use Zef\Framework\Database\ConnectionInterface;
  * store / outbox store are backed by that same connection (the PDO
  * adapters), the whole persist runs inside one transaction — events,
  * snapshots and outbox entries commit together or not at all. Without a
- * connection each store call is its own unit of work.
+ * connection each store call is its own unit of work; pending events are
+ * cleared after append succeeds, even if a later outbox/snapshot call fails.
+ * In that mode the caller must not wrap the stores in an ambient transaction.
+ *
+ * With a connection, persist must own the outermost transaction: ambient
+ * transactions are rejected before writing because releasing a savepoint
+ * does not confirm a commit. Pending events are cleared only after the
+ * transaction commits, so a rollback leaves the same aggregate retryable.
  *
  * Concurrency: {@see persist()} uses the aggregate's `pendingVersion()` as
  * the expected version; a concurrent writer surfaces as
@@ -66,15 +74,26 @@ class AggregateRepository
      * Commit every pending event of the aggregate.
      *
      * @return list<StoredEvent> committed events; empty when the aggregate had nothing pending
+     *
+     * @throws EventSourcingException when pending events would join an ambient transaction
+     * @throws DatabaseException when a database operation or commit fails
      */
     public function persist(AggregateRoot $aggregate): array
     {
-        $work = fn (): array => $this->doPersist($aggregate);
+        if (!$aggregate->hasPendingEvents()) {
+            return [];
+        }
         if ($this->connection instanceof ConnectionInterface) {
-            return $this->connection->transaction($work);
+            if ($this->connection->transactionLevel() > 0) {
+                throw new EventSourcingException('Aggregate persist must own the outermost transaction.');
+            }
+            $stored = $this->connection->transaction(fn (): array => $this->doPersist($aggregate));
+            $aggregate->markCommitted();
+
+            return $stored;
         }
 
-        return $work();
+        return $this->doPersist($aggregate);
     }
 
     /**
@@ -135,17 +154,16 @@ class AggregateRepository
     private function doPersist(AggregateRoot $aggregate): array
     {
         $pending = $aggregate->pendingEvents();
-        if ($pending === []) {
-            return [];
-        }
-
         $stored = $this->store->appendToStream(
             $aggregate::aggregateType(),
             $aggregate->aggregateId(),
             $aggregate->pendingVersion(),
             ...$pending,
         );
-        $aggregate->markCommitted();
+        if (!$this->connection instanceof ConnectionInterface) {
+            // No shared transaction: the append is already durable.
+            $aggregate->markCommitted();
+        }
 
         if ($this->outbox instanceof OutboxRecorder) {
             $this->outbox->record($stored);

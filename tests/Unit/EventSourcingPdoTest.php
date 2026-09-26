@@ -9,6 +9,7 @@ use Zef\Framework\Database\ConnectionConfig;
 use Zef\Framework\Database\PdoConnection;
 use Zef\Framework\Database\QueryException;
 use Zef\Framework\Database\SqlQuery;
+use Zef\Framework\Database\TransactionException;
 use Zef\Framework\EventSourcing\AggregateRepository;
 use Zef\Framework\EventSourcing\ConcurrencyException;
 use Zef\Framework\EventSourcing\EventSourcingException;
@@ -23,6 +24,7 @@ use Zef\Framework\EventSourcing\ProjectionInterface;
 use Zef\Framework\EventSourcing\Projector;
 use Zef\Framework\EventSourcing\Snapshot;
 use Zef\Framework\EventSourcing\SnapshotPolicy;
+use Zef\Framework\EventSourcing\SnapshotStoreInterface;
 use Zef\Framework\EventSourcing\StoredEvent;
 
 /**
@@ -372,6 +374,191 @@ final class EventSourcingPdoTest extends TestCase
         self::assertSame(1, $this->outbox->countPending(), 'no outbox rows from the rolled-back append');
         self::assertCount(1, $this->store->loadStream('test.account', 'acc-1'));
         self::assertSame(0, $this->conn->transactionLevel(), 'transaction closed after rollback');
+    }
+
+    public function testSnapshotFailurePreservesPendingEventsForRetry(): void
+    {
+        $snapshots = $this->createMock(SnapshotStoreInterface::class);
+        $snapshots->expects(self::exactly(2))->method('save')->willReturnCallback(function (Snapshot $snapshot): void {
+            $this->snapshots->save($snapshot);
+            if ($this->snapshots->load('test.account', 'acc-1')?->version === 2) {
+                throw new \RuntimeException('synthetic snapshot failure');
+            }
+        });
+        $repo = new AggregateRepository(
+            store: $this->store,
+            snapshots: $snapshots,
+            policy: SnapshotPolicy::every(1),
+            outbox: new OutboxRecorder($this->outbox, $this->conn),
+            connection: $this->conn,
+        );
+        $aggregate = EventSourcingTestAccount::open('acc-1', 10);
+        $repo->persist($aggregate);
+        $aggregate->deposit(5);
+        $pending = $aggregate->pendingEvents();
+
+        try {
+            $repo->persist($aggregate);
+            self::fail('snapshot failure must propagate');
+        } catch (\RuntimeException $e) {
+            self::assertSame('synthetic snapshot failure', $e->getMessage());
+        }
+        self::assertSame($pending, $aggregate->pendingEvents());
+        self::assertSame(1, $aggregate->pendingVersion());
+        self::assertSame(2, $aggregate->version());
+        self::assertSame(15, $aggregate->balance());
+        self::assertCount(1, $this->store->loadStream('test.account', 'acc-1'));
+        self::assertSame(1, $this->outbox->countPending());
+        self::assertSame(1, $this->snapshots->load('test.account', 'acc-1')?->version);
+        self::assertSame(0, $this->conn->transactionLevel());
+
+        $healthy = new AggregateRepository(
+            store: $this->store,
+            snapshots: $this->snapshots,
+            policy: SnapshotPolicy::every(1),
+            outbox: new OutboxRecorder($this->outbox, $this->conn),
+            connection: $this->conn,
+        );
+        self::assertCount(1, $healthy->persist($aggregate));
+        self::assertSame([], $aggregate->pendingEvents());
+        self::assertSame(2, $aggregate->pendingVersion());
+        self::assertCount(2, $this->store->loadStream('test.account', 'acc-1'));
+        self::assertSame(2, $this->outbox->countPending());
+        self::assertSame(2, $this->snapshots->load('test.account', 'acc-1')?->version);
+        self::assertSame([], $healthy->persist($aggregate));
+    }
+
+    public function testOutboxFailurePreservesPendingEventsForRetry(): void
+    {
+        $this->conn->execute(SqlQuery::raw(
+            'CREATE TRIGGER fail_outbox BEFORE INSERT ON zef_outbox '
+            . "WHEN (SELECT COUNT(*) FROM zef_outbox) = 1 BEGIN SELECT RAISE(ABORT, 'synthetic outbox failure'); END",
+        ));
+        $repo = new AggregateRepository(
+            store: $this->store,
+            outbox: new OutboxRecorder($this->outbox, $this->conn),
+            connection: $this->conn,
+        );
+        $aggregate = EventSourcingTestAccount::open('acc-1', 10);
+        $aggregate->deposit(5);
+        $pending = $aggregate->pendingEvents();
+
+        try {
+            $repo->persist($aggregate);
+            self::fail('outbox failure must propagate');
+        } catch (QueryException $e) {
+            self::assertStringContainsString('synthetic outbox failure', $e->getMessage());
+        }
+        self::assertSame($pending, $aggregate->pendingEvents());
+        self::assertSame(0, $aggregate->pendingVersion());
+        self::assertSame([], $this->store->loadStream('test.account', 'acc-1'));
+        self::assertSame(0, $this->outbox->countPending());
+        self::assertSame(0, $this->conn->transactionLevel());
+
+        $this->conn->execute(SqlQuery::raw('DROP TRIGGER fail_outbox'));
+        self::assertCount(2, $repo->persist($aggregate));
+        self::assertSame([], $aggregate->pendingEvents());
+        self::assertCount(2, $this->store->loadStream('test.account', 'acc-1'));
+        self::assertSame(2, $this->outbox->countPending());
+    }
+
+    public function testCommitFailurePreservesPendingEventsAndRollsBackForRetry(): void
+    {
+        // Deferred constraints fail at the real PDO commit, after all stores succeeded.
+        $this->conn->execute(SqlQuery::raw('PRAGMA foreign_keys = ON'));
+        $this->conn->execute(SqlQuery::raw('CREATE TABLE commit_parent (id INTEGER PRIMARY KEY)'));
+        $this->conn->execute(SqlQuery::raw(
+            'CREATE TABLE commit_child (parent_id INTEGER REFERENCES commit_parent(id) DEFERRABLE INITIALLY DEFERRED)',
+        ));
+        $this->conn->execute(SqlQuery::raw(
+            'CREATE TRIGGER fail_commit AFTER INSERT ON zef_snapshots BEGIN INSERT INTO commit_child VALUES (1); END',
+        ));
+        $repo = new AggregateRepository(
+            store: $this->store,
+            snapshots: $this->snapshots,
+            policy: SnapshotPolicy::every(1),
+            outbox: new OutboxRecorder($this->outbox, $this->conn),
+            connection: $this->conn,
+        );
+        $aggregate = EventSourcingTestAccount::open('acc-1', 10);
+        $pending = $aggregate->pendingEvents();
+
+        try {
+            $repo->persist($aggregate);
+            self::fail('commit failure must propagate');
+        } catch (TransactionException $e) {
+            self::assertStringContainsString('Failed to commit transaction', $e->getMessage());
+        }
+        self::assertSame($pending, $aggregate->pendingEvents());
+        self::assertSame(0, $aggregate->pendingVersion());
+        self::assertSame(0, $this->conn->transactionLevel());
+        self::assertSame([], $this->store->loadStream('test.account', 'acc-1'));
+        self::assertSame(0, $this->outbox->countPending());
+        self::assertNull($this->snapshots->load('test.account', 'acc-1'));
+        self::assertSame([], $this->conn->fetchAll(SqlQuery::raw('SELECT * FROM commit_child')));
+
+        $this->conn->execute(SqlQuery::raw('DROP TRIGGER fail_commit'));
+        self::assertCount(1, $repo->persist($aggregate));
+        self::assertSame([], $aggregate->pendingEvents());
+        self::assertSame(1, $aggregate->pendingVersion());
+        self::assertCount(1, $this->store->loadStream('test.account', 'acc-1'));
+        self::assertSame(1, $this->outbox->countPending());
+        self::assertSame(1, $this->snapshots->load('test.account', 'acc-1')?->version);
+        self::assertSame(0, $this->conn->transactionLevel());
+    }
+
+    public function testRepositoryRejectsAmbientTransactionBeforeWriting(): void
+    {
+        $repo = new AggregateRepository(store: $this->store, connection: $this->conn);
+        $aggregate = EventSourcingTestAccount::open('acc-1', 10);
+        $pending = $aggregate->pendingEvents();
+        $this->conn->beginTransaction();
+
+        try {
+            $repo->persist($aggregate);
+            self::fail('ambient transactions must be rejected');
+        } catch (EventSourcingException $e) {
+            self::assertStringContainsString('outermost transaction', $e->getMessage());
+        } finally {
+            self::assertSame(1, $this->conn->transactionLevel());
+            self::assertSame([], $this->store->loadStream('test.account', 'acc-1'));
+            $this->conn->rollBack();
+        }
+        self::assertSame($pending, $aggregate->pendingEvents());
+        self::assertCount(1, $repo->persist($aggregate));
+        self::assertSame([], $aggregate->pendingEvents());
+    }
+
+    public function testPersistWithoutPendingEventsDoesNotOpenATransaction(): void
+    {
+        $repo = new AggregateRepository(store: $this->store, connection: $this->conn);
+        $aggregate = EventSourcingTestAccount::createEmpty('acc-1');
+        $this->conn->beginTransaction();
+
+        try {
+            self::assertSame([], $repo->persist($aggregate));
+            self::assertSame(1, $this->conn->transactionLevel());
+        } finally {
+            $this->conn->rollBack();
+        }
+    }
+
+    public function testWithoutSharedTransactionAppendRemainsCommittedAfterSnapshotFailure(): void
+    {
+        $snapshots = $this->createMock(SnapshotStoreInterface::class);
+        $snapshots->method('save')->willThrowException(new \RuntimeException('synthetic snapshot failure'));
+        $repo = new AggregateRepository($this->store, $snapshots, SnapshotPolicy::every(1));
+        $aggregate = EventSourcingTestAccount::open('acc-1', 10);
+
+        try {
+            $repo->persist($aggregate);
+            self::fail('snapshot failure must propagate');
+        } catch (\RuntimeException $e) {
+            self::assertSame('synthetic snapshot failure', $e->getMessage());
+        }
+        self::assertSame([], $aggregate->pendingEvents());
+        self::assertCount(1, $this->store->loadStream('test.account', 'acc-1'));
+        self::assertSame([], $repo->persist($aggregate));
     }
 
     public function testSnapshotPolicyWritesThroughRepository(): void

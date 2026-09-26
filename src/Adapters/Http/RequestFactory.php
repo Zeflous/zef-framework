@@ -17,6 +17,7 @@ use Zef\Framework\Exception\PayloadTooLargeException;
 use Zef\Framework\Foundation\Env;
 use Zef\Framework\Foundation\EnvInterface;
 use Zef\Framework\Validation\HeaderValidator;
+use Zef\Framework\Validation\TrustedHostValidator;
 
 final class RequestFactory
 {
@@ -101,6 +102,79 @@ final class RequestFactory
             $protocol,
             self::requestTarget($server, $uri),
         );
+    }
+
+    /**
+     * Enforce application ingress policy for already constructed PSR-7 requests,
+     * including persistent workers that do not pass through fromServer().
+     *
+     * @param list<string> $trustedHosts
+     * @param list<string> $trustedProxies
+     */
+    public static function validateIngress(
+        ServerRequestInterface $request,
+        array $trustedHosts,
+        array $trustedProxies,
+        RequestBodyPolicy $bodyPolicy,
+    ): ServerRequestInterface {
+        if ($trustedHosts !== []) {
+            $validator = new TrustedHostValidator($trustedHosts);
+            $uriHost = $request->getUri()->getHost();
+            if ($uriHost === '') {
+                throw new \InvalidArgumentException('Missing request host.');
+            }
+            $validator->assert($uriHost);
+
+            // PSR-7 allows Host to differ from the URI. Honor the same trusted
+            // proxy boundary as fromServer(), without trusting forwarded data
+            // supplied by arbitrary clients.
+            $remote = $request->getServerParams()['REMOTE_ADDR'] ?? '';
+            $remote = is_string($remote) ? $remote : '';
+            $authority = TrustedProxyMatcher::matches($remote, $trustedProxies) && $request->hasHeader('X-Forwarded-Host')
+                ? self::firstForwardedValue($request->getHeaderLine('X-Forwarded-Host'))
+                : ($request->hasHeader('Host') ? $request->getHeaderLine('Host') : $uriHost);
+            [$host] = self::parseAuthority($authority);
+            if ($host === '') {
+                throw new \InvalidArgumentException('Missing request host.');
+            }
+            $validator->assert($host);
+        }
+
+        $length = $request->getHeaderLine('Content-Length');
+        if ($length !== '' && ctype_digit($length) && (int) $length > $bodyPolicy->maxBytes) {
+            throw new PayloadTooLargeException('Request body exceeds configured size limit.');
+        }
+        $body = $request->getBody();
+        $size = $body->getSize();
+        if ($size !== null && $size > $bodyPolicy->maxBytes) {
+            throw new PayloadTooLargeException('Request body exceeds configured size limit.');
+        }
+
+        // Read at most maxBytes + 1 before dispatch, even when size/length is
+        // unknown or understated. Lazy wrappers alone can be bypassed by a
+        // handler that ignores the body or casts a stream to a string.
+        $position = $body->isSeekable() ? $body->tell() : null;
+
+        try {
+            if ($position !== null) {
+                $body->rewind();
+            }
+            $contents = new LimitedInputStream($body, $bodyPolicy)->getContents();
+        } finally {
+            if ($position !== null) {
+                $body->seek($position);
+            }
+        }
+
+        // Non-seekable input must remain readable by downstream middleware.
+        if ($position === null) {
+            // PSR-7 withBody() preserves the request type; MessageInterface's
+            // inherited signature does not express that in the local shim.
+            /** @var ServerRequestInterface $request */
+            $request = $request->withBody(Stream::fromString($contents));
+        }
+
+        return $request;
     }
 
     public static function decodeJsonBody(ServerRequestInterface $request, bool $associative = true): mixed

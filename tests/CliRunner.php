@@ -722,7 +722,7 @@ final class CliRunner
         $this->throws(\LogicException::class, fn (): mixed => $scope->getInstance('req.unknown.26012'), 'v260: unknown request-scope id throws LogicException');
         $scope->close();
 
-        // 260-13: long URL paths are truncated, not fatal, in auth.
+        // 260-13: auth rejects URL paths that exceed the security resource bound.
         $authMw = new AuthenticationMiddleware(
             new StaticCredentialProvider(['tok']),
             new AllowScopeAuthorizationPolicy('api', true),
@@ -737,7 +737,7 @@ final class CliRunner
         };
         $longReq = new ServerRequest('GET', new Uri('http://a.com/' . str_repeat('a', 500)));
         $longReq = $longReq->withHeader('Authorization', 'Bearer tok');
-        $this->ok($authMw->process($longReq, $nextH)->getStatusCode() === 200, 'v260: long URL path does not break AuthenticationMiddleware');
+        $this->ok($authMw->process($longReq, $nextH)->getStatusCode() === 414, 'v260: long URL path is rejected before authorization');
 
         // 260-14: IPv6 origins are accepted by OriginPolicy.
         $this->ok(

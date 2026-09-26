@@ -23,6 +23,8 @@ use Psr\Log\LoggerInterface;
  * - `$scopeDepth` counts open managed scopes (raw connection transactions
  *   are invisible to it);
  * - `$hooks` accumulates FIFO across the whole nested scope tree;
+ * - each scope checkpoints the queue length and discards hooks added
+ *   within that scope (including descendants) if it fails;
  * - after the OUTERMOST managed commit, `$flushing` turns immediate-mode
  *   ON while the queue drains, so hooks enqueued by hooks run inline
  *   instead of re-queueing; on outermost failure the queue is discarded.
@@ -69,8 +71,9 @@ final class TransactionManager implements TransactionManagerInterface
      * @return T
      *
      * @throws \Throwable The inner $fn threw, OR the underlying commit
-     *         primitive failed. The hook queue is discarded and the
-     *         connection rolled back. (Hook failures do NOT propagate
+     *         primitive failed. Hooks added within this scope are
+     *         discarded; rollback is delegated to the connection.
+     *         (Hook failures do NOT propagate
      *         from here — they run only on a successful commit and throw
      *         out of {@see drainHooks()}.)
      */
@@ -78,15 +81,14 @@ final class TransactionManager implements TransactionManagerInterface
     public function withTransaction(callable $fn, ?IsolationLevel $isolation = null): mixed
     {
         $outermost = $this->scopeDepth === 0;
+        $hookCheckpoint = count($this->hooks);
         ++$this->scopeDepth;
 
         try {
             $result = $this->connection->transaction(static fn (ConnectionInterface $conn): mixed => $fn($conn), $isolation);
         } catch (\Throwable $e) {
             --$this->scopeDepth;
-            if ($outermost) {
-                $this->hooks = [];
-            }
+            $this->hooks = array_slice($this->hooks, 0, $hookCheckpoint);
 
             throw $e;
         }

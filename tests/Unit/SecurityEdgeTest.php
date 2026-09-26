@@ -16,6 +16,7 @@ use Psr\Http\Server\RequestHandlerInterface;
 use Zef\Framework\Http\Response;
 use Zef\Framework\Http\ServerRequest;
 use Zef\Framework\Http\Uri;
+use Zef\Framework\Router\Router;
 use Zef\Framework\Security\AuthenticationMiddleware;
 use Zef\Framework\Security\Distributed\AuthenticationResult;
 use Zef\Framework\Security\Distributed\AuthenticationStatus;
@@ -60,6 +61,70 @@ final class SecurityEdgeTest extends TestCase
         $response = $middleware->process($this->request('/read', 'GET'), $this->passingHandler());
         self::assertSame(200, $response->getStatusCode());
         self::assertSame('anonymous-001', $response->getHeaderLine('X-Principal'));
+    }
+
+    public function testAuthenticationRejectsPathsThatAliasAnAuthorizedResource(): void
+    {
+        $allowedPath = '/' . str_repeat('a', SecurityRequest::MAX_RESOURCE_BYTES - 1);
+        $deniedPath = substr($allowedPath, 0, -1) . 'b';
+        $router = new Router();
+        $router->add('GET', $allowedPath, 'allowed');
+        $router->add('GET', $deniedPath, 'denied');
+        $router->add('GET', $allowedPath . 'b', 'private');
+        $router->add('GET', $allowedPath . '/admin', 'admin');
+        $policy = new class($allowedPath) implements AuthorizationPolicyInterface {
+            /** @var list<string> */
+            public array $resources = [];
+
+            public function __construct(private readonly string $allowedPath) {}
+
+            #[\Override]
+            public function authorize(SecurityContext $context, SecurityRequest $request): AuthorizationResult
+            {
+                $this->resources[] = $request->resource;
+
+                return new AuthorizationResult(
+                    $request->resource === $this->allowedPath ? SecurityVerdict::ALLOW : SecurityVerdict::DENY,
+                    'path-policy',
+                );
+            }
+        };
+        $handler = new class($router) implements RequestHandlerInterface {
+            /** @var list<string> */
+            public array $routes = [];
+
+            public function __construct(private readonly Router $router) {}
+
+            #[\Override]
+            public function handle(ServerRequestInterface $request): ResponseInterface
+            {
+                $match = $this->router->match($request->getMethod(), $request->getUri()->getPath());
+                $this->routes[] = $match['handler'];
+
+                return new Response(200);
+            }
+        };
+        $middleware = new AuthenticationMiddleware(
+            $this->authenticatedProvider(),
+            $policy,
+            $this->acceptReplay(),
+            new DefaultSecurityBoundary(),
+        );
+        $headers = ['Authorization' => 'Bearer token-abcdef'];
+        self::assertSame(200, $middleware->process($this->request($allowedPath, 'GET', $headers), $handler)->getStatusCode());
+        self::assertSame(403, $middleware->process($this->request($deniedPath, 'GET', $headers), $handler)->getStatusCode());
+
+        foreach ([$allowedPath . 'b' => 'private', $allowedPath . '/admin' => 'admin'] as $path => $route) {
+            self::assertSame($route, $router->match('GET', $path)['handler'], 'the full path resolves to a distinct protected route');
+            $response = $middleware->process($this->request($path, 'GET', $headers), $handler);
+            self::assertSame(414, $response->getStatusCode());
+            $body = json_decode((string) $response->getBody(), true);
+            self::assertIsArray($body);
+            self::assertArrayHasKey('correlation_id', $body);
+        }
+
+        self::assertSame([$allowedPath, $deniedPath], $policy->resources, 'oversized paths must not reach authorization');
+        self::assertSame(['allowed'], $handler->routes, 'rejected requests must not reach routed handlers');
     }
 
     public function testAuthenticationAdmitsBearerCredentialsAndForwardsPrincipal(): void

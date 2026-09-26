@@ -10,6 +10,8 @@ declare(strict_types=1);
 
 namespace Zef\Framework\CQRS;
 
+use Zef\Framework\Database\ConnectionInterface;
+use Zef\Framework\Database\IsolationLevel;
 use Zef\Framework\Database\TransactionManagerInterface;
 use Zef\Framework\Event\EventBusInterface;
 
@@ -51,8 +53,51 @@ final class CommandBus implements CommandBusInterface
     #[\Override]
     public function dispatch(object $command, ?CqrsContext $context = null): mixed
     {
+        return $this->dispatchCommand($command, $context);
+    }
+
+    /**
+     * Keep the complete transaction inside the idempotency producer.
+     *
+     * @param null|\Closure(ConnectionInterface): void $beforeCommit
+     *
+     * @internal used by TransactionalCommandBus
+     */
+    public function dispatchTransactionally(
+        object $command,
+        ?CqrsContext $context,
+        TransactionManagerInterface $transactions,
+        ?\Closure $beforeCommit = null,
+        ?IsolationLevel $isolation = null,
+    ): mixed {
+        return $this->dispatchCommand($command, $context, $transactions, $beforeCommit, $isolation);
+    }
+
+    #[\Override]
+    public function freeze(): void
+    {
+        $this->frozen = true;
+    }
+
+    #[\Override]
+    public function isFrozen(): bool
+    {
+        return $this->frozen;
+    }
+
+    /** @param null|\Closure(ConnectionInterface): void $beforeCommit */
+    private function dispatchCommand(
+        object $command,
+        ?CqrsContext $context,
+        ?TransactionManagerInterface $transactions = null,
+        ?\Closure $beforeCommit = null,
+        ?IsolationLevel $isolation = null,
+    ): mixed {
         $context ??= CqrsContext::create();
         $pendingEvents = [];
+        $postCommitFailure = null;
+        $idempotent = $context->idempotencyKey !== null && $this->idempotencyStore instanceof IdempotencyStoreInterface;
+        $eventTransactions = $transactions ?? $this->transactions;
         $execute = function () use ($command, $context, &$pendingEvents): mixed {
             $handler = $this->resolveHandler($command, 'command');
             $next = $this->buildChain($handler);
@@ -71,19 +116,59 @@ final class CommandBus implements CommandBusInterface
 
             return $result;
         };
+        $produce = function () use ($execute, $transactions, $eventTransactions, $beforeCommit, $isolation, $idempotent, &$postCommitFailure): mixed {
+            // A savepoint is not a durable commit. The remember-only store
+            // port cannot reserve a key until an enclosing scope completes.
+            if ($idempotent && ($eventTransactions?->inTransaction() ?? false)) {
+                throw new \LogicException('Idempotent commands must own the outermost managed transaction.');
+            }
+            if (!$transactions instanceof TransactionManagerInterface) {
+                return $execute();
+            }
+
+            $committed = false;
+            $result = null;
+
+            try {
+                return $transactions->withTransaction(function (ConnectionInterface $connection) use ($transactions, $execute, $beforeCommit, $idempotent, &$committed, &$result): mixed {
+                    if ($idempotent && $connection->transactionLevel() !== 1) {
+                        throw new \LogicException('Idempotent commands must own the outermost connection transaction.');
+                    }
+                    // First hook distinguishes a commit failure from a later
+                    // hook failure: committed writes must remain replayable.
+                    $transactions->afterCommit(static function () use (&$committed): void {
+                        $committed = true;
+                    });
+                    $result = $execute();
+                    $beforeCommit?->__invoke($connection);
+
+                    return $result;
+                }, $isolation);
+            } catch (\Throwable $error) {
+                if (!$committed) {
+                    throw $error;
+                }
+                $postCommitFailure = $error;
+
+                return $result;
+            }
+        };
         $result = $this->guardDispatchDepth(
-            function () use ($command, $context, $execute): mixed {
+            function () use ($command, $context, $produce): mixed {
                 if ($context->idempotencyKey !== null && $this->idempotencyStore instanceof IdempotencyStoreInterface) {
                     return $this->idempotencyStore->remember(
                         hash('sha256', $command::class . '|' . $context->idempotencyKey),
-                        $execute,
+                        $produce,
                         $this->idempotencyTtlSeconds,
                     );
                 }
 
-                return $execute();
+                return $produce();
             },
         );
+        if ($postCommitFailure instanceof \Throwable) {
+            throw $postCommitFailure;
+        }
         // Fan out only for THIS invocation: $pendingEvents stays empty on
         // an idempotent replay, so events are never re-fired. The first
         // caller observes EventDispatchException; all listeners already
@@ -99,8 +184,8 @@ final class CommandBus implements CommandBusInterface
             $fanOut = function () use ($event, $context): void {
                 $this->eventBus?->dispatchWithContext($event, $context->toEventContext());
             };
-            if ($this->transactions instanceof TransactionManagerInterface) {
-                $this->transactions->afterCommit($fanOut);
+            if ($eventTransactions instanceof TransactionManagerInterface) {
+                $eventTransactions->afterCommit($fanOut);
 
                 continue;
             }
@@ -108,17 +193,5 @@ final class CommandBus implements CommandBusInterface
         }
 
         return $result;
-    }
-
-    #[\Override]
-    public function freeze(): void
-    {
-        $this->frozen = true;
-    }
-
-    #[\Override]
-    public function isFrozen(): bool
-    {
-        return $this->frozen;
     }
 }

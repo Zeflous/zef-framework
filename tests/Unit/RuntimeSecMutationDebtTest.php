@@ -13,7 +13,7 @@ declare(strict_types=1);
  *   AuthenticationMiddleware
  *     :45  Dec/Inc (epoch-ms multiplier) — testAuthResolveReceivesWallClockMilliseconds
  *     :66  Dec/Inc (epoch-ms multiplier) — testAuthAdmitReceivesWallClockMilliseconds
- *     :109 IncrementInteger (substr offset) — testAuthTruncatesResourcePathFromTheFirstByte
+ *     Resource byte limit — testAuthPreservesResourcePathAtTheByteLimit
  *   RateLimitMiddleware
  *     :134/:138/:141 Concat + OperandRemoval (identity prefixes)
  *                                        — testRateLimitIdentityKeysAreStablePrefixContracts
@@ -37,9 +37,6 @@ declare(strict_types=1);
  *     rejects newline-containing header values before the regex can run, so
  *     no constructible request reaches it with a value where the trailing
  *     `$` anchor matters.
- *   - AuthenticationMiddleware.php:108 GreaterThan — truncating a path of
- *     exactly 128 chars to 128 chars is the identity operation, so `>` and
- *     `>=` agree on every input.
  *   - RateLimitMiddleware.php:74 UnwrapArrayFilter / UnwrapArrayValues —
  *     TrustedProxyMatcher casts every entry to string and foreach/in_array
  *     ignore keys, so non-string entries and preserved keys are inert.
@@ -171,19 +168,18 @@ final class RuntimeSecMutationDebtTest extends TestCase
         self::assertLessThanOrEqual($nowMs + 2500, $boundary->timestamps[0], 'epoch-ms must track the real clock');
     }
 
-    /** Kills AuthenticationMiddleware.php:109 IncrementInteger: the resource is truncated from byte zero. */
-    public function testAuthTruncatesResourcePathFromTheFirstByte(): void
+    public function testAuthPreservesResourcePathAtTheByteLimit(): void
     {
         $this->loadShadows();
         $boundary = new RuntimeSecRecordingBoundary();
         $middleware = $this->authMiddleware(new RuntimeSecRecordingAuthProvider(), $boundary);
 
-        $path = '/' . str_repeat('x', 129);
+        $path = '/' . str_repeat('x', SecurityRequest::MAX_RESOURCE_BYTES - 1);
         $middleware->process($this->request($path, 'GET'), $this->handler());
 
         $captured = $boundary->lastRequest;
         self::assertInstanceOf(SecurityRequest::class, $captured);
-        self::assertSame(substr($path, 0, 128), $captured->resource, 'the 128-byte resource prefix must start at offset 0');
+        self::assertSame($path, $captured->resource, 'the complete resource must reach authorization');
     }
 
     // ------------------------------------------------------------------

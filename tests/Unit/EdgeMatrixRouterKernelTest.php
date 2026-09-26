@@ -687,6 +687,10 @@ final class EdgeMatrixRouterKernelTest extends TestCase
         self::assertSame('', (string) $response->getBody(), 'A HEAD response must not carry a body even when the handler produced one');
     }
 
+    /**
+     * Verify handler exceptions are rethrown and counted as HTTP errors and
+     * failed request lifecycles, without recording a completed request.
+     */
     public function testHandlerExceptionIsRecordedThenRethrown(): void
     {
         $app = $this->booted(handlers: [
@@ -715,6 +719,62 @@ final class EdgeMatrixRouterKernelTest extends TestCase
         self::assertSame(0, $this->meterCount($snapshot, 'zef.lifecycle.events.total', ['event.name' => 'request.completed']), 'A failed request never reaches the completed event');
     }
 
+    /**
+     * Zone ad-kernel-dispatch telemetry contract (issue #90 round 3): the handler
+     * span must carry the exception fingerprint — status ERROR with the exception
+     * class as description, plus an "exception" event whose attributes carry
+     * exception.type. Kills the Dispatcher.php:93 MethodCallRemoval and the :94
+     * ArrayItemRemoval('exception.type') mutants.
+     */
+    public function testHandlerExceptionMarksHandlerSpanErrorAndExceptionEvent(): void
+    {
+        putenv('ZEF_OTEL_ENABLED=true');
+
+        try {
+            $app = $this->booted(handlers: [
+                'edge.svc' => static fn (): ResponseInterface => throw new \RuntimeException('handler exploded'),
+            ]);
+
+            try {
+                $app->handle($this->request());
+                self::fail('A throwing handler must bubble up after being recorded.');
+            } catch (\RuntimeException $e) {
+                self::assertSame('handler exploded', $e->getMessage());
+            }
+
+            $handlerSpans = [];
+            foreach ($this->exporterSpans($app) as $span) {
+                if ($span['name'] === 'zef.handler.execute') {
+                    $handlerSpans[] = $span;
+                }
+            }
+            self::assertNotSame([], $handlerSpans, 'The handler span must be exported for a failing handler');
+
+            $span = $handlerSpans[0];
+            self::assertSame('ERROR', $span['status'], 'A rethrown handler exception must mark the handler span ERROR');
+            self::assertSame(\RuntimeException::class, $span['statusDescription'], 'The span status description must carry the exception class');
+
+            $exceptionEvents = [];
+            foreach ($span['events'] as $event) {
+                if (($event['name'] ?? null) === 'exception') {
+                    $exceptionEvents[] = $event;
+                }
+            }
+            self::assertNotSame([], $exceptionEvents, 'The handler span must record an exception event for a rethrown exception');
+            self::assertSame(
+                \RuntimeException::class,
+                $exceptionEvents[0]['attributes']['exception.type'] ?? null,
+                'The exception event attributes must carry exception.type pointing at the exception class',
+            );
+        } finally {
+            putenv('ZEF_OTEL_ENABLED');
+        }
+    }
+
+    /**
+     * Verify successful requests record the method/status counter, started and
+     * completed lifecycle counters, and a request duration histogram observation.
+     */
     public function testSuccessfulRequestRecordsExactMeterSeries(): void
     {
         $app = $this->booted();
@@ -988,7 +1048,7 @@ final class EdgeMatrixRouterKernelTest extends TestCase
      * Flush pending spans through the processor and read them from the
      * in-memory exporter (mirrors Infection-safe instrumentation).
      *
-     * @return list<array{name: string, status: string, attributes: array<string, mixed>}>
+     * @return list<array{name: string, status: string, statusDescription: null|string, attributes: array<string, mixed>, events: list<array{name: string, time_unix_nano: int, attributes: array<string, mixed>}>}>
      */
     private function exporterSpans(Application $app): array
     {
@@ -1005,7 +1065,13 @@ final class EdgeMatrixRouterKernelTest extends TestCase
 
         $result = [];
         foreach ($exporter->spans() as $span) {
-            $result[] = ['name' => $span->name, 'status' => $span->status, 'attributes' => $span->attributes];
+            $result[] = [
+                'name' => $span->name,
+                'status' => $span->status,
+                'statusDescription' => $span->statusDescription,
+                'attributes' => $span->attributes,
+                'events' => $span->events,
+            ];
         }
 
         return $result;

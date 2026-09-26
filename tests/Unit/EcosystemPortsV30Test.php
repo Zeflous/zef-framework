@@ -1222,6 +1222,32 @@ final class EcosystemPortsV30Test extends TestCase
         self::assertSame(1, $calls);
     }
 
+    public function testPdoIdempotencyCachesNullUntilExpiry(): void
+    {
+        $now = 1000;
+        $store = new PdoJobIdempotencyStore($this->sqliteConn(), 'zef_idem_null', static function () use (&$now): int {
+            return $now;
+        });
+        $store->createSchema();
+        $calls = 0;
+        $produce = static function () use (&$calls): null {
+            ++$calls;
+
+            return null;
+        };
+
+        self::assertNull($store->remember('null-key', $produce, 100));
+        $now = 1099;
+        self::assertNull($store->remember('null-key', $produce, 100));
+        self::assertSame(1, $calls);
+
+        $now = 1100;
+        self::assertNull($store->remember('null-key', $produce, 100));
+        self::assertSame(2, $calls);
+        self::assertNull($store->remember('null-key', $produce, 100));
+        self::assertSame(2, $calls);
+    }
+
     public function testPdoIdempotencyExpiryRerunsProducerAndSweeps(): void
     {
         $now = 1000;
@@ -1278,6 +1304,28 @@ final class EcosystemPortsV30Test extends TestCase
             return 'loser';
         };
         self::assertSame('winner', $store->remember('idem-key-4', $produce, 600));
+    }
+
+    public function testPdoIdempotencyLostRaceReturnsNullWinnerValue(): void
+    {
+        $connection = $this->sqliteConn();
+        $store = new PdoJobIdempotencyStore($connection, 'zef_idem_null_race', static fn (): int => 1000);
+        $store->createSchema();
+        $calls = 0;
+        $produce = static function () use ($connection, &$calls): string {
+            ++$calls;
+            // Simulate another worker committing null before our INSERT.
+            $connection->execute(new SqlQuery(
+                'INSERT INTO "zef_idem_null_race" ("idem_key", "value", "expires_at") VALUES (?, ?, ?)',
+                ['null-winner-key', 'null', 2000],
+            ));
+
+            return 'loser';
+        };
+
+        self::assertNull($store->remember('null-winner-key', $produce, 600));
+        self::assertNull($store->remember('null-winner-key', $produce, 600));
+        self::assertSame(1, $calls);
     }
 
     public function testPdoIdempotencyExpiresAtIsComputedAtInsertTime(): void

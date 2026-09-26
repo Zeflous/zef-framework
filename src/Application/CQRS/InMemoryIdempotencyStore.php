@@ -16,6 +16,9 @@ final class InMemoryIdempotencyStore implements IdempotencyStoreInterface
 {
     use IdempotencyTrait;
 
+    /** @var array<string, true> */
+    private array $inFlight = [];
+
     public function __construct(private readonly int $maxEntries = 10000)
     {
         if ($maxEntries < 1) {
@@ -32,6 +35,17 @@ final class InMemoryIdempotencyStore implements IdempotencyStoreInterface
             throw new \InvalidArgumentException('Invalid idempotency key.');
         }
 
-        return $this->idempotencyRemember($key, $producer, $ttlSeconds);
+        // Keep the key reserved while its producer commits and runs hooks.
+        // Re-entry (including another Fiber) must not execute it twice.
+        if (isset($this->inFlight[$key])) {
+            throw new \LogicException('An idempotent command with this key is already in progress.');
+        }
+        $this->inFlight[$key] = true;
+
+        try {
+            return $this->idempotencyRemember($key, $producer, $ttlSeconds);
+        } finally {
+            unset($this->inFlight[$key]);
+        }
     }
 }

@@ -28,8 +28,11 @@ caller
 
 The hook queue accumulates across the whole nested managed-scope tree
 (inner scopes become savepoints of the outermost scope). Hooks are
-**discarded on rollback** — a failed command never emits its events.
-Hooks execute only after the **outermost** commit succeeds.
+**discarded on rollback** for the failed scope and all its descendants.
+If the outer scope catches an inner failure and continues, hooks queued
+before the failed scope remain pending, and later hooks can still be
+registered. Surviving hooks execute in FIFO order only after the
+**outermost** commit succeeds. An outermost rollback discards every hook.
 
 ---
 
@@ -41,7 +44,7 @@ Hooks execute only after the **outermost** commit succeeds.
 ### Phase (1) — handler body
 
 A throw here is caught by `withTransaction()`; the connection rolls
-back via the underlying primitive, the hook queue is discarded, and
+back via the underlying primitive, the failed scope's hooks are discarded, and
 the throwable is re-thrown to the caller. **Nothing has been
 committed**, so no afterCommit hook has run. This is the normal
 failure story; callers should treat it as "the command never
@@ -50,9 +53,11 @@ happened".
 ### Phase (2) — UnitOfWork flush
 
 A throw here rolls back the transaction (same path as phase 1). The
-hook queue is discarded. Hooks do **not** run. A caller retrying the
-command must re-record fresh operations — the UnitOfWork queue is
-cleared before flush starts by design (see `UnitOfWork::flush()`).
+failed scope's hooks are discarded. Hooks do **not** run for that scope.
+With `UnitOfWork::flush()`, a caller retrying the command must re-record
+fresh operations because the queue is cleared before execution. The
+opt-in `flushRetrying()` method retains its operation snapshot across
+attempts and clears the queue only on success (see "UoW retry strategy").
 
 ### Phase (3) — atomic commit
 
@@ -131,8 +136,9 @@ transaction orchestration surface:
 
 ```
 @throws \Throwable  The inner $fn threw, OR the underlying commit
-                   primitive failed. The hook queue is discarded
-                   and the connection rolled back.
+                   primitive failed. Hooks registered since this
+                   scope began are discarded. Rollback mechanics
+                   are delegated to the connection primitive.
 ```
 
 Hooks do **not** throw out of `withTransaction()` — they run only
@@ -197,6 +203,10 @@ phase** (phase 2 above) is wrapped in a retry loop:
 - The retryable class list is configurable; defaults follow the
   transient-failure taxonomy (deadlock, lock-wait-timeout,
   serialization-failure).
+- `UnitOfWork::flushRetrying()` replays the same operation snapshot in
+  FIFO order on each attempt. Its queue is cleared only on success;
+  an escaping failure leaves it populated. This differs from `flush()`,
+  which clears its queue before executing any operations.
 - The policy is **off by default** (`null` = current v2.22.0
   behaviour preserved).
 
@@ -219,3 +229,33 @@ behavioural coverage.
 - `docs/CHANGELOG-v2.22.0.md` — the original v2.22.0 release notes.
 - `docs/CHANGELOG-v2.22.1.md` — the v2.22.1 hardening pass (this
   issue).
+
+## CQRS idempotency and transaction ownership
+
+With the built-in `CommandBus`, `TransactionalCommandBus` places the handler,
+UoW flush, and commit inside the idempotency store's `remember()` producer.
+A handler, flush, or commit failure does not publish a result. Retrying the
+same key runs the command again. A successful replay skips the transaction,
+handler, flush, and event fan-out. There is no separate lookup/write or
+rollback-time invalidation. The in-memory store reserves the key throughout
+`remember()` and rejects same-key re-entry (including another Fiber) with
+`LogicException`; its reservation is released on both success and failure.
+Custom stores must likewise serialize or reject concurrent producers for a key.
+
+Command events run after commit and after the result is cached, even when only
+the decorator receives the transaction manager. A listener or after-commit
+hook failure still propagates, but the committed result stays cached so a
+retry cannot duplicate the database write. As with ordinary idempotency,
+cache backend write failures and process crashes after the database commit
+require a durable, transaction-coordinated store for exactly-once guarantees.
+
+An uncached command with an idempotency key and store must own the outermost
+transaction. Dispatching it inside an existing managed or raw connection
+transaction throws `LogicException` before its handler runs: releasing a
+savepoint does not confirm the outer commit, and the current remember-only
+store port cannot reserve a result until that enclosing scope completes.
+Nested commands without idempotency and replays of already committed keys
+remain supported. A standalone `CommandBus` wired with a transaction manager
+also rejects uncached keyed dispatches inside an existing managed scope.
+Custom `CommandBusInterface` implementations wrapped by the decorator retain
+responsibility for their own idempotency policy.
