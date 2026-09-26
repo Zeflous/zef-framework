@@ -83,12 +83,16 @@ final readonly class UnitOfWorkRetryPolicy
      * @param int                  $jitterMs              Randomised ± jitter
      *        added to each delay to avoid thundering-herd. Must be ≥ 0.
      * @param list<string>         $retryableClassNames   FQCNs matched with
-     *        `instanceof`. A throwable is retryable if it is an instance of
-     *        any listed class. Default: PDOException (parent for the
-     *        framework's PDO adapter).
+     *        `instanceof`. A throwable is retryable if it — or any throwable
+     *        in its `getPrevious()` chain (the adapter wraps driver errors:
+     *        PdoConnection rethrows PDOException as QueryException) — is an
+     *        instance of any listed class. Default: PDOException plus the
+     *        framework's own QueryException, so the default policy actually
+     *        retries what the shipped adapter throws (ZEF-DEEP-07).
      * @param list<string>         $retryableSqlStates    SQLSTATE codes
      *        matched against PDOException::getCode() and the
-     *        PDOException::errorInfo[0] slot. Empty list = match on
+     *        PDOException::errorInfo[0] slot, unwrapping the previous chain
+     *        the same way. Empty list = match on
      *        class names only.
      */
     public function __construct(
@@ -97,7 +101,7 @@ final readonly class UnitOfWorkRetryPolicy
         public int $maxDelayMs = 30_000,
         public float $multiplier = 2.0,
         public int $jitterMs = 0,
-        public array $retryableClassNames = ['PDOException'],
+        public array $retryableClassNames = ['PDOException', QueryException::class],
         public array $retryableSqlStates = [
             '40001',
             '40P01',
@@ -153,23 +157,48 @@ final readonly class UnitOfWorkRetryPolicy
 
     /**
      * True when the throwable is retryable per the policy:
-     *   - matches one of `$retryableClassNames` via instanceof, AND
-     *   - if SQLSTATE filtering is configured, the throwable's SQLSTATE
-     *     (from getCode() or PDO errorInfo) is in `$retryableSqlStates`.
+     *   - it, or any throwable in its getPrevious() chain, matches one of
+     *     `$retryableClassNames` via instanceof, AND
+     *   - if SQLSTATE filtering is configured, that same chain carries a
+     *     SQLSTATE (from getCode() or PDO errorInfo) in `$retryableSqlStates`.
+     *
+     * The chain unwrap is what makes the DEFAULT policy work against the
+     * framework's own adapter: PdoConnection catches the driver's
+     * PDOException and rethrows it as QueryException (a RuntimeException,
+     * NOT a PDOException) with the original as $previous — a deadlock or
+     * lock-wait surfacing through the adapter must still retry (ZEF-DEEP-07).
      *
      * When `$retryableSqlStates` is empty, only the class-name match
      * applies.
      */
     public function isRetryable(\Throwable $e): bool
     {
-        if (!$this->matchesClassName($e)) {
+        $chain = $this->chain($e);
+        if (!array_any($chain, fn (\Throwable $candidate): bool => $this->matchesClassName($candidate))) {
             return false;
         }
         if ($this->retryableSqlStates === []) {
             return true;
         }
 
-        return $this->matchesSqlState($e);
+        return array_any($chain, fn (\Throwable $candidate): bool => $this->matchesSqlState($candidate));
+    }
+
+    /**
+     * The throwable and its previous-cause chain, cycle-guarded.
+     *
+     * @return list<\Throwable>
+     */
+    private function chain(\Throwable $e): array
+    {
+        $chain = [];
+        $seen = [];
+        for ($current = $e; $current instanceof \Throwable && !isset($seen[spl_object_id($current)]); $current = $current->getPrevious()) {
+            $seen[spl_object_id($current)] = true;
+            $chain[] = $current;
+        }
+
+        return $chain;
     }
 
     private function matchesClassName(\Throwable $e): bool
