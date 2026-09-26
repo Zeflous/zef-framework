@@ -196,7 +196,10 @@ final class RuntimeSecMutationDebtTest extends TestCase
         $this->loadShadows();
         $limiter = new RuntimeSecRecordingLimiter();
         $rule = new RateLimitRule('t', 60, 60);
-        $middleware = new RateLimitMiddleware(new TieredRateLimiter($limiter, []), [$rule]);
+        // Opt-in header trust keeps all three identity-source prefixes in one
+        // contract test; the default (header ignored — audit C-2) is covered
+        // by IdentityRateLimitingTest.
+        $middleware = new RateLimitMiddleware(new TieredRateLimiter($limiter, []), [$rule], [], false, 'X-API-Key', true);
 
         $byAttribute = $middleware->process(
             $this->request('/limited')->withAttribute('zef.auth.identity', 'user-1'),

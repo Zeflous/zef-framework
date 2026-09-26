@@ -186,7 +186,7 @@ final class RateLimitMiddlewareV25Test extends TestCase
         self::assertSame(
             200,
             $middleware->process($this->apiKey($this->request('/api'), 'other-key'), $this->handler())->getStatusCode(),
-            'api-key identity is a different bucket',
+            'v2.31.0: the unverified header is ignored by default — the request lands in the fresh IP bucket',
         );
     }
 
@@ -208,16 +208,27 @@ final class RateLimitMiddlewareV25Test extends TestCase
         self::assertSame(
             200,
             $middleware->process($this->apiKey($this->request('/api'), 'secret-1'), $this->handler())->getStatusCode(),
-            'attribute and api-key sources are prefixed differently — same raw value, different buckets',
+            'v2.31.0: the header is ignored by default — this request uses the IP bucket, never the attributed one',
         );
     }
 
-    public function testApiKeyHeaderBucketsByValue(): void
+    public function testApiKeyHeaderBucketsByValueWhenOptedIn(): void
     {
-        $middleware = $this->middleware([new RateLimitRule('api', 1, 10)]);
+        $middleware = $this->middleware([new RateLimitRule('api', 1, 10)], trustClientIdentityHeader: true);
         self::assertSame(200, $middleware->process($this->apiKey($this->request('/api'), 'k1'), $this->handler())->getStatusCode());
         self::assertSame(429, $middleware->process($this->apiKey($this->request('/api'), 'k1'), $this->handler())->getStatusCode());
         self::assertSame(200, $middleware->process($this->apiKey($this->request('/api'), 'k2'), $this->handler())->getStatusCode());
+    }
+
+    public function testApiKeyHeaderIsIgnoredByDefault(): void
+    {
+        $middleware = $this->middleware([new RateLimitRule('api', 1, 10)]);
+        self::assertSame(200, $middleware->process($this->apiKey($this->request('/api'), 'k1'), $this->handler())->getStatusCode());
+        self::assertSame(
+            429,
+            $middleware->process($this->apiKey($this->request('/api'), 'k2'), $this->handler())->getStatusCode(),
+            'audit C-2: rotating unverified headers must NOT mint fresh buckets — same IP, same bucket',
+        );
     }
 
     public function testFallsBackToClientIp(): void
@@ -360,11 +371,15 @@ final class RateLimitMiddlewareV25Test extends TestCase
     /**
      * @param list<RateLimitRule> $rules
      */
-    private function middleware(array $rules): RateLimitMiddleware
+    private function middleware(array $rules, bool $trustClientIdentityHeader = false): RateLimitMiddleware
     {
         return new RateLimitMiddleware(
             new TieredRateLimiter(new SlidingWindowRateLimiter($this->fakeClock())),
             $rules,
+            [],
+            false,
+            'X-API-Key',
+            $trustClientIdentityHeader,
         );
     }
 
