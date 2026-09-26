@@ -1,11 +1,11 @@
 Total: 171
 
-Killed by Test Framework: 118
+Killed by Test Framework: 170
 Killed by Static Analysis: 0
-Errored: 1
+Errored: 0
 Syntax Errors: 0
-Escaped: 42
+Escaped: 1
 Timed Out: 0
 Skipped: 0
 Ignored: 0
-Not Covered: 10
+Not Covered: 0

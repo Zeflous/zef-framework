@@ -17,3 +17,5 @@ declare(strict_types=1);
 require __DIR__ . '/../vendor/autoload.php';
 
 require_once __DIR__ . '/Unit/runtime-sec-shadow-functions.php';
+
+require_once __DIR__ . '/Unit/kernel-mid-shadow-functions.php';
