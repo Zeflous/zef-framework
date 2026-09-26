@@ -1,11 +1,8 @@
-name: Auto Update and Merge PRs (FIFO Order)
-
+name: "Auto Update and Merge PRs (FIFO Order)"
 on:
   schedule:
-    # Tetap berjalan berkala setiap 30 menit sebagai jaring pengaman
     - cron: '*/30 * * * *'
   pull_request:
-    # Otomatis jalan begitu ada PR yang berhasil di-merge
     types: [closed]
   workflow_dispatch:
 
