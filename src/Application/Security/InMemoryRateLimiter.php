@@ -46,7 +46,7 @@ final class InMemoryRateLimiter implements RateLimiterInterface
             }
         }
         if (!isset($this->buckets[$key]) && count($this->buckets) >= $this->maxKeys) {
-            throw new \RuntimeException('Rate limiter capacity exhausted.');
+            throw new RateLimiterCapacityException('Rate limiter capacity exhausted.');
         }
         $bucket = $this->buckets[$key] ?? ['count' => 0, 'reset' => $now + $windowSeconds];
         if ($bucket['reset'] <= $now) {
