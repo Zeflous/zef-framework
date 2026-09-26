@@ -36,6 +36,9 @@ namespace Zef\Framework\Database;
  *   being drained, so re-queueing would be ambiguous);
  * - When the outermost scope fails, every hook registered within it is
  *   discarded — never replayed on a retry;
+ * - When a nested scope fails, its hooks (including hooks from its
+ *   descendants) are discarded; previously queued outer and sibling
+ *   hooks remain pending until the outermost commit;
  * - A hook that throws propagates AFTER the commit has been applied:
  *   the data is committed, the failure is real, the caller observes it
  *   (mirrors the CQRS event fan-out contract);
@@ -51,8 +54,8 @@ interface TransactionManagerInterface
      * transaction; the isolation level is honoured only by the outermost
      * call (the connection primitive's own semantics).
      *
-     * After the OUTERMOST scope commits, every hook queued via
-     * {@see afterCommit()} within the whole scope tree runs in FIFO order.
+     * After the OUTERMOST scope commits, surviving hooks queued via
+     * {@see afterCommit()} within the whole scope tree run in FIFO order.
      *
      * @template T
      *

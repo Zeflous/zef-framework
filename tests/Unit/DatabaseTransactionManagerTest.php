@@ -199,22 +199,82 @@ final class DatabaseTransactionManagerTest extends TestCase
     {
         $order = [];
         $this->tx->withTransaction(function (ConnectionInterface $conn) use (&$order): void {
+            $conn->execute(SqlQuery::raw("INSERT INTO t (name) VALUES ('outer')"));
             $this->tx->afterCommit(function () use (&$order): void {
                 $order[] = 'outer-hook';
             });
+            $this->tx->withTransaction(function (ConnectionInterface $inner) use (&$order): void {
+                $this->tx->afterCommit(function () use (&$order): void {
+                    $order[] = 'successful-sibling';
+                });
+            });
 
             try {
-                // The never-closure guarantees the inner scope always
-                // throws; the interesting assertion is that the outer
-                // hook survives the savepoint rollback below.
-                $this->tx->withTransaction(function (ConnectionInterface $inner): never {
+                $this->tx->withTransaction(function (ConnectionInterface $inner) use (&$order): never {
+                    $inner->execute(SqlQuery::raw("INSERT INTO t (name) VALUES ('rolled-back-inner')"));
+                    $this->tx->afterCommit(function () use (&$order): void {
+                        $order[] = 'rolled-back-inner';
+                    });
+
                     throw new \RuntimeException('inner fails');
                 });
-            } catch (\RuntimeException) {
+            } catch (\RuntimeException $e) {
+                self::assertSame('inner fails', $e->getMessage());
             }
+            self::assertSame(1, $this->tx->level());
+            self::assertSame(1, $conn->transactionLevel());
+            self::assertTrue($this->tx->inTransaction());
+            self::assertSame([], $order, 'surviving hooks must wait for the outer commit');
+            $this->tx->afterCommit(function () use (&$order): void {
+                $order[] = 'outer-after-rollback';
+            });
         });
 
-        self::assertSame(['outer-hook'], $order, 'inner failure must not discard outer hooks');
+        self::assertSame(['outer-hook', 'successful-sibling', 'outer-after-rollback'], $order);
+        self::assertSame(['outer'], $this->names());
+        self::assertSame(0, $this->tx->level());
+        self::assertSame(0, $this->conn->transactionLevel());
+        self::assertFalse($this->tx->inTransaction());
+
+        $this->tx->withTransaction(static fn (ConnectionInterface $conn): null => null);
+        self::assertSame(['outer-hook', 'successful-sibling', 'outer-after-rollback'], $order, 'hooks must not leak into a later transaction');
+    }
+
+    public function testNestedRollbackDiscardsHooksFromSuccessfulDescendantScopes(): void
+    {
+        $order = [];
+        $this->tx->withTransaction(function (ConnectionInterface $conn) use (&$order): void {
+            try {
+                $this->tx->withTransaction(function (ConnectionInterface $inner) use (&$order): never {
+                    $this->tx->afterCommit(function () use (&$order): void {
+                        $order[] = 'rolled-back-parent';
+                    });
+                    $this->tx->withTransaction(function (ConnectionInterface $descendant) use (&$order): void {
+                        $descendant->execute(SqlQuery::raw("INSERT INTO t (name) VALUES ('descendant')"));
+                        $this->tx->afterCommit(function () use (&$order): void {
+                            $order[] = 'rolled-back-descendant';
+                        });
+                    });
+
+                    throw new \RuntimeException('parent fails');
+                });
+            } catch (\RuntimeException $e) {
+                self::assertSame('parent fails', $e->getMessage());
+            }
+            self::assertSame([], $order);
+            self::assertSame(1, $this->tx->level());
+            $this->tx->withTransaction(function (ConnectionInterface $sibling) use (&$order): void {
+                $sibling->execute(SqlQuery::raw("INSERT INTO t (name) VALUES ('sibling')"));
+                $this->tx->afterCommit(function () use (&$order): void {
+                    $order[] = 'surviving-sibling';
+                });
+            });
+        });
+
+        self::assertSame(['surviving-sibling'], $order);
+        self::assertSame(['sibling'], $this->names());
+        self::assertSame(0, $this->tx->level());
+        self::assertSame(0, $this->conn->transactionLevel());
     }
 
     public function testImmediateHookIsNotRequeuedForNextScope(): void

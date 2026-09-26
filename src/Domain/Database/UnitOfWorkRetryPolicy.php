@@ -29,10 +29,10 @@ use Zef\Framework\Job\RetryPolicy;
  * - Only the FLUSH phase is retried — never the command handler body.
  *   Side effects produced during dispatch (event publishes, log writes)
  *   cannot be re-run safely.
- * - The UnitOfWork queue is cleared on the FIRST flush attempt (existing
- *   v2.22.0 behaviour); a retry therefore records a fresh queue snapshot
- *   per attempt. Callers that need deterministic ordering should NOT
- *   enable retry.
+ * - UnitOfWork::flushRetrying() replays the same operation snapshot in
+ *   FIFO order on each attempt. It clears the queue only on success;
+ *   an escaping failure leaves the queue populated. This differs from
+ *   UnitOfWork::flush(), which clears the queue before execution.
  * - Default is OFF: passing `null` to the {@see TransactionalCommandBus}
  *   preserves the v2.22.0 no-retry behaviour.
  *

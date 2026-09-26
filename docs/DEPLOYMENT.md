@@ -126,11 +126,18 @@ guna, memperparah gangguan.
 | Pembatas laju | `RateLimiter` + store | in-memory / APCu / Redis sesuai topologi |
 | Perlindungan replay | `ReplayProtector` | jalur autentikasi |
 | Batas body | `RequestBodyPolicy` | `ZEF_MAX_BODY_BYTES` → `413` |
-| Host tepercaya | `TrustedProxyMatcher` | `ZEF_TRUSTED_HOSTS` (CSV) |
+| Host tepercaya | `TrustedHostValidator` | `ZEF_TRUSTED_HOSTS` (CSV) |
 | Enkripsi | `AesGcmEncryptor` + `RotatingKeyRing` | rotasi kunci tanpa downtime |
 
 Catatan produksi:
 
+- Validasi ingress berlaku sebelum middleware/handler pada SAPI native maupun
+  RoadRunner melalui `Application::handle()`. Jika allowlist host disetel, host
+  kosong atau di luar daftar ditolak dengan `400`; body di atas batas ditolak
+  dengan `413`, termasuk tanpa `Content-Length` atau dengan nilai yang terlalu
+  kecil. Body dibaca secara terbatas sebelum dispatch; posisi stream seekable
+  dipulihkan, sedangkan stream non-seekable diganti buffer agar tetap dapat
+  dibaca aplikasi. Pertimbangkan biaya buffering saat menaikkan batas body.
 - **CSRF nonaktif secara default.** Mengaktifkannya adalah keputusan eksplisit:
   set secret ≥ 32 byte, dan pastikan tidak ada komponen lain yang menulis nilai itu.
 - **`ZEF_TRUSTED_HOSTS` wajib disetel** untuk deployment nyata; nilai default hanya

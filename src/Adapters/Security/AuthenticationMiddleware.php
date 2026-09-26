@@ -34,6 +34,11 @@ final readonly class AuthenticationMiddleware implements MiddlewareInterface
     #[\Override]
     public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
+        $path = $request->getUri()->getPath();
+        // Authorization must see the complete resource used for routing.
+        if (strlen($path) > SecurityRequest::MAX_RESOURCE_BYTES) {
+            return $this->deny(414, 'URI Too Long', $request);
+        }
         $method = strtoupper($request->getMethod());
         $safe = in_array($method, ['GET', 'HEAD', 'OPTIONS', 'TRACE'], true);
         $credential = $this->extractCredential($request);
@@ -44,14 +49,11 @@ final readonly class AuthenticationMiddleware implements MiddlewareInterface
             $credential ?? new CredentialHandle('anonymous', 'public', 0),
             (int) (microtime(true) * 1000),
         );
-        // SecurityRequest bounds every field to MAX_OPERATION_BYTES
-        // (128): an attacker-controlled URL path can exceed that, and an
-        // uncaught InvalidArgumentException here would surface as a 500.
-        // Truncate defensively, mirroring resourceFromRequest().
-        $operationClass = substr($method . ' ' . $request->getUri()->getPath(), 0, SecurityRequest::MAX_OPERATION_BYTES);
+        // Bound the operation label; the resource retains the complete path.
+        $operationClass = substr($method . ' ' . $path, 0, SecurityRequest::MAX_OPERATION_BYTES);
         $securityRequest = new SecurityRequest(
             operationClass: $operationClass,
-            resource: $this->resourceFromRequest($request),
+            resource: $path === '' ? '/' : $path,
             action: $method,
             // Defensive bound: an oversized X-Replay-Id previously threw
             // inside SecurityRequest (uncaught → 500 on attacker input).
@@ -100,16 +102,6 @@ final readonly class AuthenticationMiddleware implements MiddlewareInterface
         }
 
         return new CredentialHandle($token, 'bearer', PHP_INT_MAX);
-    }
-
-    private function resourceFromRequest(ServerRequestInterface $request): string
-    {
-        $path = $request->getUri()->getPath();
-        if (strlen($path) > 128) {
-            $path = substr($path, 0, 128);
-        }
-
-        return $path === '' ? '/' : $path;
     }
 
     private function deny(int $status, string $reason, ServerRequestInterface $request): ResponseInterface

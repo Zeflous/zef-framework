@@ -288,7 +288,7 @@ final class MutationDeepRuntimeTest extends TestCase
         self::assertFalse($handler->seen);
     }
 
-    public function testAuthTruncatesAttackerControlledBounds(): void
+    public function testAuthBoundsOperationAndReplayIdWithoutTruncatingResource(): void
     {
         $boundary = new MutationDeepAuthBoundary(allow: true);
         $middleware = new AuthenticationMiddleware(
@@ -299,7 +299,7 @@ final class MutationDeepRuntimeTest extends TestCase
         );
         $handler = new MutationDeepRecordingHandler();
 
-        $longPath = '/' . str_repeat('a', 200);
+        $longPath = '/' . str_repeat('a', SecurityRequest::MAX_RESOURCE_BYTES - 1);
         $request = $this->withHeader(
             $this->withHeader($this->request($longPath, 'POST'), 'Authorization', 'Bearer token-x'),
             'X-Replay-Id',
@@ -310,7 +310,7 @@ final class MutationDeepRuntimeTest extends TestCase
         $captured = $boundary->lastRequest;
         self::assertNotNull($captured);
         self::assertSame(SecurityRequest::MAX_OPERATION_BYTES, strlen($captured->operationClass));
-        self::assertSame(SecurityRequest::MAX_RESOURCE_BYTES, strlen($captured->resource));
+        self::assertSame($longPath, $captured->resource);
         self::assertSame('POST', $captured->action);
         self::assertSame(SecurityRequest::MAX_REPLAY_ID_BYTES, strlen((string) $captured->replayId));
     }

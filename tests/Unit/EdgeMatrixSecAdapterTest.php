@@ -231,8 +231,8 @@ final class EdgeMatrixSecAdapterTest extends TestCase
         self::assertNotNull($shortRequest);
         self::assertSame('GET /orders/42', $shortRequest->operationClass);
 
-        // A 129-byte path is truncated to the SecurityRequest bound.
-        $longPath = '/' . str_repeat('a', 128);
+        // A 128-byte path fits the resource bound; the operation label is bounded.
+        $longPath = '/' . str_repeat('a', 127);
         $long = new ServerRequest('get', new Uri('http://localhost' . $longPath, ['localhost']));
         $middleware->process($long, new EdgeMatrixCapturingHandler());
         $truncatedRequest = $boundary->lastRequest;
