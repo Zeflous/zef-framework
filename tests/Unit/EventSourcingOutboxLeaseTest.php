@@ -14,7 +14,6 @@ use Zef\Framework\Event\EventRegistration;
 use Zef\Framework\Event\EventSubscriberInterface;
 use Zef\Framework\EventSourcing\EventSourcingException;
 use Zef\Framework\EventSourcing\InMemoryOutbox;
-use Zef\Framework\EventSourcing\OutboxClaimInterface;
 use Zef\Framework\EventSourcing\OutboxEntry;
 use Zef\Framework\EventSourcing\OutboxMessage;
 use Zef\Framework\EventSourcing\OutboxRelay;
@@ -414,6 +413,7 @@ final class EventSourcingOutboxLeaseTest extends TestCase
     public function testClaimedEntriesAreDisjointAcrossConnectionsOnOneDatabase(): void
     {
         $file = tempnam(sys_get_temp_dir(), 'zef-outbox-lease-');
+
         try {
             $pdoA = new \PDO('sqlite:' . $file);
             $pdoA->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
@@ -438,7 +438,7 @@ final class EventSourcingOutboxLeaseTest extends TestCase
             $idsB = array_map(static fn (OutboxEntry $e): string => $e->id, $b);
             self::assertSame([], array_values(array_intersect($idsA, $idsB)), 'no entry may be claimed by both relays');
         } finally {
-            @unlink($file);
+            @unlink($file); // nosemgrep: php.lang.security.unlink-use (tempnam() sqlite fixture this test created; no request input reaches the argument)
         }
     }
 
@@ -458,7 +458,6 @@ final class EventSourcingOutboxLeaseTest extends TestCase
                 lastError: null,
                 createdAtUnixNano: self::NANO,
                 leaseOwner: 'relay-a',
-                leaseUntilUnixNano: null,
             );
             self::fail('partial lease metadata must fail');
         } catch (EventSourcingException $e) {

@@ -11,8 +11,8 @@ declare(strict_types=1);
 namespace Zef\Framework\EventSourcing;
 
 use Zef\Framework\Database\ConnectionInterface;
-use Zef\Framework\Database\QueryException;
 use Zef\Framework\Database\QueryBuilder;
+use Zef\Framework\Database\QueryException;
 use Zef\Framework\Database\SqlExpression;
 use Zef\Framework\Database\SqlQuery;
 
@@ -65,7 +65,7 @@ final readonly class PdoOutbox implements OutboxStoreInterface, OutboxClaimInter
     ) {
         new QueryBuilder()->quoteIdentifier($table, 'table');
         $this->table = $table;
-        $this->quotedTable = (new QueryBuilder())->quoteIdentifier($table, 'table');
+        $this->quotedTable = new QueryBuilder()->quoteIdentifier($table, 'table');
         $this->clock = $clock ?? static fn (): int => (int) (microtime(true) * 1_000_000_000);
     }
 
@@ -96,59 +96,6 @@ final readonly class PdoOutbox implements OutboxStoreInterface, OutboxClaimInter
         ));
         $this->ensureLeaseColumns();
         $this->createRelayIndex();
-    }
-
-    /**
-     * Best-effort lease-column upgrade for tables created before v2.31.0.
-     * Duplicate-column errors from every supported driver (sqlite "duplicate
-     * column", mysql "Duplicate column name", pgsql "... already exists")
-     * are treated as "upgrade already applied".
-     */
-    private function ensureLeaseColumns(): void
-    {
-        foreach (['"lease_owner" VARCHAR(64) NULL', '"lease_until" BIGINT NULL'] as $definition) {
-            try {
-                $this->connection->execute(SqlQuery::raw(
-                    'ALTER TABLE ' . $this->quotedTable . ' ADD COLUMN ' . $definition,
-                ));
-            } catch (QueryException $e) {
-                $message = strtolower($e->getMessage());
-                if (!str_contains($message, 'duplicate column') && !str_contains($message, 'already exists')) {
-                    throw $e;
-                }
-            }
-        }
-    }
-
-    /**
-     * Relay index for due()/claimBatch(): (status, next_attempt_at, created_at).
-     * Tried with IF NOT EXISTS first (sqlite/pgsql); MySQL rejects that
-     * syntax, so on a syntax error it falls back to a plain CREATE INDEX
-     * and swallows the duplicate-key error on re-runs.
-     */
-    private function createRelayIndex(): void
-    {
-        $index = (new QueryBuilder())->quoteIdentifier('idx_' . $this->table . '_relay', 'index');
-        $columns = '("status", "next_attempt_at", "created_at")';
-        try {
-            $this->connection->execute(SqlQuery::raw(
-                'CREATE INDEX IF NOT EXISTS ' . $index . ' ON ' . $this->quotedTable . $columns,
-            ));
-
-            return;
-        } catch (QueryException) {
-            // Unsupported syntax (e.g. MySQL) or already exists — retry plain.
-        }
-        try {
-            $this->connection->execute(SqlQuery::raw(
-                'CREATE INDEX ' . $index . ' ON ' . $this->quotedTable . $columns,
-            ));
-        } catch (QueryException $e) {
-            $message = strtolower($e->getMessage());
-            if (!str_contains($message, 'duplicate') && !str_contains($message, 'already exists')) {
-                throw $e;
-            }
-        }
     }
 
     #[\Override]
@@ -304,6 +251,131 @@ final readonly class PdoOutbox implements OutboxStoreInterface, OutboxClaimInter
         return $this->hydrate($updated);
     }
 
+    // -------------------------------------------------- lease claiming (v2.31.0)
+
+    #[\Override]
+    public function claimBatch(string $owner, int $limit, int $leaseSeconds, ?int $nowUnixNano = null): array
+    {
+        if ($owner === '' || \strlen($owner) > 64) {
+            throw new EventSourcingException('claimBatch() owner must be 1..64 chars.');
+        }
+        if ($limit < 1) {
+            throw new EventSourcingException("claimBatch() limit must be >= 1 (got {$limit}).");
+        }
+        if ($leaseSeconds < 1) {
+            throw new EventSourcingException("claimBatch() leaseSeconds must be >= 1 (got {$leaseSeconds}).");
+        }
+        $now = $nowUnixNano ?? ($this->clock)();
+        $leaseUntil = $now + $leaseSeconds * 1_000_000_000;
+        EventGrammar::assertUnixNano($leaseUntil, 'lease deadline');
+
+        // One transaction: lock the candidates (FOR UPDATE family), stamp the
+        // whole batch with ONE bulk UPDATE, and hydrate the entries straight
+        // from the locked rows — no per-row UPDATEs, no post-commit re-fetch
+        // loop, and therefore no read-after-commit window either (Kilo
+        // review, PR #178: 2N+1 round-trips for a batch of N became 2).
+        $entries = $this->connection->transaction(function () use ($owner, $limit, $now, $leaseUntil): array {
+            $rows = $this->connection->fetchAll($this->candidatesQuery($now, $limit));
+            $ids = [];
+            $candidates = [];
+            foreach ($rows as $row) {
+                $id = RowCast::string($row['id'] ?? null);
+                if ($id === '') {
+                    continue;
+                }
+                $ids[] = $id;
+                $candidates[] = $row;
+            }
+            if ($ids === []) {
+                return [];
+            }
+            $this->connection->execute(
+                QueryBuilder::table($this->table)
+                    ->update(['lease_owner' => $owner, 'lease_until' => $leaseUntil])
+                    ->whereIn('id', $ids)
+                    ->build(),
+            );
+
+            return array_map(
+                fn (array $row): OutboxEntry => $this->hydrate($row, $owner, $leaseUntil),
+                $candidates,
+            );
+        });
+        usort($entries, static fn (OutboxEntry $a, OutboxEntry $b): int => [$a->createdAtUnixNano, $a->id] <=> [$b->createdAtUnixNano, $b->id]);
+
+        return $entries;
+    }
+
+    #[\Override]
+    public function releaseLease(string $owner): int
+    {
+        if ($owner === '') {
+            throw new EventSourcingException('releaseLease() owner must be non-empty.');
+        }
+
+        return $this->connection->execute(
+            QueryBuilder::table($this->table)
+                ->update(['lease_owner' => null, 'lease_until' => null])
+                ->where('lease_owner', '=', $owner)
+                ->build(),
+        );
+    }
+
+    /**
+     * Best-effort lease-column upgrade for tables created before v2.31.0.
+     * Duplicate-column errors from every supported driver (sqlite "duplicate
+     * column", mysql "Duplicate column name", pgsql "... already exists")
+     * are treated as "upgrade already applied".
+     */
+    private function ensureLeaseColumns(): void
+    {
+        foreach (['"lease_owner" VARCHAR(64) NULL', '"lease_until" BIGINT NULL'] as $definition) {
+            try {
+                $this->connection->execute(SqlQuery::raw(
+                    'ALTER TABLE ' . $this->quotedTable . ' ADD COLUMN ' . $definition,
+                ));
+            } catch (QueryException $e) {
+                $message = strtolower($e->getMessage());
+                if (!str_contains($message, 'duplicate column') && !str_contains($message, 'already exists')) {
+                    throw $e;
+                }
+            }
+        }
+    }
+
+    /**
+     * Relay index for due()/claimBatch(): (status, next_attempt_at, created_at).
+     * Tried with IF NOT EXISTS first (sqlite/pgsql); MySQL rejects that
+     * syntax, so on a syntax error it falls back to a plain CREATE INDEX
+     * and swallows the duplicate-key error on re-runs.
+     */
+    private function createRelayIndex(): void
+    {
+        $index = new QueryBuilder()->quoteIdentifier('idx_' . $this->table . '_relay', 'index');
+        $columns = '("status", "next_attempt_at", "created_at")';
+
+        try {
+            $this->connection->execute(SqlQuery::raw(
+                'CREATE INDEX IF NOT EXISTS ' . $index . ' ON ' . $this->quotedTable . $columns,
+            ));
+
+            return;
+        } catch (QueryException) {
+            // Unsupported syntax (e.g. MySQL) or already exists — retry plain.
+        }
+
+        try {
+            $this->connection->execute(SqlQuery::raw(
+                'CREATE INDEX ' . $index . ' ON ' . $this->quotedTable . $columns,
+            ));
+        } catch (QueryException $e) {
+            $message = strtolower($e->getMessage());
+            if (!str_contains($message, 'duplicate') && !str_contains($message, 'already exists')) {
+                throw $e;
+            }
+        }
+    }
+
     /**
      * @param array<string, mixed> $pairs
      */
@@ -327,12 +399,14 @@ final readonly class PdoOutbox implements OutboxStoreInterface, OutboxClaimInter
 
     /**
      * @param array<string, mixed> $row
+     * @param null|string          $claimedOwner         lease owner stamped on the row by claimBatch()'s bulk update
+     * @param null|int             $claimedUntilUnixNano lease deadline stamped on the row by claimBatch()'s bulk update
      */
-    private function hydrate(array $row): OutboxEntry
+    private function hydrate(array $row, ?string $claimedOwner = null, ?int $claimedUntilUnixNano = null): OutboxEntry
     {
         $lastError = $row['last_error'] ?? null;
-        $leaseOwner = $row['lease_owner'] ?? null;
-        $leaseUntil = $row['lease_until'] ?? null;
+        $leaseOwner = $claimedOwner ?? ($row['lease_owner'] ?? null);
+        $leaseUntil = $claimedUntilUnixNano ?? ($row['lease_until'] ?? null);
 
         return new OutboxEntry(
             id: RowCast::string($row['id'] ?? null),
@@ -349,83 +423,21 @@ final readonly class PdoOutbox implements OutboxStoreInterface, OutboxClaimInter
         );
     }
 
-    // -------------------------------------------------- lease claiming (v2.31.0)
-
-    #[\Override]
-    public function claimBatch(string $owner, int $limit, int $leaseSeconds, ?int $nowUnixNano = null): array
-    {
-        if ($owner === '' || \strlen($owner) > 64) {
-            throw new EventSourcingException('claimBatch() owner must be 1..64 chars.');
-        }
-        if ($limit < 1) {
-            throw new EventSourcingException("claimBatch() limit must be >= 1 (got {$limit}).");
-        }
-        if ($leaseSeconds < 1) {
-            throw new EventSourcingException("claimBatch() leaseSeconds must be >= 1 (got {$leaseSeconds}).");
-        }
-        $now = $nowUnixNano ?? ($this->clock)();
-        $leaseUntil = $now + $leaseSeconds * 1_000_000_000;
-        EventGrammar::assertUnixNano($leaseUntil, 'lease deadline');
-
-        $ids = $this->connection->transaction(function () use ($owner, $limit, $now, $leaseUntil): array {
-            $rows = $this->connection->fetchAll($this->candidatesQuery($now, $limit));
-            $claimed = [];
-            foreach ($rows as $row) {
-                $id = RowCast::string($row['id'] ?? null);
-                if ($id === '') {
-                    continue;
-                }
-                $this->connection->execute(
-                    QueryBuilder::table($this->table)
-                        ->update(['lease_owner' => $owner, 'lease_until' => $leaseUntil])
-                        ->where('id', '=', $id)
-                        ->build(),
-                );
-                $claimed[] = $id;
-            }
-
-            return $claimed;
-        });
-        if ($ids === []) {
-            return [];
-        }
-
-        $entries = [];
-        foreach ($ids as $id) {
-            $row = $this->connection->fetchOne($this->selectQb()->where('id', '=', $id)->build());
-            if ($row !== null) {
-                $entries[] = $this->hydrate($row);
-            }
-        }
-        usort($entries, static fn (OutboxEntry $a, OutboxEntry $b): int => [$a->createdAtUnixNano, $a->id] <=> [$b->createdAtUnixNano, $b->id]);
-
-        return $entries;
-    }
-
-    #[\Override]
-    public function releaseLease(string $owner): int
-    {
-        if ($owner === '') {
-            throw new EventSourcingException('releaseLease() owner must be non-empty.');
-        }
-
-        return $this->connection->execute(
-            QueryBuilder::table($this->table)
-                ->update(['lease_owner' => null, 'lease_until' => null])
-                ->where('lease_owner', '=', $owner)
-                ->build(),
-        );
-    }
-
     /**
      * Candidate select for claimBatch(): claimable = pending + due + not
-     * actively leased. Integers are pre-validated; the table name is quoted
-     * at construction. Appends the strongest row-lock suffix the platform
-     * accepts (auto-detected once per connection).
+     * actively leased. Selects EVERY outbox column so claimBatch() hydrates
+     * the claimed entries directly from the row-locked candidates — no
+     * re-fetch pass is needed. Integers are pre-validated; the table name is
+     * quoted at construction. Appends the strongest row-lock suffix the
+     * platform accepts (auto-detected once per connection).
      */
     private function candidatesQuery(int $now, int $limit): SqlQuery
     {
-        $sql = 'SELECT "id" FROM ' . $this->quotedTable
+        $columns = implode(', ', array_map(
+            static fn (string $column): string => '"' . $column . '"',
+            self::COLUMNS,
+        ));
+        $sql = 'SELECT ' . $columns . ' FROM ' . $this->quotedTable
             . " WHERE \"status\" = '" . OutboxEntry::STATUS_PENDING . "'"
             . ' AND "next_attempt_at" <= ' . $now
             . ' AND ("lease_until" IS NULL OR "lease_until" <= ' . $now . ')'

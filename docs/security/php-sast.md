@@ -327,29 +327,30 @@ pinned ruleset and the engine image.
 
 ## 7. Suppression policy
 
-**Registered suppressions: 85**, counted from the marker directives themselves —
+**Registered suppressions: 88**, counted from the marker directives themselves —
 marker directives **on call lines only**, i.e. occurrences of
 `grep -rn 'nosemgrep:' --include=*.php .` whose line is not comment-only
-(the raw count including prose mentions is 86 on the tree carrying this revision;
+(the raw count including prose mentions is 89 on the tree carrying this revision;
 exactly one occurrence, the explanatory prose above `TinkerSession.php:70`, is
 comment-only and is not a marker). This revision recounts the whole table because
-the previous register (69) had gone stale: rounds 1-4 of the zone burn-down and
-neighbouring fixes added markers without promoting the count. The two newest
+the previous register (85) had gone stale again: the LocalStorage symlink
+containment fix (PR #149) landed two markers without promoting the count, and
+the outbox-lease branch (PR #178) registers one more below. The two newest
 markers — the first ever for `ban-qualified-global-call` — come from
 `tests/Unit/kernel-mid-shadow-functions.php` (issue #90 round 4):
 
 | Rule id on the marker | Count |
 |---|---|
-| `php.lang.security.unlink-use` | 67 |
+| `php.lang.security.unlink-use` | 70 |
 | `exec-use` | 7 |
 | `unlink-use` (ZEF-local scope) | 4 |
 | `php.lang.security.eval-use` | 2 |
 | `eval-use` | 2 |
 | `ban-qualified-global-call` (ZEF-local scope) | 2 |
 | `php.lang.security.unserialize-use` | 1 |
-| **Total** | **85** |
+| **Total** | **88** |
 
-That is **71 `unlink` + 7 `exec` + 4 `eval` + 1 `unserialize` + 2 recursion-forced
+That is **74 `unlink` + 7 `exec` + 4 `eval` + 1 `unserialize` + 2 recursion-forced
 qualified `header` delegations**. The four newest
 `unlink-use` markers live in `tests/Unit/MiddlewareMutationDebtTest.php` (issue
 #90 round 1): each unlinks a `tempnam()` fixture the test itself created for
@@ -497,6 +498,7 @@ applies unchanged.
 | 22 | `tests/Unit/OpenApiAdaptersTest.php` | 87, 110, 111 | spec/Postman artefacts the CLI test itself named: `sys_get_temp_dir() . '/zef-openapi-test-' . uniqid('', true)` suffixes, deleted after `file_get_contents()` assertions pass |
 | 23 | `tests/Unit/OpenApiInfectionSweepTest.php` | 910, 940, 958, 974, 992, 993 | spec/Postman artefacts and the suite's own `openapi.json`/`'0'` dirents in `finally` teardown, over a directory the test created via `mkdir()` |
 | 24 | `tests/Unit/RuntimeSoakVariantsTest.php` | 160 | OTLP soak sink from `tempnam(sys_get_temp_dir(), 'zef-otlp-sink-')`, removed in `finally` teardown after the sink-file assertions |
+| 50 | `tests/Unit/EventSourcingOutboxLeaseTest.php` | 441 | shared-sqlite `tempnam(sys_get_temp_dir(), 'zef-outbox-lease-')` database file, removed in `finally` teardown after the cross-connection claim-disjointness assertions |
 
 **Lifetime: permanent** — §7.1 applies unchanged, no rewrite satisfies the rule.
 Every entry is `inSource`, single-line, and carries its reason inline. Since the
@@ -520,6 +522,13 @@ assertions. Same disposition path: the argument traces to `tempnam()` under
 `sys_get_temp_dir()` with a test-chosen prefix; no request superglobal can be in
 scope in a PHPUnit process. The four scans were reproduced locally with the
 pinned semgrep 1.177.0 + ruleset before pushing: 0 findings.
+
+Re-measured on the outbox-lease branch (PR #178): the new shared-sqlite claim
+test introduced **1 new `php.lang.security.unlink-use` site** (entry 50) — the
+`tempnam()` database file removed in `finally` teardown after the
+cross-connection claim-disjointness assertions. Same disposition path: the
+argument traces to `tempnam()` under `sys_get_temp_dir()` with a test-chosen
+prefix; no request superglobal can be in scope in a PHPUnit process.
 
 ### 7.4 The whole class of the qualified-call miss — closed, and the register after it
 

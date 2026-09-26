@@ -47,7 +47,7 @@ final readonly class OutboxWorker
     /**
      * Run the worker loop.
      *
-     * @param array<string, string|bool> $options parsed CLI switches (see class docblock)
+     * @param array<string, bool|string> $options parsed CLI switches (see class docblock)
      *
      * @return int process exit code (0 = clean, 1 = relay error)
      */
@@ -61,10 +61,10 @@ final readonly class OutboxWorker
             return 1;
         }
 
-        $batch = max(1, (int) ($options['batch'] ?? 100));
-        $lease = max(1, (int) ($options['lease'] ?? (string) OutboxRelay::DEFAULT_LEASE_SECONDS));
-        $intervalMs = max(0, (int) ($options['interval'] ?? 500));
-        $maxBatches = isset($options['max']) ? max(1, (int) (string) $options['max']) : null;
+        $batch = $this->intOption($options, 'batch', 100);
+        $lease = $this->intOption($options, 'lease', OutboxRelay::DEFAULT_LEASE_SECONDS);
+        $intervalMs = $this->intOption($options, 'interval', 500, 0);
+        $maxBatches = $this->nullableIntOption($options, 'max');
         $once = (bool) ($options['once'] ?? false);
 
         $running = true;
@@ -86,8 +86,9 @@ final readonly class OutboxWorker
 
         $processed = 0;
         $batches = 0;
+
         try {
-            do {
+            while (true) {
                 $n = $relay->relayLeased($batch, $lease);
                 $processed += $n;
                 ++$batches;
@@ -100,7 +101,7 @@ final readonly class OutboxWorker
                 if (!$running) {
                     break;
                 }
-            } while (true);
+            }
         } catch (EventSourcingException $e) {
             $this->io->err('outbox relay failed: ' . $e->getMessage());
 
@@ -110,5 +111,43 @@ final readonly class OutboxWorker
         $this->io->out("outbox:work — {$processed} processed in {$batches} batch(es)");
 
         return 0;
+    }
+
+    /**
+     * Resolve a parsed CLI switch to a bounded int, or the documented default.
+     *
+     * A bare flag (--lease with no =value) parses to bool true, which a plain
+     * (int) cast would silently turn into 1 — a one-second lease where the
+     * documented 30 was meant. Bare flags and explicit booleans therefore fall
+     * back to the default instead of being cast (Kilo review, PR #178).
+     *
+     * @param array<string, bool|string> $options parsed CLI switches (see class docblock)
+     * @param int                        $default documented default used when the switch is absent or a bare flag
+     * @param int                        $min     lower bound applied to a provided value
+     */
+    private function intOption(array $options, string $key, int $default, int $min = 1): int
+    {
+        $raw = $options[$key] ?? null;
+        if ($raw === null || \is_bool($raw)) {
+            return $default;
+        }
+
+        return max($min, (int) $raw);
+    }
+
+    /**
+     * Same bare-flag semantics as {@see intOption()} for switches whose
+     * documented default is "no bound" (--max).
+     *
+     * @param array<string, bool|string> $options parsed CLI switches (see class docblock)
+     */
+    private function nullableIntOption(array $options, string $key): ?int
+    {
+        $raw = $options[$key] ?? null;
+        if ($raw === null || \is_bool($raw)) {
+            return null;
+        }
+
+        return max(1, (int) $raw);
     }
 }
