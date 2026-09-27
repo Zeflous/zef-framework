@@ -10,7 +10,7 @@ app-job|89.26|91.91|242|DEBT|docs/mutation/evidence/infection-summary-app-job.js
 app-cqrs|88.03|88.79|117|DEBT|docs/mutation/evidence/infection-summary-app-cqrs.json|measured MSI 88.03 below the 95 target; re-measurement measured 87.18, weaker than the committed 88.03; the stricter committed evidence is kept
 app-cache-res|100.00|100.00|90|OK|docs/mutation/evidence/infection-summary-app-cache-res.json|
 app-msg-evt-sec|91.20|94.87|466|DEBT|docs/mutation/evidence/infection-summary-app-msg-evt-sec.json|measured MSI 91.20 below the 95 target
-infra-a|92.67|95.84|423|DEBT|docs/mutation/evidence/infection-summary-infra-a.json|measured MSI 92.67 below the 95 target (v2.21.1 re-measure)
+infra-a|89.26|92.32|633|DEBT|docs/mutation/evidence/infection-summary-infra-a.json|re-measured at the ZEF-DEEP-14 fix head (issue #168): the zone had drifted — source grew ~+210 mutants since the v2.21.1 row was recorded, so the stale 92.67 no longer reflected the tree; the changed promotion/introspection code has zero escapes (boundary mutants killed by TieredCachePromotionTtlTest); 47 pre-existing escapes in RedisLockStore/TaggableCache/Config stay on the issue #90 burn-down
 ad-http-a|93.37|94.94|784|DEBT|docs/mutation/evidence/infection-summary-ad-http-a.json|measured MSI 93.37 below the 95 target
 ad-http-b|91.09|94.52|303|DEBT|docs/mutation/evidence/infection-summary-ad-http-b.json|measured MSI 91.09 below the 95 target
 ad-http-c2|93.99|98.29|366|DEBT|docs/mutation/evidence/infection-summary-ad-http-c2.json|measured MSI 93.99 below the 95 target
