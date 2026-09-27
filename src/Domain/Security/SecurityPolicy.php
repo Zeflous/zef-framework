@@ -37,6 +37,8 @@ final readonly class SecurityPolicy
         array $allowedOrigins = [],
         public bool $originEnabled = false,
         public int $csrfTokenBytes = 32,
+        public int $csrfTokenTtlSeconds = 0,
+        public bool $csrfSpaMode = false,
     ) {
         if ($this->csrfTokenBytes < 16) {
             throw new \InvalidArgumentException('csrfTokenBytes must be >= 16.');
@@ -65,6 +67,22 @@ final readonly class SecurityPolicy
         if ($this->csrfSameSite === 'None' && !$this->csrfSecureCookie) {
             throw new \InvalidArgumentException('SameSite=None requires Secure cookies.');
         }
+        if ($this->csrfTokenTtlSeconds < 0) {
+            throw new \InvalidArgumentException('csrfTokenTtlSeconds must be >= 0 (0 = no expiry).');
+        }
+        if ($this->csrfSpaMode) {
+            if (!$this->csrfEnabled) {
+                throw new \InvalidArgumentException('CSRF SPA mode requires CSRF to be enabled.');
+            }
+            if ($this->csrfHttpOnlyCookie) {
+                // Audit I-3: an HttpOnly cookie makes the double-submit token
+                // structurally unreachable for JavaScript — every unsafe SPA
+                // request would fail 403. Fail the configuration loudly.
+                throw new \InvalidArgumentException(
+                    'CSRF SPA mode requires a JS-readable cookie — set csrfHttpOnlyCookie=false (ZEF_SECURITY_CSRF_HTTP_ONLY=false).',
+                );
+            }
+        }
         $normalized = [];
         foreach ($allowedOrigins as $origin) {
             $normalized[] = OriginPolicy::normalizeOrigin($origin);
@@ -90,12 +108,17 @@ final readonly class SecurityPolicy
         $env ??= new Env();
         $csrfDefault = true;
         $csrfRaw = $env->readString('ZEF_SECURITY_CSRF');
-        $csrfEnv = trim($csrfRaw) === '' ? false : $csrfRaw;
-        $csrfEnabled = $csrfEnv === false
-            ? $csrfDefault
-            : filter_var($csrfEnv, FILTER_VALIDATE_BOOL);
+        $csrfExplicit = trim($csrfRaw) !== '';
+        // v2.31.0 (audit C-11): boolean parsing is now STRICT and fail-closed.
+        // The old filter_var(..., FILTER_VALIDATE_BOOL) silently turned values
+        // like 'enabled'/'on'/'yes' into FALSE, switching CSRF off because of
+        // one typo. Recognized words (incl. 'enabled'/'disabled') map plainly;
+        // anything else refuses to boot.
+        $csrfEnabled = $csrfExplicit
+            ? self::envBoolStrict('ZEF_SECURITY_CSRF', $csrfRaw, $logger)
+            : $csrfDefault;
         $csrfSecret = $env->readString('ZEF_SECURITY_CSRF_SECRET');
-        if ($csrfEnabled && $csrfSecret === '' && $csrfEnv !== false && filter_var($csrfEnv, FILTER_VALIDATE_BOOL)) {
+        if ($csrfEnabled && $csrfSecret === '' && $csrfExplicit) {
             throw new \RuntimeException('ZEF_SECURITY_CSRF=1 requires ZEF_SECURITY_CSRF_SECRET (>= 32 bytes).');
         }
         if ($csrfEnabled && $csrfSecret === '') {
@@ -123,7 +146,35 @@ final readonly class SecurityPolicy
             allowedOrigins: $env->readCsv('ZEF_SECURITY_ALLOWED_ORIGINS'),
             originEnabled: $env->readBool('ZEF_SECURITY_ORIGIN_POLICY'),
             csrfTokenBytes: max(16, self::envPositiveInt('ZEF_SECURITY_CSRF_TOKEN_BYTES', 32, $env)),
+            csrfTokenTtlSeconds: self::envPositiveInt('ZEF_SECURITY_CSRF_TTL', 0, $env),
+            csrfSpaMode: $env->readBool('ZEF_SECURITY_CSRF_SPA', false),
         );
+    }
+
+    /**
+     * v2.31.0 (audit C-11): strict, fail-closed boolean parsing for security
+     * controls. Recognized words map plainly (note: 'enabled'/'on'/'yes' now
+     * correctly evaluate to TRUE); any other non-empty value throws instead
+     * of silently disabling the control.
+     */
+    private static function envBoolStrict(string $name, string $raw, ?LoggerInterface $logger): bool
+    {
+        $value = strtolower(trim($raw));
+        if (in_array($value, ['1', 'true', 'yes', 'on', 'enabled'], true)) {
+            return true;
+        }
+        if (in_array($value, ['0', 'false', 'no', 'off', 'disabled'], true)) {
+            return false;
+        }
+        $msg = "[ZEF][security] {$name}='{$raw}' is not a recognized boolean"
+            . ' (allowed: 1/0, true/false, yes/no, on/off, enabled/disabled).';
+        if ($logger instanceof LoggerInterface) {
+            $logger->error($msg);
+        } else {
+            error_log($msg);
+        }
+
+        throw new \RuntimeException($msg);
     }
 
     /**
