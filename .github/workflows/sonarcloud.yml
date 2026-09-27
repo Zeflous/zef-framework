@@ -11,22 +11,29 @@
 #     Scan" — that context IS a required status-check on the protected main
 #     branch (same contract as "PHP lint, audit, static analysis and style" in
 #     ci.yml and "Build API documentation" in docs-check.yml).
-#   * REQUIRED-CHECK SEMANTICS (live finding, 2026-09-28, PR #208): branch
-#     protection does NOT accept a check whose job was SKIPPED — a dependabot
-#     pull request sat merge-blocked for hours with every other check green
-#     because the old job-level `if:` guard left "SonarCloud Scan" in the
-#     "skipped" conclusion forever. A required context must therefore ALWAYS
-#     run its job. This job reports GREEN WITH A NOTICE whenever it cannot
-#     scan credentialed:
+#   * REQUIRED-CHECK CONTRACT (2026-09-28, measured on PR #208): this job's
+#     context "SonarCloud Scan" is a REQUIRED status check on the protected
+#     main branch. The previous design guarded fork/dependabot pull requests
+#     with a job-level `if:`, leaving the check in the "skipped" conclusion
+#     there. PR #208 (dependabot) measured what that means live: branch
+#     protection DID eventually accept the skipped check and the PR merged
+#     full-auto — opened 23:08 UTC, CI settled 23:23-23:25 UTC, auto-merge
+#     fired 23:40 UTC (GitHub's auto-merge evaluation is lazy, not strictly
+#     event-driven) — but the acceptance scores an undocumented conclusion,
+#     and the pull request carries a grey icon with no explanation of why no
+#     analysis ran. This job therefore ALWAYS runs and concludes: it reports
+#     GREEN WITH A NOTICE whenever it cannot scan credentialed —
 #       - SONAR_TOKEN absent or withheld: the repository secret is not set
 #         yet, or this is a pull_request event where GitHub withholds
 #         repository secrets (a dependabot[bot] author, or a head from a
 #         fork).
 #     The green is not silent — the notice step writes a step summary and a
-#     `::notice::` annotation stating exactly why no analysis ran. Those PRs
-#     change no PHP this gate could newly judge (dependabot bumps pinned
-#     action SHAs) and remain fully gated by the CI lane; a wedged queue
-#     helps no one. Never use pull_request_target to work around the secret
+#     `::notice::` annotation stating exactly why no analysis ran, and the
+#     success conclusion (instead of "skipped") makes the required check's
+#     outcome deterministic rather than reliant on how GitHub scores skipped
+#     conclusions. Those PRs change no PHP this gate could newly judge
+#     (dependabot bumps pinned action SHAs) and remain fully gated by the CI
+#     lane. Never use pull_request_target to work around the secret
 #     withholding.
 #   * BLOCKING quality gate: sonar.qualitygate.wait=true in
 #     sonar-project.properties makes the scanner wait for the server-side
@@ -86,10 +93,13 @@ jobs:
         # the repository secret SONAR_TOKEN is not set, or this is a
         # pull_request event where GitHub withholds repository secrets (a
         # dependabot[bot] author or a fork head) — the job is GREEN WITH A
-        # NOTICE, never red and never silently green. A required check that
-        # cannot run must not wedge the merge queue: a job-level skip leaves
-        # the required context in the "skipped" conclusion, which branch
-        # protection does not accept (live finding on PR #208, 2026-09-28).
+        # NOTICE, never red and never silently green. The job must always run
+        # and conclude: its context is a REQUIRED status check, and a real
+        # success conclusion (with the notice explaining exactly what happened)
+        # is a deterministic, self-documenting outcome — PR #208 (2026-09-28)
+        # measured that a job-level skip is eventually accepted by branch
+        # protection, but it leaves a grey icon and an undocumented
+        # conclusion in its wake.
         if: env.SONAR_TOKEN == ''
         run: |
           {

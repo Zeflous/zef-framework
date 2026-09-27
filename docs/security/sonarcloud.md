@@ -51,15 +51,19 @@ ships silently.
 - **Pull-request decoration**: once the GitHub ALM binding is configured
   (section 3, step 5), SonarCloud posts inline comments and a quality summary
   on every pull request it analyses.
-- **Zero secret until configured, green-with-notice when uncredentialed**:
+- **Always conclusive; green-with-notice when uncredentialed**:
   whenever the job cannot scan credentialed — `SONAR_TOKEN` not set yet, or a
   `pull_request` event where GitHub withholds repository secrets (a
   `dependabot[bot]` author, or a head from a fork) — the job is green **with a
   visible notice** (workflow step summary + `::notice::`), never red and never
-  silently green. Because this context is a *required* check, the job must
-  always run and conclude: a job-level skip would leave the required context
-  in the "skipped" conclusion, which branch protection does not accept, and
-  the merge queue would wedge (live finding on PR #208, 2026-09-28).
+  silently green. Because this context is a *required* check, the job always
+  runs and concludes: PR #208 (2026-09-28) measured that a job-level skip is
+  eventually accepted by branch protection (the dependabot PR merged
+  full-auto about 15 minutes after its checks settled — GitHub's auto-merge
+  evaluation is lazy, not strictly event-driven), but a deterministic success
+  with an explanatory notice is a stronger contract than relying on how
+  GitHub scores "skipped" conclusions, and it tells the author exactly why
+  no analysis ran.
 
 ## 3. Setup checklist (one-time, ~5 minutes)
 
@@ -118,8 +122,8 @@ The workflow ships fully wired; only the SonarCloud account side is manual:
    `main` lists the required status-check context **`SonarCloud Scan`** — the
    job name is load-bearing and pinned by the workflow file. With the
    green-with-notice contract above, the required context stays satisfiable
-   on dependabot and fork pull requests, so the gate blocks on verdicts
-   without wedging the queue.
+   on dependabot and fork pull requests: the job always concludes, green with
+   an explanatory notice when it cannot scan credentialed.
 
 ## 4. Analysis inputs and supply chain
 
@@ -152,11 +156,13 @@ mirroring how the Semgrep engine digest is upgraded in `php-sast.yml`.
   second opinion — see section 6.
 - **Not credentialed on dependabot/fork pull requests.** GitHub withholds
   repository secrets on those `pull_request` events, so no analysis runs
-  there. The check reports green with a notice explaining exactly that
-  (not a job-level skip: a required check left in "skipped" wedges the merge
-  queue — live finding on PR #208). Those PRs are still fully gated by the CI
-  lane, and they change pinned action SHAs rather than PHP code this gate
-  could newly judge.
+  there. The check reports green with a notice explaining exactly that — a
+  deterministic success conclusion instead of the "skipped" outcome a
+  job-level guard would leave behind (PR #208 measured that "skipped" is
+  eventually accepted by branch protection, but it is undocumented scoring
+  with a grey icon and no explanation). Those PRs are still fully gated by
+  the CI lane, and they change pinned action SHAs rather than PHP code this
+  gate could newly judge.
 
 ## 6. Coverage bridge (v2, 2026-09-28)
 
