@@ -173,7 +173,9 @@ final class DomainEdgeTest extends TestCase
 
     public function testCronRejectsInvalidExpressions(): void
     {
-        foreach (['', '60 * * * *', '* 24 * * *', '* * 0 * *', '* * * 13 *', '* * * * 7', '* * * * * *', '*/0 * * * *', '* */x * * *'] as $bad) {
+        // NOTE: '* * * * 7' used to be rejected here; v2.31.0 accepts dow 7
+        // and normalizes it to 0 (see JobCronEngineV2Test).
+        foreach (['', '60 * * * *', '* 24 * * *', '* * 0 * *', '* * * 13 *', '* * * * 8', '* * * * * *', '*/0 * * * *', '* */x * * *'] as $bad) {
             try {
                 CronExpression::parse($bad);
                 self::fail("Expected rejection for '{$bad}'.");
