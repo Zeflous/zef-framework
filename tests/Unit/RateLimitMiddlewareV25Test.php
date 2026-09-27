@@ -187,7 +187,7 @@ final class RateLimitMiddlewareV25Test extends TestCase
         self::assertSame(
             200,
             $middleware->process($this->apiKey($this->request('/api'), 'other-key'), $this->handler())->getStatusCode(),
-            'unauthenticated requests fall back to a fresh ip bucket (header ignored by default)',
+            'v2.31.0: the unverified header is ignored by default — the request lands in the fresh IP bucket',
         );
     }
 
@@ -209,11 +209,11 @@ final class RateLimitMiddlewareV25Test extends TestCase
         self::assertSame(
             200,
             $middleware->process($this->apiKey($this->request('/api'), 'secret-1'), $this->handler())->getStatusCode(),
-            'default mode ignores the header, so the unauthenticated request lands in the (fresh) ip bucket — never in the attribute bucket',
+            'v2.31.0: the header is ignored by default — this request uses the IP bucket, never the attributed one',
         );
     }
 
-    public function testApiKeyHeaderBucketsByValue(): void
+    public function testApiKeyHeaderBucketsByValueWhenOptedIn(): void
     {
         // Default: the client-controlled header is IGNORED — every value
         // lands in the SAME ip bucket, so per-IP quota holds (ZEF-DEEP-02).
@@ -232,6 +232,17 @@ final class RateLimitMiddlewareV25Test extends TestCase
         self::assertSame(200, $trusted->process($this->apiKey($this->request('/api'), 'k1'), $this->handler())->getStatusCode());
         self::assertSame(429, $trusted->process($this->apiKey($this->request('/api'), 'k1'), $this->handler())->getStatusCode());
         self::assertSame(200, $trusted->process($this->apiKey($this->request('/api'), 'k2'), $this->handler())->getStatusCode());
+    }
+
+    public function testApiKeyHeaderIsIgnoredByDefault(): void
+    {
+        $middleware = $this->middleware([new RateLimitRule('api', 1, 10)]);
+        self::assertSame(200, $middleware->process($this->apiKey($this->request('/api'), 'k1'), $this->handler())->getStatusCode());
+        self::assertSame(
+            429,
+            $middleware->process($this->apiKey($this->request('/api'), 'k2'), $this->handler())->getStatusCode(),
+            'audit C-2: rotating unverified headers must NOT mint fresh buckets — same IP, same bucket',
+        );
     }
 
     public function testFallsBackToClientIp(): void
