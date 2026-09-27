@@ -8,57 +8,261 @@ on:
     # Otomatis jalan begitu ada PR yang berhasil di-merge
     types: [closed]
   workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Cara memperbarui branch PR'
+        required: false
+        default: 'force-with-lease'
+        type: choice
+        options:
+          - force-with-lease
+          - api
+      dry_run:
+        description: 'true = hanya melaporkan, tidak mengubah apa pun'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+# Satu run pada satu waktu agar dua run tidak berebut PR yang sama.
+concurrency:
+  group: auto-update-prs
+  cancel-in-progress: false
 
 jobs:
   update-and-merge-prs:
     # Hanya berjalan jika dipicu cron/manual OR jika dipicu closed PR yang statusnya benar-benar di-merge
     if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
-    
+
     # TAMBAHKAN BLOK PERMISSIONS DI BAWAH INI
     permissions:
       contents: write      # Dibutuhkan untuk update/sync branch
       pull-requests: write # Dibutuhkan untuk membaca dan melakukan merge PR
 
+    env:
+      UPDATE_MODE: ${{ inputs.mode || 'force-with-lease' }}
+      DRY_RUN: ${{ inputs.dry_run || 'false' }}
+      MAIN_BRANCH: main
+
     steps:
+      # WAJIB: kebijakan repo ini menolak action yang tidak dipin ke commit SHA penuh
+      # (pesan platform: "The action ... is not allowed ... because all actions must
+      # be pinned to a full-length commit SHA"). Pin di bawah adalah
+      # actions/checkout v7.0.1, pin yang sudah dipakai workflow lain di repo ini
+      # (ci.yml, pages.yml, sbom.yml, release.yml, wiki.yml).
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Siapkan git identity
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Process PRs (Oldest First)
+        id: process
+        # Token hanya dipakai sebagai NAMA variabel; tidak ada nilai kredensial di file ini.
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Mengambil daftar PR yang open, diurutkan dari yang paling lama..."
-          
-          # Mengambil daftar PR yang tidak berstatus draft, diurutkan dari yang paling lama
-          prs=$(gh pr list --state open --sort created --limit 100 --json number,isDraft --jq '.[] | select(.isDraft == false) | .number')
-          
-          if [ -z "$prs" ]; then
+          set +e
+          set -uo pipefail
+
+          MODE="$UPDATE_MODE"
+          DRY="$DRY_RUN"
+          MAIN="$MAIN_BRANCH"
+
+          echo "Mode    : $MODE"
+          echo "Dry-run : $DRY"
+          echo "Main    : $MAIN"
+          echo
+
+          # FIFO: `--sort created` = yang paling lama lebih dulu (sama seperti versi asli).
+          # Tidak ada filter penulis: seluruh PR open non-draft diproses.
+          rows=$(gh pr list --state open --sort created --limit 100 \
+                  --json number,isDraft,headRefName,createdAt \
+                  --jq 'sort_by(.createdAt, .number)[] | select(.isDraft == false) | [(.number|tostring), .headRefName] | @tsv')
+
+          if [ -z "$rows" ]; then
             echo "Tidak ada PR open yang perlu diproses."
             exit 0
           fi
 
-          for pr in $prs; do
+          # Peta head-branch -> daftar nomor PR open (dasar Guard G2).
+          declare -A HEAD_PRS=()
+          while IFS=$'\t' read -r n head; do
+            [ -z "$head" ] && continue
+            if [ -z "${HEAD_PRS[$head]:-}" ]; then
+              HEAD_PRS[$head]="$n"
+            else
+              HEAD_PRS[$head]="${HEAD_PRS[$head]},$n"
+            fi
+          done <<< "$rows"
+
+          REPORT="$(mktemp)"
+          printf '| PR | Head branch | Status | Hasil |\n|---|---|---|---|\n' > "$REPORT"
+
+          declare -A DONE_HEAD=()
+          PROCESSED=0
+          SKIPPED=0
+          FAILED=0
+
+          while IFS=$'\t' read -r n head; do
+            [ -z "$n" ] && continue
             echo "----------------------------------------"
-            echo "Memproses PR #$pr..."
-            
-            # 1. Update branch agar tidak behind/stale
-            if gh pr update-branch $pr 2>/dev/null; then
-              echo "✅ PR #$pr berhasil diperbarui (di-sync)!"
-              
-              # Beri jeda 3 detik agar GitHub memperbarui status internalnya
-              sleep 3
-              
-              # 2. Aktifkan auto-merge.
-              if gh pr merge $pr --auto --merge 2>/dev/null; then
-                echo "🚀 Fitur Auto-Merge berhasil diaktifkan untuk PR #$pr!"
-              else
-                echo "⚠️ Gagal mengaktifkan Auto-Merge. Pastikan fitur ini aktif di pengaturan repositori."
+            echo "PR #$n | head=$head"
+
+            # --- Guard G2: branch dipakai bersama PR open lain ---
+            if [ "${HEAD_PRS[$head]}" != "$n" ]; then
+              echo "  SKIP (G2): branch '$head' juga dipakai PR open: ${HEAD_PRS[$head]}"
+              SKIPPED=$((SKIPPED + 1))
+              printf '| #%s | %s | dilewati | DELAWATI: branch dipakai bersama |\n' "$n" "$head" >> "$REPORT"
+              continue
+            fi
+
+            # --- Guard G3: dedup dalam satu run ---
+            if [ -n "${DONE_HEAD[$head]:-}" ]; then
+              echo "  SKIP (G3): branch '$head' sudah diproses pada run ini"
+              SKIPPED=$((SKIPPED + 1))
+              printf '| #%s | %s | dilewati | DELAWATI: branch sudah diproses |\n' "$n" "$head" >> "$REPORT"
+              continue
+            fi
+            DONE_HEAD[$head]=1
+
+            # --- Guard G4: verifikasi ulang status terkini (anti-balapan) ---
+            fresh=$(gh pr view "$n" --json state,isDraft,headRefName 2>/dev/null)
+            fstate=$(printf '%s' "$fresh" | jq -r '.state // "UNKNOWN"')
+            fhead=$(printf '%s' "$fresh" | jq -r '.headRefName // ""')
+            fdraft=$(printf '%s' "$fresh" | jq -r '.isDraft // false')
+
+            if [ "$fstate" != "OPEN" ]; then
+              echo "  SKIP (G4): state terkini = $fstate (bukan OPEN)"
+              SKIPPED=$((SKIPPED + 1))
+              printf '| #%s | %s | %s | DELAWATI: state bukan OPEN |\n' "$n" "$head" "$fstate" >> "$REPORT"
+              continue
+            fi
+            if [ "$fhead" != "$head" ]; then
+              echo "  SKIP (G4): head branch berubah ($head -> $fhead)"
+              SKIPPED=$((SKIPPED + 1))
+              printf '| #%s | %s | - | DELAWATI: head branch berubah |\n' "$n" "$head" >> "$REPORT"
+              continue
+            fi
+            if [ "$fdraft" = "true" ]; then
+              echo "  SKIP (G4): PR kini berstatus draft"
+              SKIPPED=$((SKIPPED + 1))
+              printf '| #%s | %s | - | DELAWATI: draft |\n' "$n" "$head" >> "$REPORT"
+              continue
+            fi
+
+            # --- Guard G5: hanya proses bila benar-benar tertinggal dari MAIN ---
+            git fetch --no-tags origin "$MAIN" "$head" >/dev/null 2>&1
+            if ! git rev-parse --verify --quiet "refs/remotes/origin/$head" >/dev/null; then
+              echo "  SKIP (G5): ref origin/$head tidak ditemukan di remote"
+              SKIPPED=$((SKIPPED + 1))
+              printf '| #%s | %s | - | DELAWATI: ref tidak ditemukan |\n' "$n" "$head" >> "$REPORT"
+              continue
+            fi
+            if git merge-base --is-ancestor "refs/remotes/origin/$MAIN" "refs/remotes/origin/$head"; then
+              echo "  SKIP: sudah memuat seluruh commit $MAIN (tidak tertinggal)"
+              SKIPPED=$((SKIPPED + 1))
+              printf '| #%s | %s | up-to-date | DELAWATI: tidak tertinggal |\n' "$n" "$head" >> "$REPORT"
+              if [ "$DRY" != "true" ]; then
+                if gh pr merge "$n" --auto --merge >/dev/null 2>&1; then
+                  echo "  OK: auto-merge diaktifkan"
+                else
+                  echo "  CATATAN: auto-merge tidak dapat diaktifkan"
+                fi
               fi
-              
-              # Jeda 5 detik tambahan sebelum memproses PR selanjutnya agar antrean rapi
+              continue
+            fi
+
+            echo "  PR tertinggal dari $MAIN"
+
+            if [ "$DRY" = "true" ]; then
+              echo "  DRY-RUN: akan diperbarui (mode=$MODE), tidak ada perubahan"
+              SKIPPED=$((SKIPPED + 1))
+              printf '| #%s | %s | behind | DRY-RUN (mode %s) |\n' "$n" "$head" "$MODE" >> "$REPORT"
+              continue
+            fi
+
+            # --- Eksekusi update branch ---
+            upd_ok=0
+            if [ "$MODE" = "force-with-lease" ]; then
+              git fetch --no-tags origin "$head" >/dev/null 2>&1
+              expected=$(git rev-parse "refs/remotes/origin/$head")
+              echo "  lease expected: $expected"
+
+              git checkout -B "$head" "refs/remotes/origin/$head" >/dev/null 2>&1
+              if git merge --no-edit --no-ff "refs/remotes/origin/$MAIN" >/tmp/zef-merge.log 2>&1; then
+                # --force-with-lease=<ref>:<expected> menolak push bila branch bergerak
+                # setelah fetch (anti-clobber force, bukan force buta).
+                if git push --force-with-lease="refs/heads/$head:$expected" \
+                     origin "HEAD:refs/heads/$head" >/tmp/zef-push.log 2>&1; then
+                  upd_ok=1
+                else
+                  echo "  GAGAL: git push --force-with-lease ditolak"
+                  tail -n 5 /tmp/zef-push.log || true
+                fi
+              else
+                echo "  GAGAL: konflik merge dengan $MAIN"
+                tail -n 5 /tmp/zef-merge.log || true
+                git merge --abort >/dev/null 2>&1 || true
+              fi
+            else
+              if gh pr update-branch "$n" 2>/tmp/zef-api.log; then
+                upd_ok=1
+              else
+                echo "  GAGAL: gh pr update-branch ditolak"
+                tail -n 5 /tmp/zef-api.log || true
+              fi
+            fi
+
+            # --- Auto-merge + pencatatan ---
+            if [ "$upd_ok" -eq 1 ]; then
+              echo "  OK: branch diperbarui (mode=$MODE)"
+              PROCESSED=$((PROCESSED + 1))
+              sleep 3
+              if gh pr merge "$n" --auto --merge >/dev/null 2>&1; then
+                echo "  OK: auto-merge diaktifkan"
+                printf '| #%s | %s | behind | DIPERBARUI (%s) + auto-merge |\n' "$n" "$head" "$MODE" >> "$REPORT"
+              else
+                echo "  CATATAN: auto-merge tidak dapat diaktifkan"
+                printf '| #%s | %s | behind | DIPERBARUI (%s); auto-merge gagal |\n' "$n" "$head" "$MODE" >> "$REPORT"
+              fi
               sleep 5
             else
-              echo "⚠️ Gagal memperbarui branch PR #$pr (Mungkin ada merge conflict atau sudah up-to-date)."
+              FAILED=$((FAILED + 1))
+              printf '| #%s | %s | behind | GAGAL diperbarui |\n' "$n" "$head" >> "$REPORT"
             fi
-          done
+          done <<< "$rows"
+
+          echo
+          echo "================ RINGKASAN ================"
+          cat "$REPORT"
+
+          {
+            echo "### Auto Update and Merge PRs (FIFO Order)"
+            echo
+            echo "- Mode update : \`$MODE\`"
+            echo "- Dry-run     : \`$DRY\`"
+            echo "- Diperbarui  : $PROCESSED"
+            echo "- Dilewati    : $SKIPPED"
+            echo "- Gagal       : $FAILED"
+            echo
+            cat "$REPORT"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "failed_count=$FAILED" >> "$GITHUB_OUTPUT"
+
+          # Kegagalan per-PR sudah diisolasi; run sendiri tidak digagalkan.
+          exit 0
+
+      - name: Peringatan bila ada PR gagal
+        if: always() && steps.process.outputs.failed_count != '0' && steps.process.outputs.failed_count != ''
+        run: |
+          echo "::warning::${{ steps.process.outputs.failed_count }} PR gagal diperbarui - lihat job summary."
