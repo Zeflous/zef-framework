@@ -25,9 +25,10 @@ final class NamingRules
         'for', 'foreach', 'function', 'global', 'goto', 'if', 'implements',
         'include', 'include_once', 'instanceof', 'insteadof', 'interface',
         'isset', 'list', 'match', 'mixed', 'namespace', 'new', 'never', 'or',
-        'print', 'private', 'protected', 'public', 'readonly', 'require',
-        'require_once', 'return', 'static', 'switch', 'throw', 'trait', 'try',
-        'unset', 'use', 'var', 'while', 'xor', 'yield', 'true', 'false', 'null',
+        'parent', 'print', 'private', 'protected', 'public', 'readonly',
+        'require', 'require_once', 'return', 'self', 'static', 'switch', 'throw',
+        'trait', 'try', 'unset', 'use', 'var', 'while', 'xor', 'yield', 'true',
+        'false', 'null',
     ];
 
     public static function className(?string $raw, string $label = 'class name'): string
