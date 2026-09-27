@@ -52,7 +52,7 @@ jobs:
 
       - name: Set up Snyk CLI to check for security issues
         # Pinned commit from snyk/actions (no version tag moves with it).
-        uses: snyk/actions/setup@806182742461562b67788a64410098c9d9b96adb # pinned (snyk/actions)
+        uses: snyk/actions/setup@12140f4059e244892ae643824a95459a102120dd # pinned (snyk/actions)
 
       # Snyk exits with code 1 when it finds issues, which would otherwise abort
       # the job and skip the SARIF upload. Exit 1 is treated as "findings" and
@@ -71,7 +71,7 @@ jobs:
       # Upload runs even when the scan above reported findings.
       - name: Upload Snyk Code results to GitHub Code Scanning
         if: always() && hashFiles('snyk-code.sarif') != ''
-        uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           sarif_file: snyk-code.sarif
           category: snyk-code
