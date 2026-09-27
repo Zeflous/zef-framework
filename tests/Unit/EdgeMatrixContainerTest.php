@@ -16,6 +16,7 @@ namespace Zef\Test\Unit;
 
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
+use Psr\Container\NotFoundExceptionInterface;
 use Zef\Framework\Autowiring\Inject;
 use Zef\Framework\Autowiring\Target;
 use Zef\Framework\Autowiring\Value;
@@ -778,9 +779,12 @@ final class EdgeMatrixContainerTest extends TestCase
         try {
             $c->get('ct2b.nobody');
             self::fail('deferred service requested post-freeze must fail loudly.');
-        } catch (\LogicException $e) {
+        } catch (ServiceNotFoundException $e) {
+            // ZEF-DEEP-12: PSR-11 — has() is false, so get() surfaces
+            // NotFoundExceptionInterface carrying the same guidance.
+            self::assertInstanceOf(NotFoundExceptionInterface::class, $e);
             self::assertSame(
-                "Deferred provider service 'ct2b.nobody' requested but the container is already frozen"
+                "Service 'ct2b.nobody' not found. Deferred provider service 'ct2b.nobody' requested but the container is already frozen"
                 . ' — request it before validateAndFreeze() or register the provider as eager.',
                 $e->getMessage(),
             );
