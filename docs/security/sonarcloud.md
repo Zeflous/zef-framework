@@ -49,7 +49,7 @@ ships silently.
   job. The default "Sonar way" gate applies (new-code reliability, security,
   maintainability, duplications).
 - **Pull-request decoration**: once the GitHub ALM binding is configured
-  (section 3, step 4), SonarCloud posts inline comments and a quality summary
+  (section 3, step 5), SonarCloud posts inline comments and a quality summary
   on every pull request it analyses.
 - **Zero secret until configured**: while `SONAR_TOKEN` does not exist the job
   is green **with a visible notice** (workflow step summary + `::notice::`),
@@ -62,25 +62,41 @@ The workflow ships fully wired; only the SonarCloud account side is manual:
 1. Sign in at <https://sonarcloud.io> with the GitHub account that owns this
    repository (GitHub login → SonarCloud organization is created for the
    account on first use).
-2. **Create project manually**: "Create project → Manually", pick the
+2. **Put the organization on the OSS plan** (free for open-source
+   organizations). The organization created in step 1 defaults to the **Free
+   plan**, whose basic analysis set has **no PHP analyzer**: measured live on
+   this repository, the scanner preprocessed 680 files in 2 languages but
+   indexed only the 2 JSON files (`CPD Executor Calculating CPD for 0 files`,
+   quality profile `Sonar way core` for json only) and the run ended red with
+   an effectively empty code model. The OSS plan unlocks **all languages
+   supported in the Team plan** — PHP included — plus unlimited branch and
+   pull-request analysis, at zero cost for public repositories. During
+   organization creation, use the **Get SonarQube for OSS** link ("Are you
+   part of an open source organization?" section); for an existing
+   organization, Administration → Subscription (Manage your subscription) →
+   switch to the OSS plan.
+3. **Create project manually**: "Create project → Manually", pick the
    organization, set the project key to `mbetixz_zef-framework` (or note the
    key SonarCloud assigns and align `sonar-project.properties` in the same
-   change). Choose **public project** — analysis of public projects is free.
-3. **Disable Automatic Analysis**: Project Administration → Analysis Method →
+   change). Choose **public project** — the OSS plan applies to public
+   repositories.
+4. **Disable Automatic Analysis**: Project Administration → Analysis Method →
    disable "Automatic Analysis". CI-based analysis (this workflow) and
    automatic analysis conflict; the scanner fails with an explicit error while
    both are enabled.
-4. **Bind GitHub (ALM integration)**: Administration → ALM Integrations →
+5. **Bind GitHub (ALM integration)**: Administration → ALM Integrations →
    GitHub → install the SonarCloud GitHub App on this repository. This enables
    pull-request decoration and branch links in the SonarCloud UI.
-5. **Create a token** (My Account → Security → Generate Token, type "Global /
+6. **Create a token** (My Account → Security → Generate Token, type "Global /
    User Token") and save it as the repository secret `SONAR_TOKEN`
    (Settings → Secrets and variables → Actions). The name is fixed by
    `.github/workflows/sonarcloud.yml`.
-6. **Verify**: Actions tab → *SonarCloud* workflow → *Run workflow* (manual
+7. **Verify**: Actions tab → *SonarCloud* workflow → *Run workflow* (manual
    dispatch is enabled for exactly this). The first run analyses `main` and
-   must end green.
-7. **Promote to a required check** (recommended after the first green run):
+   must end green. If the log shows a tiny "N files indexed" count and no
+   `Quality profile for php`, the organization is still on the Free plan —
+   back to step 2.
+8. **Promote to a required check** (recommended after the first green run):
    branch protection on `main`, add the required status-check context
    **`SonarCloud Scan`** — the job name is load-bearing and pinned by the
    workflow file. Until this step the gate informs but does not block merges.
@@ -131,7 +147,8 @@ statement of what this gate measures.
 | Symptom | Meaning |
 | --- | --- |
 | Red job, "quality gate failed" | SonarCloud verdict was red — triage the findings via the PR decoration or the project dashboard; fix the code or adjust the gate in SonarCloud (a reviewed decision, not a workflow edit) |
-| Red job, "you are running CI analysis while Automatic Analysis is enabled" | section 3 step 3 was skipped |
+| Red job, "you are running CI analysis while Automatic Analysis is enabled" | section 3 step 4 was skipped |
+| Red job, log shows a tiny `N files indexed` count, `CPD Executor Calculating CPD for 0 files`, or no `Quality profile for php` line | organization is on the **Free plan**: its basic analysis set has no PHP analyzer, so PHP sources are dropped from indexing — switch the organization to the **OSS plan** (section 3 step 2) |
 | Red job, "project not found" / 401 | `sonar.projectKey` / `sonar.organization` / `SONAR_TOKEN` mismatch — section 3 |
-| Green job with the skip notice | `SONAR_TOKEN` not set yet — section 3 step 5 |
+| Green job with the skip notice | `SONAR_TOKEN` not set yet — section 3 step 6 |
 | Skipped (neutral) check on a PR | fork pull request or `dependabot[bot]` author — by design |
