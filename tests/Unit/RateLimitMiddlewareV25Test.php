@@ -6,9 +6,10 @@ declare(strict_types=1);
  * ZEF Framework — v2.25.0 Rate Limiting: PSR-15 middleware behaviour.
  *
  * Covers rule matching (path/method), identity resolution chain
- * (attribute > API key > client IP), header emission (IETF draft +
- * legacy), 429/503 envelopes, fail-open vs fail-closed, verdict exposure
- * and the ConfigProvider wiring (tier parsing + conditional stack insert).
+ * (attribute > identity header (opt-in) > client IP), header emission
+ * (IETF draft + legacy), 429/503 envelopes, fail-open vs fail-closed, verdict
+ * exposure and the ConfigProvider wiring (tier parsing + conditional stack
+ * insert).
  */
 
 namespace Zef\Test\Unit;
@@ -186,7 +187,7 @@ final class RateLimitMiddlewareV25Test extends TestCase
         self::assertSame(
             200,
             $middleware->process($this->apiKey($this->request('/api'), 'other-key'), $this->handler())->getStatusCode(),
-            'api-key identity is a different bucket',
+            'unauthenticated requests fall back to a fresh ip bucket (header ignored by default)',
         );
     }
 
@@ -208,16 +209,29 @@ final class RateLimitMiddlewareV25Test extends TestCase
         self::assertSame(
             200,
             $middleware->process($this->apiKey($this->request('/api'), 'secret-1'), $this->handler())->getStatusCode(),
-            'attribute and api-key sources are prefixed differently — same raw value, different buckets',
+            'default mode ignores the header, so the unauthenticated request lands in the (fresh) ip bucket — never in the attribute bucket',
         );
     }
 
     public function testApiKeyHeaderBucketsByValue(): void
     {
-        $middleware = $this->middleware([new RateLimitRule('api', 1, 10)]);
-        self::assertSame(200, $middleware->process($this->apiKey($this->request('/api'), 'k1'), $this->handler())->getStatusCode());
-        self::assertSame(429, $middleware->process($this->apiKey($this->request('/api'), 'k1'), $this->handler())->getStatusCode());
-        self::assertSame(200, $middleware->process($this->apiKey($this->request('/api'), 'k2'), $this->handler())->getStatusCode());
+        // Default: the client-controlled header is IGNORED — every value
+        // lands in the SAME ip bucket, so per-IP quota holds (ZEF-DEEP-02).
+        $default = $this->middleware([new RateLimitRule('api', 1, 10)]);
+        self::assertSame(200, $default->process($this->apiKey($this->request('/api'), 'k1'), $this->handler())->getStatusCode());
+        self::assertSame(429, $default->process($this->apiKey($this->request('/api'), 'k1'), $this->handler())->getStatusCode());
+        self::assertSame(
+            429,
+            $default->process($this->apiKey($this->request('/api'), 'k2'), $this->handler())->getStatusCode(),
+            'a fresh header value must NOT mint a fresh bucket in default mode',
+        );
+
+        // Opt-in: identities bucket per header value (documented for
+        // deployments behind an authenticating gateway).
+        $trusted = $this->middleware([new RateLimitRule('api', 1, 10)], trustIdentityHeader: true);
+        self::assertSame(200, $trusted->process($this->apiKey($this->request('/api'), 'k1'), $this->handler())->getStatusCode());
+        self::assertSame(429, $trusted->process($this->apiKey($this->request('/api'), 'k1'), $this->handler())->getStatusCode());
+        self::assertSame(200, $trusted->process($this->apiKey($this->request('/api'), 'k2'), $this->handler())->getStatusCode());
     }
 
     public function testFallsBackToClientIp(): void
@@ -360,11 +374,12 @@ final class RateLimitMiddlewareV25Test extends TestCase
     /**
      * @param list<RateLimitRule> $rules
      */
-    private function middleware(array $rules): RateLimitMiddleware
+    private function middleware(array $rules, bool $trustIdentityHeader = false): RateLimitMiddleware
     {
         return new RateLimitMiddleware(
             new TieredRateLimiter(new SlidingWindowRateLimiter($this->fakeClock())),
             $rules,
+            trustIdentityHeader: $trustIdentityHeader,
         );
     }
 

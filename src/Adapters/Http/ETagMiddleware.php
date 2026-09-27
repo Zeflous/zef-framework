@@ -114,6 +114,14 @@ final class ETagMiddleware implements MiddlewareInterface
         $response = $response
             ->withStatus(304)
             ->withBody(Stream::fromString(''))
+            // ZEF-DEEP-05: a 304 MUST NOT contain content (RFC 9110 §15.4.5).
+            // The 200's Content-Length describes a payload that will never
+            // arrive; the SAPI emitter reconciles lying framing headers, but
+            // RoadRunnerRuntime forwards headers verbatim — a stale
+            // Content-Length can hang sloppy clients/proxies waiting for
+            // octets that never come. Content-Type is kept (harmless
+            // representation metadata, widely sent by real servers).
+            ->withoutHeader('Content-Length')
         ;
         if ($etag !== '') {
             return $response->withHeader('ETag', $etag);

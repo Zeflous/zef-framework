@@ -109,6 +109,7 @@ final readonly class ConfigProvider implements ConfigProviderInterface
                             new TieredRateLimiter($limiter),
                             $rules,
                             failOpen: $env->readBool('ZEF_SECURITY_RATE_LIMIT_FAIL_OPEN'),
+                            trustIdentityHeader: $env->readBool('ZEF_SECURITY_RATE_LIMIT_TRUST_IDENTITY_HEADER'),
                         );
                     },
                     'deps' => [],
