@@ -13,6 +13,7 @@ namespace Zef\Framework\Container;
 use Psr\Container\ContainerInterface;
 use Zef\Framework\Exception\InvalidConfigurationException;
 use Zef\Framework\Exception\InvalidFactoryException;
+use Zef\Framework\Exception\ServiceNotFoundException;
 use Zef\Framework\Exception\ServiceResolutionException;
 use Zef\Framework\Policy\ArchitecturePolicy;
 use Zef\Framework\Policy\NamespaceScopePolicy;
@@ -577,7 +578,16 @@ final class Container implements ContainerInterface, ServiceRegistrarInterface
                 continue;
             }
             if ($this->frozen) {
-                throw new \LogicException("Deferred provider service '{$id}' requested but the container is already frozen" . ' — request it before validateAndFreeze() or register the provider as eager.');
+                // PSR-11 (ZEF-DEEP-12): has() reports the service as absent
+                // (its deferred provider never ran), so get() must surface a
+                // NotFoundExceptionInterface — container-agnostic callers catch
+                // that standard interface, not the framework's LogicException.
+                throw new ServiceNotFoundException(
+                    $id,
+                    null,
+                    "Deferred provider service '{$id}' requested but the container is already frozen"
+                    . ' — request it before validateAndFreeze() or register the provider as eager.',
+                );
             }
             // @infection-ignore-all TrueValue — ekuivalen: registeredProviders hanya dibaca lewat isset() (baris 559); nilai tidak relevan
             $this->registeredProviders[$index] = true;
