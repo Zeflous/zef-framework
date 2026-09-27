@@ -87,8 +87,17 @@ jobs:
             echo "----------------------------------------"
             echo "Memproses PR #$pr..."
 
-            branch=$(gh pr view "$pr" --json headRefName --jq '.headRefName')
-            before_sha=$(gh pr view "$pr" --json headRefOid --jq '.headRefOid')
+            # Assignment `var=$(cmd)` yang gagal MEMATIKAN job di bawah `set -e`.
+            # PR bisa ditutup/di-merge secara concurrent saat loop berjalan ->
+            # gagal baca PR itu nyata; lewati PR-nya, jangan mati satu job.
+            branch=$(gh pr view "$pr" --json headRefName --jq '.headRefName' 2>/dev/null) || {
+              echo "⚠️ PR #$pr tidak bisa dibaca (mungkin baru ditutup) - lewati."
+              continue
+            }
+            before_sha=$(gh pr view "$pr" --json headRefOid --jq '.headRefOid' 2>/dev/null) || {
+              echo "⚠️ Head PR #$pr tidak bisa dibaca - lewati."
+              continue
+            }
             # Penanda waktu diambil 5 detik SEBELUM permintaan update (slack clock-skew
             # runner vs server GitHub; tanpa slack, run baru bisa terlihat "lebih tua"
             # dan lolos dari filter).
@@ -101,7 +110,18 @@ jobs:
             #    Deteksi head baru dilakukan dengan polling run pada branch dengan
             #    head_sha != before_sha - sha baru tidak perlu diketahui secara eksplisit.
             #    422 "no new commits on the base branch" = sudah up-to-date.
-            resp=$(gh api -X PUT "repos/${GITHUB_REPOSITORY}/pulls/${pr}/update-branch" 2>&1); rc=$?
+            # KRITIS: pola `resp=$(...); rc=$?` TIDAK aman di bawah `set -e` -
+            # assignment dari command substitution yang gagal mematikan job
+            # SEBELUM rc sempat dicek. Bug laten v3 (run 36332116612, 2026-09-27):
+            # PR yang up-to-date membalas 422 "no new commits on the base branch"
+            # -> job mati -> `gh pr merge --auto` tidak pernah dijalankan ->
+            # PR menunggu klik manual selamanya. Pola `if` di bawah menangkap
+            # rc dengan aman tanpa memicu set -e.
+            if resp=$(gh api -X PUT "repos/${GITHUB_REPOSITORY}/pulls/${pr}/update-branch" 2>&1); then
+              rc=0
+            else
+              rc=$?
+            fi
 
             updated=0
             if [ "$rc" -eq 0 ]; then
@@ -131,7 +151,9 @@ jobs:
               ids=""
               new_sha=""
               for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
-                runs_json=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs?branch=${branch}&per_page=50")
+                # Fallback JSON kosong: kegagalan API transien tidak boleh
+                # membunuh job (set -e) - cukup dianggap tidak ada run baru.
+                runs_json=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs?branch=${branch}&per_page=50" 2>/dev/null) || runs_json='{"workflow_runs":[]}'
                 # Run mana saja yang lahir SETELAH permintaan update dan menunggu approval?
                 # (Filter created_at > update_started wajib: history branch memuat run dari
                 # head-head lama yang sha-nya juga != before - tanpa filter waktu,
