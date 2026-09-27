@@ -219,12 +219,12 @@ final class FiberScheduler
 
         // sleep(0) needs no fast-path: a due-now timer resolves on the next
         // fireDueTimers pass, which is exactly one cooperative yield.
-        $current = $this->requireCurrentTask('sleep()');
-        $handle = new SuspensionHandle($this, $current);
-        $current->arm($handle);
+        // Routing through beginSuspension() applies the deferred-cancel
+        // entry guard: a cancel-requested task cannot park into a new timer.
+        $handle = $this->beginSuspension('sleep()');
         $this->insertTimer(
             $this->clock->nowNano() + (int) round($seconds * self::NANOS_PER_SECOND),
-            $current,
+            $handle->owner(),
             static fn () => $handle->deliver(null),
         );
         $this->awaitSuspension($handle);
@@ -271,6 +271,15 @@ final class FiberScheduler
     public function beginSuspension(string $context): SuspensionHandle
     {
         $current = $this->requireCurrentTask($context);
+        if ($current->isCancelRequested()) {
+            // Deferred-cancel (ZEF-DEEP-03): a task whose cancellation was
+            // requested while it ran (including a committed value returned
+            // after a delivery/cancel race) must not park again. Surfacing
+            // the cancellation HERE — before the calling primitive registers
+            // any wake-up — guarantees no dead waiter entries are left behind
+            // to swallow future permits or messages.
+            throw new TaskCancelledException(sprintf('%s was cancelled while suspended', $current->name()));
+        }
         $handle = new SuspensionHandle($this, $current);
         $current->arm($handle);
 
@@ -283,7 +292,6 @@ final class FiberScheduler
      */
     public function awaitSuspension(SuspensionHandle $handle): mixed
     {
-        $owner = $handle->owner();
         $payload = \Fiber::suspend($handle);
 
         // No disarm here on purpose: the armed slot is only ever read while
@@ -292,19 +300,22 @@ final class FiberScheduler
             throw $payload->throwable;
         }
 
-        // The wake raced against a cancellation (e.g. cancel() landed after
-        // the value was already enqueued, or the coroutine cancelled itself
-        // before parking): honour the request instead of the stale value.
-        if ($owner->isCancelRequested()) {
-            throw new TaskCancelledException(sprintf('%s was cancelled while suspended', $owner->name()));
-        }
-
         if (!$payload instanceof SuspendValue) {
             // Defensive: enqueueResume() only delivers SuspendValue|SuspendFail
             // and the SuspendFail arm throws above, so this is unreachable.
             throw new \LogicException('unexpected suspension payload');
         }
 
+        // A delivered value is COMMITTED (ZEF-DEEP-03, issue #157): the settle
+        // hooks already ran, queue entries were spliced, and the hand-over
+        // physically happened — the semaphore permit was transferred, the
+        // channel message left the sender, the awaited task finished. A
+        // cancellation that lands between delivery and resume must NOT
+        // discard it: that raced permanently with the old post-resume
+        // cancel check, leaking semaphore permits (every later acquire()
+        // deadlocked) and silently dropping delivered channel messages.
+        // Cancellation is deferred to the next suspension entry instead
+        // (beginSuspension rejects parking for cancel-requested tasks).
         return $payload->value;
     }
 

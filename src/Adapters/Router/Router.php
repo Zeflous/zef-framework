@@ -543,7 +543,7 @@ final class Router
                     if (
                         $applyConstraints
                         && $constraint !== ''
-                        && !$this->constraints->test('_', $constraint, $part)
+                        && !$this->constraints->test('_', $constraint, rawurldecode($part))
                     ) {
                         continue;
                     }
@@ -631,17 +631,27 @@ final class Router
         foreach ($segments as $index => $segment) {
             $value = $pathParts[$index] ?? '';
             if ($segment['dynamic']) {
+                // ZEF-DEEP-04: a dynamic segment carries a percent-encoded
+                // value — decode it BEFORE the constraint test and BEFORE it
+                // reaches the handler attributes, so `GET /users/%31%32%33`
+                // satisfies `{id:int}` and `GET /users/john%20doe` yields
+                // "john doe". rawurldecode() (not urldecode()) keeps "+" a
+                // literal plus: "+" only means space in query strings. This
+                // restores the round-trip symmetry with UrlGenerator, which
+                // rawurlencode()s every dynamic value. Static segments keep
+                // comparing against the raw path text below.
+                $decoded = rawurldecode($value);
                 if (
                     $segment['constraint'] !== null
-                    && !$this->constraints->test($segment['name'], $segment['constraint'], $value)
+                    && !$this->constraints->test($segment['name'], $segment['constraint'], $decoded)
                 ) {
                     return new RouteConstraintException(
                         $segment['name'],
                         $segment['constraint'],
-                        $value,
+                        $decoded,
                     );
                 }
-                $params[$segment['name']] = $value;
+                $params[$segment['name']] = $decoded;
 
                 continue;
             }
