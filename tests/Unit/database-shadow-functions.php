@@ -41,7 +41,7 @@ if (!\function_exists(__NAMESPACE__ . '\hrtime')) {
 
         if (\is_array($armed) && \is_callable($armed['fake'] ?? null)) {
             $result = ($armed['fake'])($as_number);
-            \assert(\is_int($result) || \is_float($result));
+            \assert(\is_int($result) || \is_float($result)); // nosemgrep: ban-qualified-global-call (the shadow narrows a fake-clock return for static analysis only — the qualified form cannot recurse here because this shadow's own name is hrtime, not assert; keeping the call visible to the pinned rules is unnecessary for a pure type guard)
 
             return $result;
         }
