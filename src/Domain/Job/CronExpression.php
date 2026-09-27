@@ -92,18 +92,23 @@ final readonly class CronExpression implements ScheduleInterface
 
     public function matchesUtc(int $unixSeconds): bool
     {
-        $info = getdate($unixSeconds);
-        if (!in_array($info['minutes'], $this->minutes, true)) {
+        // ZEF-DEEP-06: getdate() resolves the timestamp in the PROCESS
+        // timezone, silently shifting every schedule on non-UTC hosts (the
+        // docblock and describe() promise "All matching is performed in
+        // UTC"). gmdate() is UTC-exact by definition; the pipe-joined format
+        // keeps the hot path (nextRunAfter's minute scan) to one call.
+        [$minute, $hour, $month, $mday, $wday] = explode('|', gmdate('i|G|n|j|w', $unixSeconds));
+        if (!in_array((int) $minute, $this->minutes, true)) {
             return false;
         }
-        if (!in_array($info['hours'], $this->hours, true)) {
+        if (!in_array((int) $hour, $this->hours, true)) {
             return false;
         }
-        if (!in_array($info['mon'], $this->months, true)) {
+        if (!in_array((int) $month, $this->months, true)) {
             return false;
         }
-        $domMatch = in_array($info['mday'], $this->daysOfMonth, true);
-        $dowMatch = in_array($info['wday'], $this->daysOfWeek, true);
+        $domMatch = in_array((int) $mday, $this->daysOfMonth, true);
+        $dowMatch = in_array((int) $wday, $this->daysOfWeek, true);
         if ($this->domRestricted && $this->dowRestricted) {
             return $domMatch || $dowMatch;
         }

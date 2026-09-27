@@ -190,6 +190,9 @@ final class RuntimeSecMutationDebtTest extends TestCase
      * Kills RateLimitMiddleware.php:134/:138/:141 Concat + ConcatOperandRemoval:
      * the identity prefixes are a storage-key contract, asserted end-to-end
      * through TieredRateLimiter::storageKey (rule name + '>' + identity).
+     * The header leg runs in opt-in mode (ZEF-DEEP-02: client-controlled
+     * headers are ignored by default); a default-mode leg pins that the
+     * spoofable header cannot mint an apikey bucket unauthenticated.
      */
     public function testRateLimitIdentityKeysAreStablePrefixContracts(): void
     {
@@ -197,9 +200,9 @@ final class RuntimeSecMutationDebtTest extends TestCase
         $limiter = new RuntimeSecRecordingLimiter();
         $rule = new RateLimitRule('t', 60, 60);
         // Opt-in header trust keeps all three identity-source prefixes in one
-        // contract test; the default (header ignored — audit C-2) is covered
-        // by IdentityRateLimitingTest.
-        $middleware = new RateLimitMiddleware(new TieredRateLimiter($limiter, []), [$rule], [], false, 'X-API-Key', true);
+        // contract test; the default (header ignored — audit C-2 / ZEF-DEEP-02)
+        // is covered by IdentityRateLimitingTest and the V25 hardening tests.
+        $middleware = new RateLimitMiddleware(new TieredRateLimiter($limiter, []), [$rule], trustIdentityHeader: true);
 
         $byAttribute = $middleware->process(
             $this->request('/limited')->withAttribute('zef.auth.identity', 'user-1'),
@@ -224,6 +227,21 @@ final class RuntimeSecMutationDebtTest extends TestCase
             ],
             $limiter->keys,
             'identity prefixes must LEAD the fingerprint and never swap or disappear',
+        );
+
+        // Default mode: the SAME header must NOT produce an apikey key — the
+        // request keys on the resolved client IP instead.
+        $defaultLimiter = new RuntimeSecRecordingLimiter();
+        $default = new RateLimitMiddleware(new TieredRateLimiter($defaultLimiter, []), [$rule]);
+        $spoofed = $default->process(
+            $this->withHeader($this->request('/limited'), 'X-API-Key', 'spoof-1'),
+            $this->handler(),
+        );
+        self::assertSame(200, $spoofed->getStatusCode());
+        self::assertSame(
+            ['t>ip:0.0.0.0'],
+            $defaultLimiter->keys,
+            'default mode must resolve the identity from the client IP, ignoring the client-controlled header',
         );
     }
 

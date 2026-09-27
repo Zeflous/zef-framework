@@ -28,7 +28,7 @@ final readonly class SecurityRuntimeMiddleware implements MiddlewareInterface
         private array $trustedProxies = [],
     ) {
         $this->csrf = $policy->csrfEnabled && $policy->csrfSecret !== ''
-            ? new CsrfTokenManager($policy->csrfSecret, $policy->csrfTokenBytes)
+            ? new CsrfTokenManager($policy->csrfSecret, $policy->csrfTokenBytes, $policy->csrfTokenTtlSeconds)
             : null;
     }
 
@@ -64,13 +64,18 @@ final readonly class SecurityRuntimeMiddleware implements MiddlewareInterface
                     $this->policy->rateLimitMaxRequests,
                     $this->policy->rateLimitWindowSeconds,
                 );
+            } catch (RateLimiterCapacityException) {
+                // ZEF-DEEP-02: a full key store is not a storage failure — the
+                // request is served untracked rather than converting capacity
+                // into a global 503. Buckets that already exist keep counting.
+                $rateDecision = null;
             } catch (\Throwable) {
                 return JsonResponse::error(503, 'Service Unavailable', ['correlation_id' => $requestId], [
                     'Retry-After' => '1',
                     'X-Request-ID' => $requestId,
                 ]);
             }
-            if (!$rateDecision->allowed) {
+            if ($rateDecision instanceof RateLimitDecision && !$rateDecision->allowed) {
                 return JsonResponse::error(429, 'Too Many Requests', ['correlation_id' => $requestId], [
                     'Retry-After' => (string) $rateDecision->retryAfter,
                     'X-RateLimit-Limit' => (string) $rateDecision->limit,

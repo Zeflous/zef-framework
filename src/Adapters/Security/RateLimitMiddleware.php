@@ -31,13 +31,23 @@ use Zef\Framework\Http\JsonResponse;
  *     principals (v2.31.0); `zef.security.principal` is honoured as an
  *     alias — hashed;
  *  2. the API-key header — hashed — ONLY when explicitly opted in via
- *     `$trustClientIdentityHeader: true`. Since v2.31.0 this client-
- *     controlled header is NOT trusted by default (audit C-2): rotating
- *     unverified headers previously minted unlimited fresh buckets,
- *     defeating per-IP quotas entirely, and could exhaust limiter capacity
- *     into a fail-closed global 503. Opt in only when the header is
- *     verified upstream;
+ *     `$trustIdentityHeader: true` (env:
+ *     ZEF_SECURITY_RATE_LIMIT_TRUST_IDENTITY_HEADER). Since v2.31.0 this
+ *     client-controlled header is NOT trusted by default (audit C-2 /
+ *     ZEF-DEEP-02, issue #156): rotating unverified headers previously
+ *     minted unlimited fresh buckets, defeating per-IP quotas entirely,
+ *     and could exhaust limiter capacity into a fail-closed global 503.
+ *     Opt in only when the header is verified upstream;
  *  3. the resolved client IP (trusted-proxy aware) — used verbatim.
+ *
+ * Trust model (ZEF-DEEP-02, issue #156): the identity header is
+ * CLIENT-CONTROLLED. Honouring it by default let a single client mint an
+ * unbounded number of fresh buckets (per-IP quota bypass) and, once the
+ * bounded store reached maxKeys, pushed every NEW identity into the
+ * fail-closed 503 path — a global denial-of-service lever. By default the
+ * header is now IGNORED and unauthenticated requests key on the resolved
+ * client IP; opt in only when an upstream layer has authenticated the key.
+ *
  * Values from sources 1-2 are sha256-truncated so arbitrary-length
  * credentials cannot bloat limiter storage and never leak into keys.
  *
@@ -48,7 +58,11 @@ use Zef\Framework\Http\JsonResponse;
  * Failure policy: a limiter storage failure either fails CLOSED (default,
  * 503 + Retry-After: 1, mirroring SecurityRuntimeMiddleware) or fails OPEN
  * (`$failOpen`, the request proceeds WITHOUT rate-limit headers — never
- * without auth semantics).
+ * without auth semantics). Capacity exhaustion
+ * ({@see RateLimiterCapacityException}) is NOT a storage failure: the store
+ * is merely full of live buckets, tracked identities keep working, and the
+ * request is served untracked (controlled fail-open) instead of turning a
+ * full store into a global 503.
  */
 final readonly class RateLimitMiddleware implements MiddlewareInterface
 {
@@ -68,7 +82,7 @@ final readonly class RateLimitMiddleware implements MiddlewareInterface
         private array $trustedProxies = [],
         private bool $failOpen = false,
         private string $identityHeader = 'X-API-Key',
-        private bool $trustClientIdentityHeader = false,
+        private bool $trustIdentityHeader = false,
     ) {
         foreach ($rules as $rule) {
             if (!$rule instanceof RateLimitRule) {
@@ -95,6 +109,13 @@ final readonly class RateLimitMiddleware implements MiddlewareInterface
             // a storage failure, never surface as an unhandled 500.
             $identity = $this->resolveIdentity($request, $trustedProxies);
             $verdict = $this->tiered->evaluateAll($matched, $identity);
+        } catch (RateLimiterCapacityException) {
+            // ZEF-DEEP-02: the store is full of LIVE buckets — identities that
+            // already have a bucket are unaffected by this guard. Serving the
+            // (new) identity untracked is strictly safer than converting a
+            // full store into a global 503 for every client the attacker
+            // crowded out.
+            return $handler->handle($request);
         } catch (\Throwable) {
             if ($this->failOpen) {
                 return $handler->handle($request);
@@ -150,12 +171,13 @@ final readonly class RateLimitMiddleware implements MiddlewareInterface
                 return 'identity:' . $this->fingerprint($value);
             }
         }
-        // v2.31.0 (audit C-2): the client-controlled identity header is no
-        // longer trusted by default — rotating unverified headers minted
-        // unlimited buckets (per-IP quota bypass) and could exhaust maxKeys
-        // into a fail-closed global 503. Opt in explicitly when the header
-        // is verified upstream.
-        if ($this->trustClientIdentityHeader) {
+        // v2.31.0 (audit C-2 / ZEF-DEEP-02, issue #156): the client-controlled
+        // identity header is no longer trusted by default — rotating unverified
+        // headers minted unlimited buckets (per-IP quota bypass) and could
+        // exhaust maxKeys into a fail-closed global 503. Opt in explicitly
+        // (trustIdentityHeader / ZEF_SECURITY_RATE_LIMIT_TRUST_IDENTITY_HEADER)
+        // when the header is verified upstream.
+        if ($this->trustIdentityHeader) {
             $apiKey = $request->getHeaderLine($this->identityHeader);
             if ($apiKey !== '') {
                 return 'apikey:' . $this->fingerprint($apiKey);

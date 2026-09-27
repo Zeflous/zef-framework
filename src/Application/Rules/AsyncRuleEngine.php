@@ -201,6 +201,16 @@ final readonly class AsyncRuleEngine implements AsyncRuleEngineInterface
                         $guard->cancel();
                     }
 
+                    // If awaitVerdict threw before the inner settled (deadline
+                    // interrupt, fail-fast, or the deferred-cancel entry guard
+                    // firing between spawn and await — ZEF-DEEP-03), the
+                    // spawned inner must be cancelled NOW: otherwise its
+                    // queued first step would run the rule body later, after
+                    // the engine already recorded this rule as skipped. For a
+                    // settled inner this is a provable no-op (cancel() on a
+                    // done task returns false without side effects).
+                    $inner->cancel();
+
                     unset($inFlight[$index]);
                 }
             } finally {

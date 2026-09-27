@@ -321,6 +321,13 @@ final class Application
                 ?? new Response(500, ['Content-Type' => 'text/plain'], 'Application pipeline unavailable.');
             if (strtoupper($request->getMethod()) === 'HEAD') {
                 $response = $response->withBody(Stream::fromString(''));
+                // ZEF-DEEP-05: the body is now empty, so the handler's
+                // GET-representation Content-Length no longer matches the
+                // response object. Drop it to keep the object internally
+                // consistent — the SAPI emitter has always reconciled this
+                // lying header away; the RoadRunner path forwards verbatim
+                // and would otherwise ship a stale framing header.
+                $response = $response->withoutHeader('Content-Length');
             }
             $elapsed = (hrtime(true) - $startNs) / 1_000_000_000;
             $span
