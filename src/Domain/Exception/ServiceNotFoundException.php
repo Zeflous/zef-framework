@@ -17,8 +17,13 @@ final class ServiceNotFoundException extends \RuntimeException implements NotFou
     public function __construct(
         public readonly string $serviceId,
         public readonly ?string $module = null,
+        ?string $hint = null,
     ) {
         $suffix = $module !== null ? " (module: '{$module}')" : '';
-        parent::__construct("Service '{$serviceId}' not found{$suffix}.");
+        $message = "Service '{$serviceId}' not found{$suffix}.";
+        if ($hint !== null) {
+            $message .= ' ' . $hint;
+        }
+        parent::__construct($message);
     }
 }
