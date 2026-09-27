@@ -10,7 +10,7 @@ declare(strict_types=1);
 
 namespace Zef\Framework\Cache;
 
-final readonly class InMemoryCache implements CacheInterface
+final readonly class InMemoryCache implements CacheInterface, TtlAwareCacheInterface
 {
     public function __construct(
         private CacheStoreInterface $store,
@@ -54,5 +54,18 @@ final readonly class InMemoryCache implements CacheInterface
     public function clear(): void
     {
         $this->store->clear();
+    }
+
+    #[\Override]
+    public function getRemainingTtlSeconds(string $key): ?int
+    {
+        $item = $this->store->get($this->normalizer->normalize($key));
+        if (!$item instanceof CacheItem || $item->expiresAtUnixNano === null) {
+            return null;
+        }
+
+        $remainingNano = $item->expiresAtUnixNano - $this->clock->nowUnixNano();
+
+        return max(0, intdiv($remainingNano, 1_000_000_000));
     }
 }
