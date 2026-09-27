@@ -86,7 +86,7 @@ final class EdgeMatrixF8SecInfraTest extends TestCase
     {
         // Input non-list: materials harus dinormalkan agar withActiveIndex
         // membangun ulang encryptors dengan indeks 0..n-1 (kontrak list).
-        $ring = new RotatingKeyRing(['a' => self::K32A, 'b' => self::K32B]); // @phpstan-ignore-line
+        $ring = new RotatingKeyRing(['a' => self::K32A, 'b' => self::K32B]);
         $cipher = $ring->withActiveIndex(1)->encrypt('x');
         self::assertStringStartsWith('zefenc1.', $cipher);
         self::assertSame(2, $ring->keyCount());

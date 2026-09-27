@@ -28,8 +28,19 @@ use Zef\Framework\Http\JsonResponse;
  * different sources can never collide in one bucket):
  *  1. the `zef.auth.identity` request attribute (set by authentication
  *     middleware) — hashed;
- *  2. the API-key header — hashed;
+ *  2. the identity header — hashed, ONLY in opt-in mode
+ *     (`$trustIdentityHeader`, e.g. behind an authenticating gateway that
+ *     validates keys and strips spoofed copies);
  *  3. the resolved client IP (trusted-proxy aware) — used verbatim.
+ *
+ * Trust model (ZEF-DEEP-02, issue #156): the identity header is
+ * CLIENT-CONTROLLED. Honouring it by default let a single client mint an
+ * unbounded number of fresh buckets (per-IP quota bypass) and, once the
+ * bounded store reached maxKeys, pushed every NEW identity into the
+ * fail-closed 503 path — a global denial-of-service lever. By default the
+ * header is now IGNORED and unauthenticated requests key on the resolved
+ * client IP; opt in only when an upstream layer has authenticated the key.
+ *
  * Values from sources 1-2 are sha256-truncated so arbitrary-length
  * credentials cannot bloat limiter storage and never leak into keys.
  *
@@ -40,7 +51,11 @@ use Zef\Framework\Http\JsonResponse;
  * Failure policy: a limiter storage failure either fails CLOSED (default,
  * 503 + Retry-After: 1, mirroring SecurityRuntimeMiddleware) or fails OPEN
  * (`$failOpen`, the request proceeds WITHOUT rate-limit headers — never
- * without auth semantics).
+ * without auth semantics). Capacity exhaustion
+ * ({@see RateLimiterCapacityException}) is NOT a storage failure: the store
+ * is merely full of live buckets, tracked identities keep working, and the
+ * request is served untracked (controlled fail-open) instead of turning a
+ * full store into a global 503.
  */
 final readonly class RateLimitMiddleware implements MiddlewareInterface
 {
@@ -58,6 +73,7 @@ final readonly class RateLimitMiddleware implements MiddlewareInterface
         private array $trustedProxies = [],
         private bool $failOpen = false,
         private string $identityHeader = 'X-API-Key',
+        private bool $trustIdentityHeader = false,
     ) {
         foreach ($rules as $rule) {
             if (!$rule instanceof RateLimitRule) {
@@ -84,6 +100,13 @@ final readonly class RateLimitMiddleware implements MiddlewareInterface
             // a storage failure, never surface as an unhandled 500.
             $identity = $this->resolveIdentity($request, $trustedProxies);
             $verdict = $this->tiered->evaluateAll($matched, $identity);
+        } catch (RateLimiterCapacityException) {
+            // ZEF-DEEP-02: the store is full of LIVE buckets — identities that
+            // already have a bucket are unaffected by this guard. Serving the
+            // (new) identity untracked is strictly safer than converting a
+            // full store into a global 503 for every client the attacker
+            // crowded out.
+            return $handler->handle($request);
         } catch (\Throwable) {
             if ($this->failOpen) {
                 return $handler->handle($request);
@@ -133,9 +156,11 @@ final readonly class RateLimitMiddleware implements MiddlewareInterface
         if (is_string($attribute) && $attribute !== '') {
             return 'identity:' . $this->fingerprint($attribute);
         }
-        $apiKey = $request->getHeaderLine($this->identityHeader);
-        if ($apiKey !== '') {
-            return 'apikey:' . $this->fingerprint($apiKey);
+        if ($this->trustIdentityHeader) {
+            $apiKey = $request->getHeaderLine($this->identityHeader);
+            if ($apiKey !== '') {
+                return 'apikey:' . $this->fingerprint($apiKey);
+            }
         }
 
         return 'ip:' . ClientAddressResolver::resolve($request, $trustedProxies);

@@ -196,6 +196,14 @@ final readonly class CronExpression implements ScheduleInterface
         throw new \RuntimeException("Cron expression '{$this->expression}' has no matching minute within 4 years.");
     }
 
+    /**
+     * Field matching against caller-provided wall-clock fields. UTC/TZ
+     * exactness is the caller's contract: {@see matchesUtc()} computes the
+     * fields with gmdate() (ZEF-DEEP-06: immune to the process default
+     * timezone — the previous getdate()-based implementation silently
+     * matched in the process timezone), {@see matchesIn()} via
+     * DateTimeImmutable::setTimezone().
+     */
     private function matchesFields(int $minute, int $hour, int $dom, int $month, int $dow): bool
     {
         if (!in_array($minute, $this->minutes, true)) {

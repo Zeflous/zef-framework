@@ -519,6 +519,12 @@ final class Container implements ContainerInterface, ServiceRegistrarInterface
             $definition = $definitions[$id];
             $baseId = '@inner:' . $id . ':base';
             // Innermost: the original definition re-homed under a synthetic id.
+            // ZEF-DEEP-08: the re-homed base is internal plumbing — it must
+            // NOT keep the tags (pre-fix it did), or the tag index points
+            // consumers at the synthetic id and they silently resolve the
+            // UNDECORATED inner instance. The tags travel with the service
+            // identity — the outermost wrapper registered under the original
+            // id — mirroring the contextual-binding rewrite pattern.
             $this->registry->addDefinition(new ServiceDefinition(
                 $baseId,
                 $definition->factory,
@@ -527,7 +533,7 @@ final class Container implements ContainerInterface, ServiceRegistrarInterface
                 $definition->lifetime,
                 $definition->shared,
                 $definition->lazy,
-                $definition->tags,
+                [],
             ));
             // @infection-ignore-all GreaterThanOrEqualTo,Throw_ — ekuivalen: redundan dengan cek budget per-wrapper di dalam loop; penegakan budget tetap terjamin
             if (count($this->registry->definitions()) >= $budget) {
@@ -548,6 +554,7 @@ final class Container implements ContainerInterface, ServiceRegistrarInterface
                     $definition->lifetime,
                     $definition->shared,
                     $definition->lazy,
+                    $i === 0 ? $definition->tags : [],
                 ));
                 if (count($this->registry->definitions()) >= $budget) {
                     throw new InvalidConfigurationException('Service registration budget exceeded during decoration.');

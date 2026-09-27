@@ -123,7 +123,7 @@ final class SlidingWindowRateLimiter implements CostAwareRateLimiterInterface
 
         if ($bucket === null) {
             if (count($this->buckets) >= $this->maxKeys) {
-                throw new \RuntimeException('Rate limiter capacity exhausted.');
+                throw new RateLimiterCapacityException('Rate limiter capacity exhausted.');
             }
         }
         $this->buckets[$key] = [
