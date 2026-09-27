@@ -3,25 +3,44 @@
 #
 # Design notes — read docs/security/sonarcloud.md before changing this file:
 #   * This is the "CI Security/Review" lane of the pipeline: the main CI job
-#     (PHPStan max level, Deptrac, Infection) proves structural and behavioural
-#     correctness locally; this lane adds an independent cloud reviewer whose
-#     findings surface as pull-request decoration and a blocking quality-gate
-#     verdict.
+#     (PHPStan max level, Deptrac, coverage, style) proves structural and
+#     behavioural correctness locally; this lane adds an independent cloud
+#     reviewer whose findings surface as pull-request decoration and a
+#     blocking quality-gate verdict.
 #   * The job name below is load-bearing: it must stay exactly "SonarCloud
-#     Scan" so the check can later be promoted to a required status-check
-#     context on the protected main branch without renaming (same contract as
-#     the "PHP lint, audit, static analysis and style" job in ci.yml and the
-#     "Build API documentation" job in docs-check.yml).
+#     Scan" — that context IS a required status-check on the protected main
+#     branch (same contract as "PHP lint, audit, static analysis and style" in
+#     ci.yml and "Build API documentation" in docs-check.yml).
+#   * REQUIRED-CHECK SEMANTICS (live finding, 2026-09-28, PR #208): branch
+#     protection does NOT accept a check whose job was SKIPPED — a dependabot
+#     pull request sat merge-blocked for hours with every other check green
+#     because the old job-level `if:` guard left "SonarCloud Scan" in the
+#     "skipped" conclusion forever. A required context must therefore ALWAYS
+#     run its job. This job reports GREEN WITH A NOTICE whenever it cannot
+#     scan credentialed:
+#       - SONAR_TOKEN absent or withheld: the repository secret is not set
+#         yet, or this is a pull_request event where GitHub withholds
+#         repository secrets (a dependabot[bot] author, or a head from a
+#         fork).
+#     The green is not silent — the notice step writes a step summary and a
+#     `::notice::` annotation stating exactly why no analysis ran. Those PRs
+#     change no PHP this gate could newly judge (dependabot bumps pinned
+#     action SHAs) and remain fully gated by the CI lane; a wedged queue
+#     helps no one. Never use pull_request_target to work around the secret
+#     withholding.
 #   * BLOCKING quality gate: sonar.qualitygate.wait=true in
 #     sonar-project.properties makes the scanner wait for the server-side
 #     verdict; a red gate fails this job.
-#   * Requires the repository secret SONAR_TOKEN. Until that secret exists
-#     this job reports success WITH a visible notice instead of failing: an
-#     unconfigured gate must not block the PR queue, and a silent green would
-#     hide the missing configuration. The setup checklist is in
-#     docs/security/sonarcloud.md section 3.
-#   * Credentialed analysis never runs against an untrusted fork pull request
-#     (same guard as snyk-security.yml).
+#   * COVERAGE BRIDGE (v2, 2026-09-28): the CI lane uploads build/clover.xml
+#     as the artifact "coverage-clover" for every commit it analyses. This
+#     job waits for the CI run of the SAME commit, downloads that artifact
+#     and passes sonar.php.coverage.reportPaths to the scanner, so the
+#     quality gate's coverage-on-new-code condition is enforced on real
+#     PHPUnit data. When coverage genuinely cannot be bridged (CI red, no CI
+#     run within its own 45-minute bound, artifact unavailable) the run
+#     falls back to sonar.coverage.exclusions=**/* FOR THAT ONE RUN, always
+#     announced in the step summary and via ::notice:: — never silently.
+#     See docs/security/sonarcloud.md section 6.
 #
 # All actions are pinned to a full commit SHA, matching the convention used in
 # .github/workflows/ci.yml.
@@ -45,20 +64,14 @@ concurrency:
 jobs:
   sonarcloud:
     name: SonarCloud Scan
-    # Credentialed analysis must never run against an untrusted fork pull
-    # request: GitHub withholds secrets there, so the scan cannot
-    # authenticate. Skipping keeps the check honest instead of reporting a
-    # green-but-empty result. Never use pull_request_target to work around it.
-    if: >-
-      github.event_name != 'pull_request' ||
-      (
-        github.event.pull_request.head.repo.fork == false &&
-        github.event.pull_request.user.login != 'dependabot[bot]'
-      )
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # Budget: the coverage bridge polls the CI lane for up to 45 minutes (the
+    # CI job's own timeout bound, ci.yml) and the scan itself takes ~3-4
+    # minutes; typical total is ~20 minutes (CI lane completes in ~15).
+    timeout-minutes: 60
     permissions:
-      contents: read # actions/checkout to fetch code
+      contents: read  # actions/checkout to fetch code
+      actions: read  # fetch the CI lane's coverage-clover artifact (bridge v2)
     env:
       # Scoped to the job (not the workflow) so no unrelated job can ever
       # receive it. Never echo, log, or print this value.
@@ -68,25 +81,111 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Report unconfigured state (SONAR_TOKEN absent)
-        # Deliberate contract: while the repository secret SONAR_TOKEN does
-        # not exist, this job is GREEN WITH A NOTICE, never red. A gate that
-        # is not yet configured must not block the merge queue; a silent
-        # green would hide the missing configuration. The notice and the
-        # step summary are the actionable signal.
+      - name: Report unconfigured state (SONAR_TOKEN absent or withheld)
+        # Deliberate contract: whenever this job cannot scan credentialed —
+        # the repository secret SONAR_TOKEN is not set, or this is a
+        # pull_request event where GitHub withholds repository secrets (a
+        # dependabot[bot] author or a fork head) — the job is GREEN WITH A
+        # NOTICE, never red and never silently green. A required check that
+        # cannot run must not wedge the merge queue: a job-level skip leaves
+        # the required context in the "skipped" conclusion, which branch
+        # protection does not accept (live finding on PR #208, 2026-09-28).
         if: env.SONAR_TOKEN == ''
         run: |
           {
-            echo "### SonarCloud Scan — skipped (not configured yet)"
+            echo "### SonarCloud Scan — skipped (no credentials in this context)"
             echo ""
-            echo "The repository secret \`SONAR_TOKEN\` is not set, so no SonarCloud"
-            echo "analysis ran and no quality-gate verdict was evaluated. This check"
-            echo "reports green so an unconfigured gate cannot block the PR queue."
+            echo "No credentialed SonarCloud analysis ran for this commit: either"
+            echo "the repository secret \`SONAR_TOKEN\` is not set, or this is a"
+            echo "pull request whose secrets GitHub withholds (a \`dependabot[bot]\`"
+            echo "author, or a head from a fork). The check reports green so an"
+            echo "unconfigured or uncredentialed gate cannot block the PR queue;"
+            echo "the CI lane still gates these pull requests fully."
             echo ""
             echo "Setup checklist: docs/security/sonarcloud.md, section 3."
           } >> "${GITHUB_STEP_SUMMARY}"
-          echo "::notice::SONAR_TOKEN is not set — SonarCloud analysis skipped (setup: docs/security/sonarcloud.md)."
+          echo "::notice::SONAR_TOKEN unavailable in this context — SonarCloud analysis skipped (setup: docs/security/sonarcloud.md)."
+
+      - name: Wait for the CI lane and fetch its coverage artifact (bridge v2)
+        # Coverage bridge v2 — docs/security/sonarcloud.md section 6. The CI
+        # job uploads build/clover.xml as the artifact "coverage-clover" for
+        # every commit it analyses; this step consumes the artifact of the
+        # SAME commit (identical head SHA: both workflows trigger on the same
+        # pull_request/push events) so the scanner's coverage-on-new-code
+        # gate condition is computed on real data. It usually just waits for
+        # the in-flight CI run to finish.
+        if: env.SONAR_TOKEN != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          sha="${GITHUB_SHA}"
+          # Match the CI job's own bound (timeout-minutes: 45 in ci.yml):
+          # beyond it the CI lane has failed on its own terms and this gate
+          # must not hold the check open longer than the lane it feeds on.
+          deadline=$(( $(date +%s) + 45 * 60 ))
+
+          run_id=""
+          last_state="not started yet"
+          while [ "$(date +%s)" -lt "${deadline}" ]; do
+            run_id=$(gh api --method GET \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${sha}&per_page=1" \
+              --jq '.workflow_runs[0].id // empty' 2>/dev/null) || run_id=""
+            if [ -n "${run_id}" ]; then
+              info=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" \
+                --jq '{status: .status, conclusion: .conclusion}' 2>/dev/null) || info='{}'
+              st=$(printf '%s' "${info}" | jq -r '.status // "unknown"')
+              cl=$(printf '%s' "${info}" | jq -r '.conclusion // ""')
+              last_state="${st} ${cl:-running}"
+              if [ "${st}" = "completed" ]; then
+                break
+              fi
+            fi
+            echo "CI run for ${sha:0:8}: ${last_state}; polling again in 30s..."
+            sleep 30
+          done
+
+          verdict="fallback"
+          args="-Dsonar.coverage.exclusions=**/*"
+          if [ -n "${run_id}" ]; then
+            cl=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" \
+              --jq '.conclusion // "unknown"' 2>/dev/null) || cl="unknown"
+            if [ "${cl}" = "success" ]; then
+              rm -rf build
+              mkdir -p build
+              if gh run download "${run_id}" --name coverage-clover --dir build 2>/dev/null; then
+                if [ -s build/clover.xml ] && grep -q '<coverage' build/clover.xml 2>/dev/null; then
+                  args="-Dsonar.php.coverage.reportPaths=build/clover.xml"
+                  verdict="bridged"
+                else
+                  echo "::warning::coverage-clover artifact fetched but build/clover.xml is absent or not a clover report — coverage excluded for this run."
+                fi
+              else
+                echo "::warning::coverage-clover artifact of CI run ${run_id} could not be fetched (expired or missing) — coverage excluded for this run."
+              fi
+            else
+              echo "::notice::CI run ${run_id} ended '${cl}' — no coverage artifact to bridge; the CI lane itself already reports this commit red."
+            fi
+          else
+            echo "::notice::No completed CI run for ${sha:0:8} within 45 minutes — coverage excluded for this run."
+          fi
+
+          {
+            echo "### Coverage bridge (v2)"
+            echo ""
+            echo "- verdict: **${verdict}**"
+            if [ "${verdict}" = "bridged" ]; then
+              echo "- PHPUnit clover report consumed from the CI lane's \`coverage-clover\` artifact (run ${run_id}); the quality gate's coverage-on-new-code condition is enforced on real data."
+            else
+              echo "- No coverage data was available for this commit, so \`sonar.coverage.exclusions=**/*\` applies to THIS run only and the coverage-on-new-code condition is skipped. Every other condition (bugs, vulnerabilities, code smells, duplications, security hotspots) remains fully enforced, and the fallback is announced here and via \`::notice::\` — never silent."
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          # Hand the chosen scanner arguments to the scan step below.
+          echo "COVERAGE_ARGS=${args}" >> "${GITHUB_ENV}"
 
       - name: SonarCloud Scan
         if: env.SONAR_TOKEN != ''
         uses: SonarSource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4 # v8.2.2
+        with:
+          args: ${{ env.COVERAGE_ARGS }}

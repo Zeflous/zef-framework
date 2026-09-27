@@ -51,9 +51,15 @@ ships silently.
 - **Pull-request decoration**: once the GitHub ALM binding is configured
   (section 3, step 5), SonarCloud posts inline comments and a quality summary
   on every pull request it analyses.
-- **Zero secret until configured**: while `SONAR_TOKEN` does not exist the job
-  is green **with a visible notice** (workflow step summary + `::notice::`),
-  never red and never silently green.
+- **Zero secret until configured, green-with-notice when uncredentialed**:
+  whenever the job cannot scan credentialed — `SONAR_TOKEN` not set yet, or a
+  `pull_request` event where GitHub withholds repository secrets (a
+  `dependabot[bot]` author, or a head from a fork) — the job is green **with a
+  visible notice** (workflow step summary + `::notice::`), never red and never
+  silently green. Because this context is a *required* check, the job must
+  always run and conclude: a job-level skip would leave the required context
+  in the "skipped" conclusion, which branch protection does not accept, and
+  the merge queue would wedge (live finding on PR #208, 2026-09-28).
 
 ## 3. Setup checklist (one-time, ~5 minutes)
 
@@ -90,16 +96,30 @@ The workflow ships fully wired; only the SonarCloud account side is manual:
 6. **Create a token** (My Account → Security → Generate Token, type "Global /
    User Token") and save it as the repository secret `SONAR_TOKEN`
    (Settings → Secrets and variables → Actions). The name is fixed by
-   `.github/workflows/sonarcloud.yml`.
+   `.github/workflows/sonarcloud.yml`. Any token whose SonarCloud identity is
+   a member of the organization **mbetixz** works — the personal-mode key
+   (`mbetixz_zef-framework`) and the org-mode key (`zeflous_zef-framewrok`)
+   both authenticate, because a SonarCloud token carries the permissions of
+   the *user*, across every organization that user belongs to. The token
+   currently stored (updated 2026-09-27 23:01 UTC) is verified green against
+   `mbetixz_zef-framework` by the scan on `main` at 23:03 UTC the same day.
+   The parallel project **`zeflous_zef-framework`** in the SonarCloud
+   organization `zeflous` is *not* referenced by this repository and should be
+   deleted (Administration → Deletion) so only one project carries the history:
+   a SonarCloud organization can only decorate pull requests of GitHub repos
+   owned by the account/org it is bound to, and this repository lives under
+   the personal account `mbetixz`, not under the GitHub org `Zeflous`.
 7. **Verify**: Actions tab → *SonarCloud* workflow → *Run workflow* (manual
    dispatch is enabled for exactly this). The first run analyses `main` and
    must end green. If the log shows a tiny "N files indexed" count and no
    `Quality profile for php`, the organization is still on the Free plan —
    back to step 2.
-8. **Promote to a required check** (recommended after the first green run):
-   branch protection on `main`, add the required status-check context
-   **`SonarCloud Scan`** — the job name is load-bearing and pinned by the
-   workflow file. Until this step the gate informs but does not block merges.
+8. **Promoted to a required check** (done 2026-09-28): branch protection on
+   `main` lists the required status-check context **`SonarCloud Scan`** — the
+   job name is load-bearing and pinned by the workflow file. With the
+   green-with-notice contract above, the required context stays satisfiable
+   on dependabot and fork pull requests, so the gate blocks on verdicts
+   without wedging the queue.
 
 ## 4. Analysis inputs and supply chain
 
@@ -125,22 +145,47 @@ mirroring how the Semgrep engine digest is upgraded in `php-sast.yml`.
   `docs/security/php-sast.md`) stays the merge-blocking pattern-matching gate.
   SonarCloud security hotspots complement it with taint-flow heuristics that
   require human triage.
-- **Not a coverage gate.** Coverage remains the CI lane's job (Xdebug driver,
-  90% floor). See section 6 for the current bridge.
-- **Not fork-authenticated.** Fork pull requests are skipped with a neutral
-  check (secrets are withheld there anyway — same guard as `snyk-security.yml`).
+- **Not the authoritative coverage floor.** The CI lane stays the authoritative
+  coverage gate (Xdebug driver, 90% statements floor, evidence artifact).
+  Since bridge v2 this lane *also* enforces the Sonar way gate's
+  coverage-on-new-code condition on the same clover data, as an independent
+  second opinion — see section 6.
+- **Not credentialed on dependabot/fork pull requests.** GitHub withholds
+  repository secrets on those `pull_request` events, so no analysis runs
+  there. The check reports green with a notice explaining exactly that
+  (not a job-level skip: a required check left in "skipped" wedges the merge
+  queue — live finding on PR #208). Those PRs are still fully gated by the CI
+  lane, and they change pinned action SHAs rather than PHP code this gate
+  could newly judge.
 
-## 6. Coverage bridge (v1) and follow-up
+## 6. Coverage bridge (v2, 2026-09-28)
 
-The main CI job produces PHPUnit coverage but does not export it; this lane
-therefore sets `sonar.coverage.exclusions=**/*` so the default gate's
-coverage-on-new-code condition does not fail on absent data. Bugs, code smells,
-duplications, security hotspots and new-code reliability conditions remain
-fully enforced. The deliberate follow-up is an artifact hand-off (CI uploads the
-coverage XML; this workflow downloads it and points
-`sonar.php.coverage.reportPaths` at it), after which the exclusion is removed
-and the coverage condition becomes real. Until then the exclusion is the honest
-statement of what this gate measures.
+The CI lane uploads `build/clover.xml` as the artifact **`coverage-clover`**
+for every commit it analyses (ci.yml, "Upload coverage evidence"). This lane
+consumes that artifact for the *same commit*: the bridge step waits for the
+CI run whose head SHA matches this run's SHA (both workflows trigger on the
+same `pull_request`/`push` events, so the SHAs coincide — the merge-commit
+SHA on pull requests, the branch head on pushes), downloads the artifact and
+passes `-Dsonar.php.coverage.reportPaths=build/clover.xml` to the scanner.
+The quality gate's coverage-on-new-code condition is therefore computed on
+real PHPUnit data measured by the exact execution the CI lane already gated.
+
+The wait is bounded by the CI job's own timeout (45 minutes, matched in the
+bridge step); the job timeout was raised to 60 minutes accordingly. Typical
+wall time is ~20 minutes (CI ~15 + scan ~4), running in parallel with the CI
+lane rather than after it.
+
+**Fallback, announced never silent.** When coverage genuinely cannot be
+bridged — the CI run ended red (no artifact, and the CI lane already reports
+that commit), no completed CI run appeared within the 45-minute bound, or the
+artifact could not be fetched (expired retention) — the run scans with
+`-Dsonar.coverage.exclusions=**/*` for that single run, so the gate's
+coverage condition is skipped while every other condition (bugs,
+vulnerabilities, code smells, duplications, security hotspots) stays enforced.
+Every fallback is stated in the step summary ("Coverage bridge (v2) — verdict:
+fallback") and via `::notice::`. The properties file deliberately contains no
+coverage keys: the posture is chosen per run, in the workflow, where the
+artifact availability is actually known.
 
 ## 7. Failure modes and their meaning
 
@@ -150,5 +195,7 @@ statement of what this gate measures.
 | Red job, "you are running CI analysis while Automatic Analysis is enabled" | section 3 step 4 was skipped |
 | Red job, log shows a tiny `N files indexed` count, `CPD Executor Calculating CPD for 0 files`, or no `Quality profile for php` line | organization is on the **Free plan**: its basic analysis set has no PHP analyzer, so PHP sources are dropped from indexing — switch the organization to the **OSS plan** (section 3 step 2) |
 | Red job, "project not found" / 401 | `sonar.projectKey` / `sonar.organization` / `SONAR_TOKEN` mismatch — section 3 |
-| Green job with the skip notice | `SONAR_TOKEN` not set yet — section 3 step 6 |
-| Skipped (neutral) check on a PR | fork pull request or `dependabot[bot]` author — by design |
+| Green job with the no-credentials notice | `SONAR_TOKEN` not set, or a pull request whose secrets GitHub withholds (`dependabot[bot]` author, fork head) — section 2 / section 3 step 6 |
+| Green job, step summary says "Coverage bridge (v2) — verdict: **fallback**" | no coverage artifact for this commit (CI red, no CI run in 45 min, or artifact unavailable) — coverage condition skipped for that run, everything else enforced; the CI lane is the authoritative coverage gate in that case |
+| Red job, "quality gate failed", coverage condition | new code measured below the Sonar way floor on the bridged clover data — fix the code or review the gate in SonarCloud (a reviewed decision, not a workflow edit) |
+| Job runs ~20 minutes before the verdict | normal: the bridge waits for the CI lane of the same commit — see section 6 |
