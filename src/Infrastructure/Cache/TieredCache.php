@@ -15,7 +15,10 @@ namespace Zef\Framework\Cache;
  * Reads check L1 first, then L2, promoting hits into L1; writes go to both
  * tiers (write-through); deletes and clears propagate to both. L1 entries are
  * additionally capped by $l1TtlSeconds so hot-tier staleness stays bounded
- * even when the underlying L1 has a longer native TTL.
+ * even when the underlying L1 has a longer native TTL. Promotions are capped
+ * by the L2 entry's REMAINING lifetime whenever the L2 implements
+ * TtlAwareCacheInterface, so a promoted copy can never outlive the TTL the
+ * original set() asked for (ZEF-DEEP-14).
  */
 final readonly class TieredCache implements CacheInterface
 {
@@ -39,7 +42,12 @@ final readonly class TieredCache implements CacheInterface
             return $default;
         }
         $value = $this->l2->get($key, $default);
-        $this->l1->set($key, $value, $this->l1TtlSeconds);
+        $remaining = $this->l2 instanceof TtlAwareCacheInterface
+            ? $this->l2->getRemainingTtlSeconds($key)
+            : null;
+        if ($remaining === null || $remaining > 0) {
+            $this->l1->set($key, $value, $this->promotionTtl($remaining));
+        }
 
         return $value;
     }
@@ -75,5 +83,24 @@ final readonly class TieredCache implements CacheInterface
     {
         $this->l1->clear();
         $this->l2->clear();
+    }
+
+    /**
+     * TTL for promoting an L2 hit into L1: the constructor cap, but never
+     * longer than the L2 entry's remaining lifetime (floored by contract),
+     * so a promotion cannot extend freshness past the deadline the caller
+     * asked for. null = promote without a deadline (uncapped L1, or an L2
+     * entry / adapter that carries no deadline).
+     */
+    private function promotionTtl(?int $remaining): ?int
+    {
+        if ($remaining === null) {
+            return $this->l1TtlSeconds;
+        }
+        if ($this->l1TtlSeconds === null) {
+            return $remaining;
+        }
+
+        return min($this->l1TtlSeconds, $remaining);
     }
 }
