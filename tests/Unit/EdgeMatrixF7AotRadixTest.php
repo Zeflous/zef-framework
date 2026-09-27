@@ -265,8 +265,10 @@ final class EdgeMatrixF7AotRadixTest extends TestCase
             $container->validateAndFreeze();
             self::fail('Expected a cross-scope budget violation on the second distinct target.');
         } catch (ModuleDependencyViolationException $e) {
+            // Budget pairs are keyed consumer=>target (ZEF-DEEP-11); an
+            // unscoped consumer shares the anonymous '' bucket.
             self::assertSame(
-                "Namespace scope violation: cross-scope references into 'mod\\core\\' exceed the limit (1).",
+                "Namespace scope violation: cross-scope references into '=>mod\\core' exceed the limit (1).",
                 $e->getMessage(),
             );
         }
