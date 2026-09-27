@@ -21,6 +21,7 @@ namespace Zef\Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
+use Psr\Container\NotFoundExceptionInterface;
 use Zef\Framework\Container\Container;
 use Zef\Framework\Container\DeferrableProviderInterface;
 use Zef\Framework\Container\RequestScope;
@@ -277,10 +278,13 @@ final class EdgeMatrixF7ContainerTest extends TestCase
 
         try {
             $container->get('d.late');
-            self::fail('Expected LogicException for a deferred service after freeze.');
-        } catch (\LogicException $e) {
+            self::fail('Expected a PSR-11 NotFoundException for a deferred service after freeze.');
+        } catch (ServiceNotFoundException $e) {
+            // ZEF-DEEP-12: has() is false, so get() must surface
+            // NotFoundExceptionInterface carrying the same guidance.
+            self::assertInstanceOf(NotFoundExceptionInterface::class, $e);
             self::assertSame(
-                "Deferred provider service 'd.late' requested but the container is already frozen"
+                "Service 'd.late' not found. Deferred provider service 'd.late' requested but the container is already frozen"
                 . ' — request it before validateAndFreeze() or register the provider as eager.',
                 $e->getMessage(),
             );
