@@ -46,6 +46,7 @@ $pages = [
     ['slug' => 'roadmap', 'title' => 'Roadmap', 'source' => 'docs/ROADMAP.md', 'group' => 'Referensi'],
     ['slug' => 'edge-case-matrix', 'title' => 'Edge-Case Matrix', 'source' => 'docs/EDGE-CASE-MATRIX.md', 'group' => 'Referensi'],
     ['slug' => 'php-sast', 'title' => 'PHP SAST', 'source' => 'docs/security/php-sast.md', 'group' => 'Referensi'],
+    ['slug' => 'sonarcloud', 'title' => 'SonarCloud', 'source' => 'docs/security/sonarcloud.md', 'group' => 'Referensi'],
 ];
 
 $outDir = $root . '/build/docs';

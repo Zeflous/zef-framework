@@ -55,7 +55,8 @@ docs/
 ├── ROADMAP.md
 ├── EDGE-CASE-MATRIX.md
 ├── security/
-│   └── php-sast.md
+│   ├── php-sast.md
+│   └── sonarcloud.md
 ├── CHANGELOG-v2.7.0.md … CHANGELOG-v2.16.0.md
 └── CHANGELOG-v2.17.0.md   (rilis terbaru)
 ```

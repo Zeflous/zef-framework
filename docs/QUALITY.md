@@ -200,6 +200,7 @@ dengan PHP 8.4 (Xdebug untuk coverage, ekstensi `mbstring, dom, xml, xmlwriter,
 apcu, redis`, `apc.enable_cli=1`) dan server Redis pada `127.0.0.1:6399`.
 Workflow pendamping: `docs-check.yml` (bangun dokumentasi read-only untuk PR),
 `pages.yml` (terbitkan API docs ke GitHub Pages), `php-sast.yml`,
+`sonarcloud.yml` (gate kualitas cloud-side SonarCloud),
 `secret-scan.yml`, `dependency-review.yml`, `composer-lock.yml`, `sbom.yml`,
 `phpbench.yml`, `auto-fix.yml`, `release.yml`, `release-drafter.yml`.
 
