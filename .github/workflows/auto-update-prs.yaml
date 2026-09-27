@@ -2,13 +2,24 @@ name: "Auto Update and Merge PRs (FIFO Order)"
 
 on:
   schedule:
-    # Jaring pengaman berkala 2x/jam. Menit 13/43 dipilih SENGAJA di luar
-    # menit puncak (:00/:30): GitHub rutin MENJATUHKAN run cron yang jatuh
-    # tepat pada menit puncak - terbukti empiris 2026-09-27: gap antar run
-    # 3j42m lalu 5j21m; slot 15:00/15:30/16:00 UTC semuanya tidak pernah
-    # lahir. Dengan rantai merge (trigger pull_request closed + ZEF_CI_PAT
-    # aktif), cron kini murni jaring pengaman, bukan penggerak utama.
-    - cron: '13,43 * * * *'
+    # Jaring pengaman berkala 3x/jam (tiap 20 menit). Menit 7/27/47 dipilih
+    # SENGAJA di luar menit puncak (:00/:30): GitHub rutin MENJATUHKAN run
+    # cron yang jatuh tepat pada menit puncak - terbukti empiris 2026-09-27:
+    # gap antar run 3j42m lalu 5j21m; slot 15:00/15:30/16:00 UTC semuanya
+    # tidak pernah lahir. Dengan rantai merge (trigger pull_request closed +
+    # ZEF_CI_PAT aktif) dan arm-on-open (trigger opened), cron murni jaring
+    # pengaman, bukan penggerak utama.
+    #
+    # INTERVAL 20 MENIT (2026-09-28): gate terpanjang di pipeline ini adalah
+    # job CI (lint+PHPStan+deptrac+cs-fixer+coverage+Infection) yang selesai
+    # ~15 menit. Interval 20 menit memberi jeda 2-5 menit antara merge slot
+    # window tanpa menumpuk run (concurrency group tetap men-serialize antrean
+    # bila slot bertabrakan). Interval 30 menit terbukti terlalu renggang:
+    # bila satu event lifecycle terlewat, PR menunggu 1/2 jam sebelum jaring
+    # pengaman menyapu - dengan 20 menit, worst-case recovery terpotong 1/3.
+    # Biaya runner per run sangat kecil (antrean kosong = run exit 0 dalam
+    # <1 menit), jadi 3x/jam tidak menambah beban berarti.
+    - cron: '7,27,47 * * * *'
   pull_request:
     # RANTAI ANTREAN: PR yang di-merge memicu event closed -> run baru ->
     # PR berikutnya di-update -> CI -> auto-merge -> dst, tanpa menunggu
