@@ -94,6 +94,7 @@ if (!function_exists('zef_framework_autoload')) {
                 "Zef\\Framework\\Cache\\SystemCacheClock" => __DIR__ . '/../src/Infrastructure/Cache/SystemCacheClock.php',
                 "Zef\\Framework\\Cache\\TaggableCache" => __DIR__ . '/../src/Infrastructure/Cache/TaggableCache.php',
                 "Zef\\Framework\\Cache\\TieredCache" => __DIR__ . '/../src/Infrastructure/Cache/TieredCache.php',
+                "Zef\\Framework\\Cache\\TtlAwareCacheInterface" => __DIR__ . '/../src/Domain/Cache/TtlAwareCacheInterface.php',
                 "Zef\\Framework\\Config\\AbstractModule" => __DIR__ . '/../src/Infrastructure/Config/AbstractModule.php',
                 "Zef\\Framework\\Config\\CompiledConfigSource" => __DIR__ . '/../src/Infrastructure/Config/CompiledConfigSource.php',
                 "Zef\\Framework\\Config\\Config" => __DIR__ . '/../src/Domain/Config/Config.php',
