@@ -9,9 +9,14 @@ on:
     types: [closed]
   workflow_dispatch:
 
+# Satu run pada satu waktu: dua run (cron + PR closed) tidak boleh berebut PR yang sama.
+concurrency:
+  group: auto-update-prs
+  cancel-in-progress: false
+
 jobs:
   update-and-merge-prs:
-    # Hanya berjalan jika dipicu cron/manual OR jika dipicu closed PR yang statusnya benar-benar di-merge
+    # Hanya berjalan jika dipicu cron/manual OR jika dipicu PR closed yang statusnya benar-benar di-merge
     if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     
@@ -22,17 +27,30 @@ jobs:
 
     steps:
       - name: Checkout Repository
+        # WAJIB dipin ke commit SHA penuh: kebijakan repo ini menolak action
+        # yang tidak dipin ("all actions must be pinned to a full-length commit SHA").
+        # Pin di bawah = actions/checkout v7.0.1, sama dengan ci.yml/pages.yml/sbom.yml/release.yml/wiki.yml.
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Process PRs (Oldest First)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Mengambil daftar PR yang open, diurutkan dari yang paling lama..."
-          
-          # Mengambil daftar PR yang tidak berstatus draft, diurutkan dari yang paling lama
-          prs=$(gh pr list --state open --sort created --limit 100 --json number,isDraft --jq '.[] | select(.isDraft == false) | .number')
-          
+          echo "Mengambil daftar PR open (non-draft), diurutkan dari yang paling lama..."
+
+          # PERBAIKAN: `gh pr list` TIDAK punya flag --sort (error lama:
+          #   "unknown flag: --sort" -> step langsung mati, job selalu gagal).
+          # Daftar raw diambil dulu dan dicek supaya kegagalan API tidak diam-diam lolos.
+          if ! raw=$(gh pr list --state open --limit 100 --json number,isDraft,createdAt); then
+            echo "Gagal mengambil daftar PR dari gh."
+            exit 1
+          fi
+
+          # gh pr list mengembalikan satu ARRAY JSON; `jq` (bukan --jq) yang meratakan
+          # dan MENGURUTKANNYA naik berdasarkan createdAt -> PR paling lama diproses lebih dulu (FIFO).
+          prs=$(printf '%s' "$raw" \
+            | jq -r 'sort_by(.createdAt) | .[] | select(.isDraft == false) | .number')
+
           if [ -z "$prs" ]; then
             echo "Tidak ada PR open yang perlu diproses."
             exit 0
@@ -42,23 +60,30 @@ jobs:
             echo "----------------------------------------"
             echo "Memproses PR #$pr..."
             
-            # 1. Update branch agar tidak behind/stale
-            if gh pr update-branch $pr 2>/dev/null; then
+            # 1. Update branch agar tidak behind/stale.
+            #    Pesan error ditangkap (2>&1) dan dicetak, TIDAK dibuang: kalau
+            #    dibuang (2>/dev/null) kegagalan nyata jadi tidak terlihat di log.
+            #    Catatan: PR "sudah up-to-date" atau berasal dari fork memang gagal
+            #    di sini dan itu bukan kegagalan workflow.
+            if err=$(gh pr update-branch "$pr" 2>&1); then
               echo "✅ PR #$pr berhasil diperbarui (di-sync)!"
               
               # Beri jeda 3 detik agar GitHub memperbarui status internalnya
               sleep 3
               
               # 2. Aktifkan auto-merge.
-              if gh pr merge $pr --auto --merge 2>/dev/null; then
+              #    Catatan: auto-merge tunduk pada branch rules / required checks,
+              #    bukan pada izin GITHUB_TOKEN - jadi `permissions: contents: write`
+              #    TIDAK bisa memaksa merge dan tidak perlu ditambahkan.
+              if err=$(gh pr merge "$pr" --auto --merge 2>&1); then
                 echo "🚀 Fitur Auto-Merge berhasil diaktifkan untuk PR #$pr!"
               else
-                echo "⚠️ Gagal mengaktifkan Auto-Merge. Pastikan fitur ini aktif di pengaturan repositori."
+                echo "⚠️ Gagal mengaktifkan Auto-Merge untuk PR #$pr: $err"
               fi
               
               # Jeda 5 detik tambahan sebelum memproses PR selanjutnya agar antrean rapi
               sleep 5
             else
-              echo "⚠️ Gagal memperbarui branch PR #$pr (Mungkin ada merge conflict atau sudah up-to-date)."
+              echo "⚠️ Gagal memperbarui branch PR #$pr: $err"
             fi
           done
