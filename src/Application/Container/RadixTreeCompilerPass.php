@@ -79,13 +79,22 @@ final readonly class RadixTreeCompilerPass
                     throw new ModuleDependencyViolationException("Namespace scope violation: service '{$consumerId}' references internal service '{$dep}' from outside the guarded namespace '{$scopePrefix}'.");
                 }
                 // MODULE scope: budgeted per (consumerPrefix => targetPrefix) pair,
-                // counting distinct target services — mirrors DependencyGraphValidator.
+                // counting distinct target services — mirrors DependencyGraphValidator
+                // (its from->to key). The consumer's own guarded (internal/module)
+                // prefix carries the `from` role; unscoped or public consumers share
+                // the '' bucket so the zero-budget deny-all keeps applying to them.
                 $budget = $this->policy->maxCrossScopeRefs;
                 if ($budget <= 0) {
                     throw new ModuleDependencyViolationException("Namespace scope violation: service '{$consumerId}' references module-scoped service '{$dep}' while maxCrossScopeRefs is 0.");
                 }
-                $pair = $scopePrefix;
-                // @infection-ignore-all Concat,ConcatOperandRemoval — ekuivalen: scopeOf(dep) menentukan pair, sehingga pengelompokan dedup identik untuk perubahan pemisah semata
+                $consumerScope = $tree->scopeOf($consumerId);
+                $consumerPrefix = ($consumerScope !== null && $consumerScope['scope'] !== NamespaceRadixTree::SCOPE_PUBLIC)
+                    ? $consumerScope['prefix']
+                    : '';
+                // Trim the stored trailing separators so the bucket key and the
+                // violation message read "Consumer=>Target" without noise.
+                $pair = rtrim($consumerPrefix, '\\') . '=>' . rtrim($scopePrefix, '\\');
+                // @infection-ignore-all Concat,ConcatOperandRemoval — ekuivalen: scopeOf menentukan kedua sisi pair, sehingga pengelompokan dedup identik untuk perubahan pemisah semata
                 $edgeKey = $pair . '|' . $dep;
                 if (isset($edgeSeen[$edgeKey])) {
                     continue;
