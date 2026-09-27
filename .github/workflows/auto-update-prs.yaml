@@ -16,18 +16,33 @@ on:
     # MANUSIA (ZEF_CI_PAT aktif sejak 2026-09-27). Merge oleh GITHUB_TOKEN
     # (github-actions[bot]) tidak memicu event apa pun (aturan anti-rekursi
     # GitHub) - itulah akar masalah antrean yang dulu menuntut klik manual.
-    types: [closed]
+    #
+    # ARM-ON-OPEN (2026-09-28): PR baru (opened/reopened/ready_for_review)
+    # langsung diproses detik itu juga -> auto-merge aktif sejak awal usia
+    # PR, tidak menunggu slot cron. Alasan: scheduler cron GitHub terbukti
+    # tidak stabil untuk repo ini - sepanjang 2026-09-27 hanya 4 run schedule
+    # yang lahir (01:40, 09:23, 14:44, 20:08 UTC; gap antar run 7j43m,
+    # 5j21m, 5j24m). Setelah cron 13,43 live di main (16:45 UTC): slot
+    # 17:13/17:43/18:13/18:43/19:13/20:13 tidak pernah lahir; satu-satunya
+    # run schedule setelahnya (20:08:47) lahir ~26 menit setelah slot 19:43.
+    # Dengan trigger ini penggerak utama antrean = event lifecycle
+    # PR itu sendiri; cron benar-benar murni jaring pengaman.
+    types: [opened, reopened, ready_for_review, closed]
   workflow_dispatch:
 
-# Satu run pada satu waktu: dua run (cron + PR closed) tidak boleh berebut PR yang sama.
+# Satu run pada satu waktu: dua run (cron + event lifecycle PR) tidak boleh berebut PR yang sama.
 concurrency:
   group: auto-update-prs
   cancel-in-progress: false
 
 jobs:
   update-and-merge-prs:
-    # Hanya berjalan jika dipicu cron/manual OR jika dipicu PR closed yang statusnya benar-benar di-merge
-    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
+    # Berjalan jika dipicu cron/manual, ATAU event lifecycle PR yang bermakna
+    # (opened/reopened/ready_for_review -> arm-on-open: auto-merge aktif sejak
+    # detik pertama usia PR), ATAU PR closed yang benar-benar di-merge (rantai
+    # antrean beruntun). Event "closed TANPA merge" (ditolak/dibatalkan)
+    # sengaja diabaikan - tidak ada yang perlu diproses ulang.
+    if: github.event_name != 'pull_request' || github.event.action != 'closed' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
 
     permissions:
