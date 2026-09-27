@@ -17,7 +17,7 @@ namespace Zef\Framework\Cache;
  * to each tag's member list; `invalidateTag()` deletes every member and the
  * index itself. Plain CacheInterface passthrough methods work unchanged.
  */
-final readonly class TaggableCache implements CacheInterface
+final readonly class TaggableCache implements CacheInterface, TtlAwareCacheInterface
 {
     private const string RESERVED_PREFIX = "\0zef-tag:";
     private const string REVERSE_PREFIX = "\0zef-keytags:";
@@ -120,6 +120,22 @@ final readonly class TaggableCache implements CacheInterface
     public function has(string $key): bool
     {
         return $this->inner->has($this->assertUserKey($key));
+    }
+
+    /**
+     * Remaining-TTL introspection is forwarded to the wrapped cache when it
+     * supports it (ZEF-DEEP-14); null otherwise — callers treat null as
+     * "no deadline", which keeps an untaggable inner cache opaque rather
+     * than silently under-promoting.
+     */
+    #[\Override]
+    public function getRemainingTtlSeconds(string $key): ?int
+    {
+        if (!$this->inner instanceof TtlAwareCacheInterface) {
+            return null;
+        }
+
+        return $this->inner->getRemainingTtlSeconds($this->assertUserKey($key));
     }
 
     #[\Override]
