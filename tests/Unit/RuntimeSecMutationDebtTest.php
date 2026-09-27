@@ -199,6 +199,9 @@ final class RuntimeSecMutationDebtTest extends TestCase
         $this->loadShadows();
         $limiter = new RuntimeSecRecordingLimiter();
         $rule = new RateLimitRule('t', 60, 60);
+        // Opt-in header trust keeps all three identity-source prefixes in one
+        // contract test; the default (header ignored — audit C-2 / ZEF-DEEP-02)
+        // is covered by IdentityRateLimitingTest and the V25 hardening tests.
         $middleware = new RateLimitMiddleware(new TieredRateLimiter($limiter, []), [$rule], trustIdentityHeader: true);
 
         $byAttribute = $middleware->process(

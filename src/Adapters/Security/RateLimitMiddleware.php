@@ -26,11 +26,18 @@ use Zef\Framework\Http\JsonResponse;
  *
  * Identity resolution chain (first hit wins, source-prefixed so values from
  * different sources can never collide in one bucket):
- *  1. the `zef.auth.identity` request attribute (set by authentication
- *     middleware) — hashed;
- *  2. the identity header — hashed, ONLY in opt-in mode
- *     (`$trustIdentityHeader`, e.g. behind an authenticating gateway that
- *     validates keys and strips spoofed copies);
+ *  1. the `zef.auth.identity` request attribute — the canonical trusted
+ *     identity, set by AuthenticationMiddleware for admitted non-anonymous
+ *     principals (v2.31.0); `zef.security.principal` is honoured as an
+ *     alias — hashed;
+ *  2. the API-key header — hashed — ONLY when explicitly opted in via
+ *     `$trustIdentityHeader: true` (env:
+ *     ZEF_SECURITY_RATE_LIMIT_TRUST_IDENTITY_HEADER). Since v2.31.0 this
+ *     client-controlled header is NOT trusted by default (audit C-2 /
+ *     ZEF-DEEP-02, issue #156): rotating unverified headers previously
+ *     minted unlimited fresh buckets, defeating per-IP quotas entirely,
+ *     and could exhaust limiter capacity into a fail-closed global 503.
+ *     Opt in only when the header is verified upstream;
  *  3. the resolved client IP (trusted-proxy aware) — used verbatim.
  *
  * Trust model (ZEF-DEEP-02, issue #156): the identity header is
@@ -62,6 +69,8 @@ final readonly class RateLimitMiddleware implements MiddlewareInterface
     public const string REQUEST_ATTRIBUTE = 'zef.security.rate_limit';
 
     private const string IDENTITY_ATTRIBUTE = 'zef.auth.identity';
+
+    private const string PRINCIPAL_ATTRIBUTE = 'zef.security.principal';
 
     /**
      * @param list<RateLimitRule> $rules
@@ -152,10 +161,22 @@ final readonly class RateLimitMiddleware implements MiddlewareInterface
      */
     private function resolveIdentity(ServerRequestInterface $request, array $trustedProxies): string
     {
-        $attribute = $request->getAttribute(self::IDENTITY_ATTRIBUTE);
-        if (is_string($attribute) && $attribute !== '') {
-            return 'identity:' . $this->fingerprint($attribute);
+        // Trusted sources first: the canonical identity attribute (set by
+        // AuthenticationMiddleware for admitted principals since v2.31.0)
+        // and its principal alias. This is what activates the per-identity
+        // tier — previously no shipped middleware ever set it (audit I-2).
+        foreach ([self::IDENTITY_ATTRIBUTE, self::PRINCIPAL_ATTRIBUTE] as $attribute) {
+            $value = $request->getAttribute($attribute);
+            if (is_string($value) && $value !== '' && $value !== 'anonymous') {
+                return 'identity:' . $this->fingerprint($value);
+            }
         }
+        // v2.31.0 (audit C-2 / ZEF-DEEP-02, issue #156): the client-controlled
+        // identity header is no longer trusted by default — rotating unverified
+        // headers minted unlimited buckets (per-IP quota bypass) and could
+        // exhaust maxKeys into a fail-closed global 503. Opt in explicitly
+        // (trustIdentityHeader / ZEF_SECURITY_RATE_LIMIT_TRUST_IDENTITY_HEADER)
+        // when the header is verified upstream.
         if ($this->trustIdentityHeader) {
             $apiKey = $request->getHeaderLine($this->identityHeader);
             if ($apiKey !== '') {
