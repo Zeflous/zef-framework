@@ -5,7 +5,7 @@ d-obs-job|91.59|93.09|618|DEBT|docs/mutation/evidence/infection-summary-d-obs-jo
 d-container-config|91.41|93.26|908|DEBT|docs/mutation/evidence/infection-summary-d-container-config.json|measured MSI 91.41 below the 95 target (v2.21.1 re-measure)
 d-misc|94.44|96.18|666|DEBT|docs/mutation/evidence/infection-summary-d-misc.json|measured MSI 94.44 below the 95 target
 app-container-core|97.39|99.33|306|OK|docs/mutation/evidence/infection-summary-app-container-core.json|
-app-container-2|96.97|100.00|165|OK|docs/mutation/evidence/infection-summary-app-container-2.json|re-measurement measured 96.36, weaker than the committed 96.97; the stricter committed evidence is kept
+app-container-2|97.19|100.00|178|OK|docs/mutation/evidence/infection-summary-app-container-2.json|re-measured at the ZEF-DEEP-11 fix head (issue #165): the cross-scope budget is now keyed consumer=>target per its documented DependencyGraphValidator mirroring; RadixCrossScopeBudgetPairTest pins the pair semantics, the anonymous '' bucket for unscoped/public consumers, edge dedup and the violation message; zero escapes, 5 not-covered stay the pre-existing defensive lines; zone 96.97/165 -> 97.19/178
 app-job|89.26|91.91|242|DEBT|docs/mutation/evidence/infection-summary-app-job.json|measured MSI 89.26 below the 95 target; re-measurement measured 88.02, weaker than the committed 89.26; the stricter committed evidence is kept
 app-cqrs|88.03|88.79|117|DEBT|docs/mutation/evidence/infection-summary-app-cqrs.json|measured MSI 88.03 below the 95 target; re-measurement measured 87.18, weaker than the committed 88.03; the stricter committed evidence is kept
 app-cache-res|100.00|100.00|90|OK|docs/mutation/evidence/infection-summary-app-cache-res.json|
