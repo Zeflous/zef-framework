@@ -17,6 +17,13 @@ namespace Zef\Framework\EventSourcing;
  * (attempts exhausted) → `failed` (dead letter). `attempts` counts relay
  * failures recorded by the store; `nextAttemptAtUnixNano` gates retry
  * eligibility (exponential backoff computed by the relay).
+ *
+ * Lease metadata (v2.31.0): while a claim-based relay processes an entry
+ * it is `pending` AND leased to a claim token until `leaseUntilUnixNano`.
+ * An active lease hides the entry from other relays' {@see OutboxClaimInterface::claimBatch()}
+ * calls; every mark* transition clears it, and an expired lease is
+ * reclaimable (crashed-relay recovery). Both fields are set or both are
+ * null — partial lease metadata is rejected.
  */
 final readonly class OutboxEntry
 {
@@ -44,6 +51,8 @@ final readonly class OutboxEntry
         public int $nextAttemptAtUnixNano,
         public ?string $lastError,
         public int $createdAtUnixNano,
+        public ?string $leaseOwner = null,
+        public ?int $leaseUntilUnixNano = null,
     ) {
         EventGrammar::assertEventId($id, 'outbox entry id');
         EventGrammar::assertEventType($messageType, 'outbox message type');
@@ -59,6 +68,17 @@ final readonly class OutboxEntry
         }
         EventGrammar::assertUnixNano($nextAttemptAtUnixNano, 'nextAttemptAtUnixNano');
         EventGrammar::assertUnixNano($createdAtUnixNano, 'createdAtUnixNano');
+        if (($leaseOwner === null) !== ($leaseUntilUnixNano === null)) {
+            throw new EventSourcingException(
+                'Outbox lease metadata must be set as a pair (leaseOwner + leaseUntilUnixNano), got exactly one.',
+            );
+        }
+        if ($leaseOwner !== null && ($leaseOwner === '' || \strlen($leaseOwner) > 64)) {
+            throw new EventSourcingException('Outbox lease owner must be 1..64 chars.');
+        }
+        if ($leaseUntilUnixNano !== null) {
+            EventGrammar::assertUnixNano($leaseUntilUnixNano, 'leaseUntilUnixNano');
+        }
     }
 
     public function isPending(): bool
@@ -74,5 +94,24 @@ final readonly class OutboxEntry
     public function isFailed(): bool
     {
         return $this->status === self::STATUS_FAILED;
+    }
+
+    /**
+     * True when the entry carries a complete lease pair (owner + deadline).
+     * Note: a lease may be present yet already EXPIRED — use
+     * {@see hasActiveLease()} to ask whether other relays must skip it.
+     */
+    public function isLeased(): bool
+    {
+        return $this->leaseOwner !== null && $this->leaseUntilUnixNano !== null;
+    }
+
+    /**
+     * True when the entry is leased to a claim token whose lease has not
+     * expired at $nowUnixNano — other relays must skip it.
+     */
+    public function hasActiveLease(int $nowUnixNano): bool
+    {
+        return $this->isLeased() && $this->leaseUntilUnixNano > $nowUnixNano;
     }
 }

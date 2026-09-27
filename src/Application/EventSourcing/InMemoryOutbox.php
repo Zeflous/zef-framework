@@ -12,8 +12,12 @@ namespace Zef\Framework\EventSourcing;
 
 /**
  * In-memory {@see OutboxStoreInterface} — FIFO by (createdAt, id).
+ *
+ * Also implements {@see OutboxClaimInterface} (v2.31.0) with the same lease
+ * semantics as the PDO adapter, so tests and in-process setups exercise the
+ * claim-based relay against a store that behaves identically.
  */
-final class InMemoryOutbox implements OutboxStoreInterface
+final class InMemoryOutbox implements OutboxStoreInterface, OutboxClaimInterface
 {
     /** @var array<string, OutboxEntry> keyed by entry id, insertion-ordered */
     private array $entries = [];
@@ -178,6 +182,81 @@ final class InMemoryOutbox implements OutboxStoreInterface
     public function count(): int
     {
         return \count($this->entries);
+    }
+
+    // -------------------------------------------------- lease claiming (v2.31.0)
+
+    #[\Override]
+    public function claimBatch(string $owner, int $limit, int $leaseSeconds, ?int $nowUnixNano = null): array
+    {
+        if ($owner === '' || \strlen($owner) > 64) {
+            throw new EventSourcingException('claimBatch() owner must be 1..64 chars.');
+        }
+        if ($limit < 1) {
+            throw new EventSourcingException("claimBatch() limit must be >= 1 (got {$limit}).");
+        }
+        if ($leaseSeconds < 1) {
+            throw new EventSourcingException("claimBatch() leaseSeconds must be >= 1 (got {$leaseSeconds}).");
+        }
+        $now = $nowUnixNano ?? ($this->clock)();
+        $leaseUntil = $now + $leaseSeconds * 1_000_000_000;
+        EventGrammar::assertUnixNano($leaseUntil, 'lease deadline');
+
+        $claimable = [];
+        foreach ($this->entries as $entry) {
+            if ($entry->isPending() && $entry->nextAttemptAtUnixNano <= $now && !$entry->hasActiveLease($now)) {
+                $claimable[] = $entry;
+            }
+        }
+        usort($claimable, static fn (OutboxEntry $a, OutboxEntry $b): int => [$a->createdAtUnixNano, $a->id] <=> [$b->createdAtUnixNano, $b->id]);
+
+        $claimed = [];
+        foreach (\array_slice($claimable, 0, $limit) as $entry) {
+            $leased = new OutboxEntry(
+                id: $entry->id,
+                messageType: $entry->messageType,
+                payload: $entry->payload,
+                metadata: $entry->metadata,
+                attempts: $entry->attempts,
+                status: $entry->status,
+                nextAttemptAtUnixNano: $entry->nextAttemptAtUnixNano,
+                lastError: $entry->lastError,
+                createdAtUnixNano: $entry->createdAtUnixNano,
+                leaseOwner: $owner,
+                leaseUntilUnixNano: $leaseUntil,
+            );
+            $this->entries[$leased->id] = $leased;
+            $claimed[] = $leased;
+        }
+
+        return $claimed;
+    }
+
+    #[\Override]
+    public function releaseLease(string $owner): int
+    {
+        if ($owner === '') {
+            throw new EventSourcingException('releaseLease() owner must be non-empty.');
+        }
+        $released = 0;
+        foreach ($this->entries as $id => $entry) {
+            if ($entry->leaseOwner === $owner) {
+                $this->entries[$id] = new OutboxEntry(
+                    id: $entry->id,
+                    messageType: $entry->messageType,
+                    payload: $entry->payload,
+                    metadata: $entry->metadata,
+                    attempts: $entry->attempts,
+                    status: $entry->status,
+                    nextAttemptAtUnixNano: $entry->nextAttemptAtUnixNano,
+                    lastError: $entry->lastError,
+                    createdAtUnixNano: $entry->createdAtUnixNano,
+                );
+                ++$released;
+            }
+        }
+
+        return $released;
     }
 
     /** @param \Closure(OutboxEntry): OutboxEntry $fn */
