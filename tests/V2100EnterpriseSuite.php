@@ -319,13 +319,16 @@ final class V2100EnterpriseSuite
         $this->ok($c2->get('lazy.alt') === 'LAZY2', 'v210: resolved deferred services survive freeze');
 
         // A pending deferred provider requested after freeze fails informatively.
+        // ZEF-DEEP-12: PSR-11 contract — has() is false, so get() must surface
+        // NotFoundExceptionInterface (ServiceNotFoundException) with the
+        // deferred-provider guidance, not a bare LogicException.
         $c3 = new Container();
         $c3->registerProvider($deferred);
         $c3->validateAndFreeze();
         $this->throws(
-            \LogicException::class,
+            ServiceNotFoundException::class,
             static fn (): mixed => $c3->get('lazy.svc'),
-            'v210: pending deferred get() after freeze fails with guidance',
+            'v210: pending deferred get() after freeze fails with PSR-11 NotFound + guidance',
         );
         $this->ok(count($c->getProviders()) === 3, 'v210: provider introspection in registration order');
     }

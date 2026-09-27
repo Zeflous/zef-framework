@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
 
     permissions:
-      contents: write      # update/sync branch PR (gh pr update-branch)
+      contents: write      # update/sync branch PR (endpoint update-branch)
       pull-requests: write # baca daftar PR + aktifkan auto-merge
       actions: write       # approve run yang menunggu persetujuan (lihat langkah approve di bawah)
 
@@ -70,23 +70,31 @@ jobs:
             echo "Memproses PR #$pr..."
 
             branch=$(gh pr view "$pr" --json headRefName --jq '.headRefName')
-            before_sha=$(gh pr view "$pr" --json headRefOid --jq '.headRefOid')
 
-            # 1. Update branch agar tidak behind/stale (proteksi main strict mengharuskan up-to-date).
-            #    Pesan error ditangkap (2>&1) dan dicetak, TIDAK dibuang: kalau
-            #    dibuang (2>/dev/null) kegagalan nyata jadi tidak terlihat di log.
-            #    Catatan: PR "sudah up-to-date", PR dari fork, atau PR berkonflik memang
-            #    berperilaku khusus di sini dan itu bukan kegagalan workflow.
-            if err=$(gh pr update-branch "$pr" 2>&1); then
-              echo "✅ PR #$pr berhasil diperbarui (di-sync)!"
+            # 1. Update branch via REST API LANGSUNG (bukan `gh pr update-branch`).
+            #    Alasan: respons 202 dari endpoint ini MEMUAT sha head yang baru secara
+            #    autoritatif. Versi sebelumnya membaca ulang sha via `gh pr view`
+            #    sesaat setelah push — hasilnya data cache stale (before == after),
+            #    sehingga langkah approve terlewati padahal push barusan terjadi dan
+            #    seluruh run pada head baru menunggu approval tanpa pernah diproses.
+            #    Pesan 422 "no new commits on the base branch" = sudah up-to-date.
+            resp=$(gh api -X PUT "repos/${GITHUB_REPOSITORY}/pulls/${pr}/update-branch" 2>&1); rc=$?
+            new_sha=$(printf '%s' "$resp" | jq -r '.sha // empty' 2>/dev/null || true)
+
+            updated=0
+            if [ "$rc" -eq 0 ] && [ -n "$new_sha" ]; then
+              echo "✅ PR #$pr berhasil diperbarui (head baru: ${new_sha:0:10})."
+              updated=1
+            elif printf '%s' "$resp" | grep -q 'no new commits on the base branch'; then
+              echo "ℹ️ PR #$pr sudah up-to-date dengan base branch."
+              updated=0
             else
-              echo "⚠️ Gagal memperbarui branch PR #$pr: $err"
+              echo "⚠️ Gagal memperbarui branch PR #$pr: $resp"
+              echo "   (PR berkonflik / dari fork memang gagal di sini — bukan kegagalan workflow.)"
               continue
             fi
 
-            after_sha=$(gh pr view "$pr" --json headRefOid --jq '.headRefOid')
-
-            # 2. Approve run yang menunggu persetujuan maintainer (hanya jika head berubah).
+            # 2. Approve run yang menunggu persetujuan maintainer (hanya jika barusan ada push baru).
             #    Push oleh github-actions[bot] membuat semua workflow run pada head baru
             #    berstatus "action_required" (kebijakan GitHub untuk run yang dipicu bot).
             #    Tanpa approval: CI tidak pernah jalan -> required checks tidak pernah hijau
@@ -95,18 +103,18 @@ jobs:
             #    POST /repos/{repo}/actions/runs/{id}/approve — setara dengan tombol
             #    "Approve and run" di UI, hanya saja tidak perlu tangan manusia.
             #    Pada mode ZEF_CI_PAT (push aktor manusia) tidak ada run yang menunggu;
-            #    langkah ini otomatis menjadi no-op.
-            if [ "$before_sha" != "$after_sha" ]; then
-              echo "Head berubah ($before_sha -> $after_sha); memeriksa run yang menunggu approval..."
+            #    loop di bawah mendeteksi itu dan keluar lebih awal (no-op).
+            if [ "$updated" = "1" ]; then
+              echo "Memeriksa run yang menunggu approval pada head ${new_sha:0:10}..."
               ids=""
               for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
                 runs_json=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs?branch=${branch}&per_page=50")
                 # Ada berapa run yang sudah terdaftar untuk head baru (status apa pun)?
                 n_head=$(printf '%s' "$runs_json" \
-                  | jq -r --arg sha "$after_sha" '[.workflow_runs[] | select(.head_sha == $sha)] | length')
+                  | jq -r --arg sha "$new_sha" '[.workflow_runs[] | select(.head_sha == $sha)] | length')
                 # Run mana saja pada head baru yang menunggu approval?
                 ids=$(printf '%s' "$runs_json" \
-                  | jq -r --arg sha "$after_sha" \
+                  | jq -r --arg sha "$new_sha" \
                         '.workflow_runs[] | select(.head_sha == $sha and .conclusion == "action_required") | .id')
                 if [ -n "$ids" ]; then
                   break
@@ -134,10 +142,11 @@ jobs:
               fi
             fi
 
-            # Beri jeda 3 detik agar GitHub memperbarui status internalnya
+            # Beri jeda singkat agar GitHub memperbarui status internalnya
             sleep 3
 
-            # 3. Aktifkan auto-merge.
+            # 3. Aktifkan auto-merge (dilakukan baik setelah push baru maupun saat sudah
+            #    up-to-date, agar status auto-merge selalu aktif kembali).
             #    Auto-merge tunduk pada branch rules / required checks:
             #    begitu seluruh gate hijau pada head terkini, merge terjadi otomatis.
             if err=$(gh pr merge "$pr" --auto --merge 2>&1); then
