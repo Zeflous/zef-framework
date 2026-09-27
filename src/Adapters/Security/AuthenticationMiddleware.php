@@ -72,10 +72,15 @@ final readonly class AuthenticationMiddleware implements MiddlewareInterface
 
             return $this->deny($status, $admission->failure->value, $request);
         }
-        $request = $request->withAttribute(
-            'zef.security.principal',
-            $authentication->context->principalId ?? 'anonymous',
-        );
+        $principal = $authentication->context->principalId ?? 'anonymous';
+        $request = $request->withAttribute('zef.security.principal', $principal);
+        // v2.31.0: expose the verified identity on the canonical attribute
+        // consumed by RateLimitMiddleware's per-identity tier. Only ADMITTED,
+        // non-anonymous principals get it — unauthenticated traffic keeps
+        // falling through to the per-IP bucket.
+        if ($principal !== 'anonymous' && $principal !== '') {
+            $request = $request->withAttribute('zef.auth.identity', $principal);
+        }
 
         return $handler->handle($request);
     }
