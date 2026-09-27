@@ -499,7 +499,10 @@ final class EdgeMatrixF6CoreTest extends TestCase
 
     public function testCronParseRejectsInvalidFields(): void
     {
-        foreach (['* * * *', '* * * * * *', '60 * * * *', '100 * * * *', '* 24 * * *', '* * 32 * *', '* * * 13 *', '* * * * 7', '*/0 * * * *', '*/x * * * *', '1//2 * * * *', '1,,2 * * * *', '*-* * * * *', '30-10 * * * *', '60-59 * * * *', 'x * * * *', '5x * * * *', 'x5 * * * *'] as $bad) {
+        // NOTE: '* * * * 7' used to be rejected here; v2.31.0 accepts dow 7
+        // and normalizes it to 0 (the documented contract) — see
+        // JobCronEngineV2Test::testDowSevenIsAcceptedAndMeansSunday().
+        foreach (['* * * *', '* * * * * *', '60 * * * *', '100 * * * *', '* 24 * * *', '* * 32 * *', '* * * 13 *', '* * * * 8', '*/0 * * * *', '*/x * * * *', '1//2 * * * *', '1,,2 * * * *', '*-* * * * *', '30-10 * * * *', '60-59 * * * *', 'x * * * *', '5x * * * *', 'x5 * * * *'] as $bad) {
             try {
                 CronExpression::parse($bad);
                 self::fail("Ekspresi '{$bad}' harus ditolak.");
@@ -507,6 +510,11 @@ final class EdgeMatrixF6CoreTest extends TestCase
                 self::addToAssertionCount(1);
             }
         }
+    }
+
+    public function testCronDowSevenIsNormalizedToSunday(): void
+    {
+        self::assertSame([0], CronExpression::parse('* * * * 7')->daysOfWeek);
     }
 
     public function testCronParseErrorMessageCarriesFieldAndExpression(): void
