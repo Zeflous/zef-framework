@@ -37,12 +37,17 @@ final class RotatingKeyRing implements EncryptionInterface
     private readonly int $keyCount;
 
     /**
-     * @param list<string> $keys key material ordered from NEWEST to OLDEST
+     * @param array<int|string,string> $keys key material ordered from NEWEST
+     *        to OLDEST. Keyed (non-list) arrays are legitimate PHP input —
+     *        config maps, decoded JSON — and are normalised to list order
+     *        up front, so the active-index lookup can never desync from the
+     *        array's actual keys (ZEF-DEEP-09).
      */
     public function __construct(
         array $keys,
         private readonly int $activeIndex = 0,
     ) {
+        $keys = array_values($keys);
         if (count($keys) < 1) {
             throw new \InvalidArgumentException('RotatingKeyRing requires at least one key.');
         }
@@ -57,7 +62,7 @@ final class RotatingKeyRing implements EncryptionInterface
             $this->encryptors[$index] = new AesGcmEncryptor($material);
         }
         $this->keyCount = count($keys);
-        $this->materials = array_values($keys);
+        $this->materials = $keys;
     }
 
     public function keyCount(): int
