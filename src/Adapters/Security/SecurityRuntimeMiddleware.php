@@ -28,7 +28,7 @@ final readonly class SecurityRuntimeMiddleware implements MiddlewareInterface
         private array $trustedProxies = [],
     ) {
         $this->csrf = $policy->csrfEnabled && $policy->csrfSecret !== ''
-            ? new CsrfTokenManager($policy->csrfSecret, $policy->csrfTokenBytes)
+            ? new CsrfTokenManager($policy->csrfSecret, $policy->csrfTokenBytes, $policy->csrfTokenTtlSeconds)
             : null;
     }
 
