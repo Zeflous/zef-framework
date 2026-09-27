@@ -87,7 +87,7 @@ final class EdgeMatrixMakerTest extends TestCase
     /** NamingRules::className:29-33 — reserved word PHP ditolak (case-insensitive). */
     public function testClassNameRejectsReservedWordsCaseInsensitively(): void
     {
-        foreach (['List', 'CLASS', 'enum', 'Trait', 'MATCH', 'null'] as $raw) {
+        foreach (['List', 'CLASS', 'enum', 'Trait', 'MATCH', 'null', 'self', 'parent', 'SELF', 'Parent'] as $raw) {
             try {
                 NamingRules::className($raw);
                 self::fail("Reserved word '{$raw}' must be rejected");
@@ -98,6 +98,8 @@ final class EdgeMatrixMakerTest extends TestCase
         // Bukan reserved: mirip tapi sah — jangan over-reject.
         self::assertSame('Lists', NamingRules::className('Lists'));
         self::assertSame('Classroom', NamingRules::className('Classroom'));
+        self::assertSame('Selfie', NamingRules::className('Selfie'));
+        self::assertSame('Parents', NamingRules::className('Parents'));
     }
 
     /** NamingRules::moduleName — normalisasi trim+lowercase, batas 32 char. */
