@@ -200,6 +200,22 @@ phase** (phase 2 above) is wrapped in a retry loop:
 - Only the flush is retried — **never** the command handler body.
   Side effects produced during dispatch (event publishes, log writes)
   cannot be re-run safely; the contract is "retry the DB writes only".
+- Each attempt opens a transaction, or a savepoint inside the caller's
+  transaction. Failed attempts are rolled back before replaying the FIFO
+  snapshot, including on exhaustion or a non-retryable operation error.
+  Earlier writes outside the flush remain in the caller's transaction.
+- Queued callbacks must contain only transactional writes on the supplied
+  connection, without transaction management, implicit-commit statements,
+  or external side effects: the callbacks themselves can run more than once.
+- Begin, rollback, and commit/savepoint-release failures propagate without
+  retry. If a driver aborts the whole transaction and destroys the savepoint,
+  rollback to it fails and the flush stops; it cannot safely reconstruct the
+  handler's earlier writes. The caller must resolve the transaction/connection
+  failure. A commit failure may have an unknown outcome and is never replayed
+  automatically.
+- The queue is cleared only after a successful commit/savepoint release.
+  On failure it remains populated; discard it or resolve the transaction
+  outcome before attempting a manual replay.
 - The retryable class list is configurable; defaults follow the
   transient-failure taxonomy (deadlock, lock-wait-timeout,
   serialization-failure).
@@ -211,7 +227,7 @@ phase** (phase 2 above) is wrapped in a retry loop:
   behaviour preserved).
 
 See `src/Domain/Database/UnitOfWorkRetryPolicy.php` for the value
-object and `tests/Unit/CqrsTransactionalBusRetryTest.php` for
+object and `tests/Unit/DatabaseUnitOfWorkFlushRetryingTest.php` for
 behavioural coverage.
 
 ---
