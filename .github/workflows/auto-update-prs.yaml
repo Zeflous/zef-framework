@@ -79,6 +79,10 @@ jobs:
 
             branch=$(gh pr view "$pr" --json headRefName --jq '.headRefName')
             before_sha=$(gh pr view "$pr" --json headRefOid --jq '.headRefOid')
+            # Penanda waktu diambil 5 detik SEBELUM permintaan update (slack clock-skew
+            # runner vs server GitHub; tanpa slack, run baru bisa terlihat "lebih tua"
+            # dan lolos dari filter).
+            update_started=$(date -u -d '5 seconds ago' +%Y-%m-%dT%H:%M:%SZ)
 
             # 1. Update branch via REST API LANGSUNG (bukan `gh pr update-branch`).
             #    Respons 202 hanyalah {"message":"Updating pull request branch."} - update
@@ -118,21 +122,24 @@ jobs:
               new_sha=""
               for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
                 runs_json=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs?branch=${branch}&per_page=50")
-                # Run mana saja pada head BARU (sha != before) yang menunggu approval?
+                # Run mana saja yang lahir SETELAH permintaan update dan menunggu approval?
+                # (Filter created_at > update_started wajib: history branch memuat run dari
+                # head-head lama yang sha-nya juga != before - tanpa filter waktu,
+                # run lama memicu early-exit palsu sebelum push asinkron mendarat.)
                 ids=$(printf '%s' "$runs_json" \
-                  | jq -r --arg before "$before_sha" \
-                        '.workflow_runs[] | select(.head_sha != $before and .conclusion == "action_required") | .id')
-                # Ada sudah run untuk head baru (status apa pun)?
-                n_head=$(printf '%s' "$runs_json" \
-                  | jq -r --arg before "$before_sha" '[.workflow_runs[] | select(.head_sha != $before)] | length')
+                  | jq -r --arg before "$before_sha" --arg start "$update_started" \
+                        '.workflow_runs[] | select(.head_sha != $before and .created_at > $start and .conclusion == "action_required") | .id')
+                # Ada sudah run yang lahir setelah permintaan update (status apa pun)?
+                n_new=$(printf '%s' "$runs_json" \
+                  | jq -r --arg start "$update_started" '[.workflow_runs[] | select(.created_at > $start)] | length')
                 new_sha=$(printf '%s' "$runs_json" \
-                  | jq -r --arg before "$before_sha" '[.workflow_runs[] | select(.head_sha != $before)][0].head_sha // empty')
+                  | jq -r --arg start "$update_started" '[.workflow_runs[] | select(.created_at > $start)][0].head_sha // empty')
                 if [ -n "$ids" ]; then
                   break
                 fi
-                # Run head baru sudah ada dan tidak ada yang menunggu approval
+                # Run hasil update sudah ada dan tidak ada yang menunggu approval
                 # -> aktor manusia / sudah jalan; tidak perlu menunggu lebih lama.
-                if [ "$n_head" -gt 0 ] && [ "$attempt" -gt 2 ]; then
+                if [ "$n_new" -gt 0 ] && [ "$attempt" -gt 2 ]; then
                   break
                 fi
                 sleep 5
