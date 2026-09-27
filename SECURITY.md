@@ -115,6 +115,12 @@ workflow files are the reference; this section only points at them.
   is **verified by sha256 before use**, and ZEF-local rules in `.github/semgrep/rules`
   close a measured false negative of the pinned set. Scope, severity policy and the
   known limits of this gate are documented in [`docs/security/php-sast.md`](docs/security/php-sast.md).
+- **Cloud-side quality gate (SonarCloud).** `.github/workflows/sonarcloud.yml` runs
+  SonarCloud analysis over `src/` and `tests/`, blocks on the server-side quality-gate
+  verdict, and decorates pull requests once the ALM binding is configured. It requires
+  the repository secret `SONAR_TOKEN` and skips visibly (notice + green, never silent)
+  while that secret is absent. Setup, scope and the coverage bridge are documented in
+  [`docs/security/sonarcloud.md`](docs/security/sonarcloud.md).
 - **Code scanning and dependency review.** CodeQL analysis and a dependency-review
   gate run per pull request; a dependency SBOM workflow is present.
 - **Secret scanning.** A `gitleaks` workflow scans for committed credentials, and

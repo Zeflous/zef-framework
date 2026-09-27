@@ -1,0 +1,92 @@
+# SonarCloud quality gate: cloud-side static analysis (bugs, vulnerabilities,
+# code smells, duplications, security hotspots) over src/ and tests/.
+#
+# Design notes — read docs/security/sonarcloud.md before changing this file:
+#   * This is the "CI Security/Review" lane of the pipeline: the main CI job
+#     (PHPStan max level, Deptrac, Infection) proves structural and behavioural
+#     correctness locally; this lane adds an independent cloud reviewer whose
+#     findings surface as pull-request decoration and a blocking quality-gate
+#     verdict.
+#   * The job name below is load-bearing: it must stay exactly "SonarCloud
+#     Scan" so the check can later be promoted to a required status-check
+#     context on the protected main branch without renaming (same contract as
+#     the "PHP lint, audit, static analysis and style" job in ci.yml and the
+#     "Build API documentation" job in docs-check.yml).
+#   * BLOCKING quality gate: sonar.qualitygate.wait=true in
+#     sonar-project.properties makes the scanner wait for the server-side
+#     verdict; a red gate fails this job.
+#   * Requires the repository secret SONAR_TOKEN. Until that secret exists
+#     this job reports success WITH a visible notice instead of failing: an
+#     unconfigured gate must not block the PR queue, and a silent green would
+#     hide the missing configuration. The setup checklist is in
+#     docs/security/sonarcloud.md section 3.
+#   * Credentialed analysis never runs against an untrusted fork pull request
+#     (same guard as snyk-security.yml).
+#
+# All actions are pinned to a full commit SHA, matching the convention used in
+# .github/workflows/ci.yml.
+
+name: SonarCloud
+
+on:
+  pull_request:
+    branches: ["main"]
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonarcloud-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sonarcloud:
+    name: SonarCloud Scan
+    # Credentialed analysis must never run against an untrusted fork pull
+    # request: GitHub withholds secrets there, so the scan cannot
+    # authenticate. Skipping keeps the check honest instead of reporting a
+    # green-but-empty result. Never use pull_request_target to work around it.
+    if: >-
+      github.event_name != 'pull_request' ||
+      (
+        github.event.pull_request.head.repo.fork == false &&
+        github.event.pull_request.user.login != 'dependabot[bot]'
+      )
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read # actions/checkout to fetch code
+    env:
+      # Scoped to the job (not the workflow) so no unrelated job can ever
+      # receive it. Never echo, log, or print this value.
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_HOST_URL: https://sonarcloud.io
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Report unconfigured state (SONAR_TOKEN absent)
+        # Deliberate contract: while the repository secret SONAR_TOKEN does
+        # not exist, this job is GREEN WITH A NOTICE, never red. A gate that
+        # is not yet configured must not block the merge queue; a silent
+        # green would hide the missing configuration. The notice and the
+        # step summary are the actionable signal.
+        if: env.SONAR_TOKEN == ''
+        run: |
+          {
+            echo "### SonarCloud Scan — skipped (not configured yet)"
+            echo ""
+            echo "The repository secret \`SONAR_TOKEN\` is not set, so no SonarCloud"
+            echo "analysis ran and no quality-gate verdict was evaluated. This check"
+            echo "reports green so an unconfigured gate cannot block the PR queue."
+            echo ""
+            echo "Setup checklist: docs/security/sonarcloud.md, section 3."
+          } >> "${GITHUB_STEP_SUMMARY}"
+          echo "::notice::SONAR_TOKEN is not set — SonarCloud analysis skipped (setup: docs/security/sonarcloud.md)."
+
+      - name: SonarCloud Scan
+        if: env.SONAR_TOKEN != ''
+        uses: SonarSource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4 # v8.2.2
