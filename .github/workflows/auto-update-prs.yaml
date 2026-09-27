@@ -2,15 +2,20 @@ name: "Auto Update and Merge PRs (FIFO Order)"
 
 on:
   schedule:
-    # Tetap berjalan berkala setiap 30 menit sebagai jaring pengaman.
-    # Penting: merge oleh auto-merge (bot) TIDAK memicu event pull_request
-    # closed, sehingga cron ini satu-satunya penggerak antrean pada rantai
-    # auto-merge beruntun.
-    - cron: '*/30 * * * *'
+    # Jaring pengaman berkala 2x/jam. Menit 13/43 dipilih SENGAJA di luar
+    # menit puncak (:00/:30): GitHub rutin MENJATUHKAN run cron yang jatuh
+    # tepat pada menit puncak - terbukti empiris 2026-09-27: gap antar run
+    # 3j42m lalu 5j21m; slot 15:00/15:30/16:00 UTC semuanya tidak pernah
+    # lahir. Dengan rantai merge (trigger pull_request closed + ZEF_CI_PAT
+    # aktif), cron kini murni jaring pengaman, bukan penggerak utama.
+    - cron: '13,43 * * * *'
   pull_request:
-    # Otomatis jalan begitu ada PR yang di-merge oleh MANUSIA
-    # (merge oleh GITHUB_TOKEN tidak memicu event apa pun - aturan
-    # anti-rekursi GitHub).
+    # RANTAI ANTREAN: PR yang di-merge memicu event closed -> run baru ->
+    # PR berikutnya di-update -> CI -> auto-merge -> dst, tanpa menunggu
+    # siklus cron. Syarat rantai hidup: merge dieksekusi sebagai akun
+    # MANUSIA (ZEF_CI_PAT aktif sejak 2026-09-27). Merge oleh GITHUB_TOKEN
+    # (github-actions[bot]) tidak memicu event apa pun (aturan anti-rekursi
+    # GitHub) - itulah akar masalah antrean yang dulu menuntut klik manual.
     types: [closed]
   workflow_dispatch:
 
@@ -51,6 +56,11 @@ jobs:
           #    cron/dispatch, push di-atribusi ke github-actions[bot] -> run anak
           #    berstatus action_required (kebijakan GitHub utk run yang dipicu bot);
           #    langkah approve di bawah menekan tombol itu secara terprogram via API.
+          # STATUS 2026-09-27: ZEF_CI_PAT TERISI (PAT pemilik repo) - mode 1
+          # aktif. Auto-merge dieksekusi sebagai MANUSIA sehingga event
+          # pull_request closed ikut terpicu dan rantai antrean hidup.
+          # Rekomendasi lanjutan: ganti isinya dengan fine-grained PAT scope
+          # sempit (Contents/Pull requests/Actions: write) begitu tersedia.
           GH_TOKEN: ${{ secrets.ZEF_CI_PAT || secrets.GITHUB_TOKEN }}
         run: |
           echo "Mengambil daftar PR open (non-draft), diurutkan dari yang paling lama..."
@@ -77,8 +87,17 @@ jobs:
             echo "----------------------------------------"
             echo "Memproses PR #$pr..."
 
-            branch=$(gh pr view "$pr" --json headRefName --jq '.headRefName')
-            before_sha=$(gh pr view "$pr" --json headRefOid --jq '.headRefOid')
+            # Assignment `var=$(cmd)` yang gagal MEMATIKAN job di bawah `set -e`.
+            # PR bisa ditutup/di-merge secara concurrent saat loop berjalan ->
+            # gagal baca PR itu nyata; lewati PR-nya, jangan mati satu job.
+            branch=$(gh pr view "$pr" --json headRefName --jq '.headRefName' 2>/dev/null) || {
+              echo "⚠️ PR #$pr tidak bisa dibaca (mungkin baru ditutup) - lewati."
+              continue
+            }
+            before_sha=$(gh pr view "$pr" --json headRefOid --jq '.headRefOid' 2>/dev/null) || {
+              echo "⚠️ Head PR #$pr tidak bisa dibaca - lewati."
+              continue
+            }
             # Penanda waktu diambil 5 detik SEBELUM permintaan update (slack clock-skew
             # runner vs server GitHub; tanpa slack, run baru bisa terlihat "lebih tua"
             # dan lolos dari filter).
@@ -91,7 +110,18 @@ jobs:
             #    Deteksi head baru dilakukan dengan polling run pada branch dengan
             #    head_sha != before_sha - sha baru tidak perlu diketahui secara eksplisit.
             #    422 "no new commits on the base branch" = sudah up-to-date.
-            resp=$(gh api -X PUT "repos/${GITHUB_REPOSITORY}/pulls/${pr}/update-branch" 2>&1); rc=$?
+            # KRITIS: pola `resp=$(...); rc=$?` TIDAK aman di bawah `set -e` -
+            # assignment dari command substitution yang gagal mematikan job
+            # SEBELUM rc sempat dicek. Bug laten v3 (run 36332116612, 2026-09-27):
+            # PR yang up-to-date membalas 422 "no new commits on the base branch"
+            # -> job mati -> `gh pr merge --auto` tidak pernah dijalankan ->
+            # PR menunggu klik manual selamanya. Pola `if` di bawah menangkap
+            # rc dengan aman tanpa memicu set -e.
+            if resp=$(gh api -X PUT "repos/${GITHUB_REPOSITORY}/pulls/${pr}/update-branch" 2>&1); then
+              rc=0
+            else
+              rc=$?
+            fi
 
             updated=0
             if [ "$rc" -eq 0 ]; then
@@ -121,7 +151,9 @@ jobs:
               ids=""
               new_sha=""
               for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
-                runs_json=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs?branch=${branch}&per_page=50")
+                # Fallback JSON kosong: kegagalan API transien tidak boleh
+                # membunuh job (set -e) - cukup dianggap tidak ada run baru.
+                runs_json=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs?branch=${branch}&per_page=50" 2>/dev/null) || runs_json='{"workflow_runs":[]}'
                 # Run mana saja yang lahir SETELAH permintaan update dan menunggu approval?
                 # (Filter created_at > update_started wajib: history branch memuat run dari
                 # head-head lama yang sha-nya juga != before - tanpa filter waktu,
