@@ -435,6 +435,43 @@ final class ObservabilityTest extends TestCase
         self::assertSame(['nested'], TelemetrySanitizer::value(['nested']));
     }
 
+    /**
+     * Regresi P-21 (issue #172): pasangan ber-quotes gaya JSON harus ter-redact.
+     * Pola lama mensyaratkan separator tepat setelah keyword telanjang, jadi
+     * "password":"x" lolos utuh; vocabulary juga bolong (pwd, credentials,
+     * private key). Nilai rahasia TIDAK boleh muncul di output dalam bentuk apa pun.
+     */
+    public function testRedactCatchesQuotedKeyValuePairsAndWiderVocabulary(): void
+    {
+        // JSON-style pairs — key dan value ber-quotes.
+        $json = TelemetrySanitizer::redact('{"password":"hunter-two","token":"tok-nine"}');
+        self::assertStringNotContainsString('hunter-two', $json, 'nilai rahasia JSON tidak boleh bocor');
+        self::assertStringNotContainsString('tok-nine', $json, 'token JSON tidak boleh bocor');
+        self::assertStringContainsString('[REDACTED]', $json);
+
+        // Single-quoted style: 'pwd'='secret-one'.
+        $single = TelemetrySanitizer::redact("'pwd'='secret-one' username=alice");
+        self::assertStringNotContainsString('secret-one', $single);
+        self::assertStringContainsString('alice', $single, 'nilai non-sensitif tetap utuh');
+
+        // Key telanjang + value ber-quotes: credentials: "cred-three".
+        $mixed = TelemetrySanitizer::redact('credentials: "cred-three"');
+        self::assertStringNotContainsString('cred-three', $mixed);
+
+        // Vocabulary baru.
+        $vocab = TelemetrySanitizer::redact('passphrase=phrase-one private_key=pk-one credential=cr-one');
+        self::assertStringNotContainsString('phrase-one', $vocab);
+        self::assertStringNotContainsString('pk-one', $vocab);
+        self::assertStringNotContainsString('cr-one', $vocab);
+
+        // Perilaku lama tetap: pasangan telanjang ter-redact, key dipertahankan.
+        self::assertSame(
+            'password=[REDACTED]',
+            TelemetrySanitizer::redact('password=hunter2'),
+            'format pasangan telanjang tidak berubah',
+        );
+    }
+
     // ------------------------------------------------------------------
     // CounterMeter
     // ------------------------------------------------------------------
