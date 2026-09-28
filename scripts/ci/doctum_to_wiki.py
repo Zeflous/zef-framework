@@ -41,6 +41,42 @@ TYPE_LABEL = {"C": "Class", "I": "Interface", "T": "Trait", "N": "Namespace", "M
 TYPE_ORDER = {"C": 0, "I": 1, "T": 2}
 MANIFEST = "_generated.txt"
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def repo_path(raw: str, what: str) -> Path:
+    """Resolve a CLI-supplied path and refuse anything outside the repository.
+
+    Both the search index this tool reads and the directory it writes live
+    inside the checkout, so a mistyped or injected argument must never reach
+    `read_text()`, `mkdir()` or `write_text()` at an arbitrary location
+    (code-scanning rule python/PT). The argument is validated lexically
+    before any Path object is built, and validated again after resolution, so
+    a symlink that lives in the repo but points outward is refused as well.
+    """
+    _refuse = f"ERROR: {what} must stay inside the repository: {raw}"
+    if not raw:
+        print(f"ERROR: {what} must not be empty.", file=sys.stderr)
+        sys.exit(2)
+    # Lexical gate, before any Path is constructed: the only valid shapes are
+    # a relative path without parent-escape segments, or an absolute path that
+    # already starts at the repository root. Everything else is refused here.
+    normalized = raw.replace("\\", "/")
+    if normalized.startswith("~") or ".." in normalized.split("/"):
+        print(_refuse, file=sys.stderr)
+        sys.exit(2)
+    root_str = str(REPO_ROOT).rstrip("/")
+    if normalized.startswith("/") and normalized != root_str and not normalized.startswith(root_str + "/"):
+        print(_refuse, file=sys.stderr)
+        sys.exit(2)
+    # Resolution gate: resolve symlinks and re-verify containment at the real
+    # location, so a link inside the repo but points outward is refused too.
+    resolved = Path(normalized).resolve()
+    if resolved != REPO_ROOT and REPO_ROOT not in resolved.parents:
+        print(_refuse, file=sys.stderr)
+        sys.exit(2)
+    return resolved
+
 
 def slug(text: str) -> str:
     """A Wiki page name must be a safe, stable filename."""
@@ -52,9 +88,13 @@ def main() -> int:
         print(__doc__)
         return 2
 
-    src, out = Path(sys.argv[1]), Path(sys.argv[2])
+    src, out = (
+        repo_path(sys.argv[1], "Doctum search index"),
+        repo_path(sys.argv[2], "output directory"),
+    )
     base = sys.argv[3].rstrip("/") if len(sys.argv) > 3 else ""
-    data = json.loads(src.read_text(encoding="utf-8"))
+    with open(src, encoding="utf-8") as fh:
+        data = json.loads(fh.read())
     items = data.get("items", [])
 
     if not items:
