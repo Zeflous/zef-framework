@@ -97,12 +97,14 @@ final class RouteCache
         }
         $routes = $data['routes'] ?? null;
         if (!is_array($routes)) {
-            throw new RouteCacheException("Route cache file '{$path}' has no route table. "
-                . 'Regenerate it with RouteCache::write().');
+            $message = "Route cache file '{$path}' has no route table.";
+
+            throw new RouteCacheException($message . ' Regenerate it with RouteCache::write().');
         }
         if (($data['fingerprint'] ?? null) !== self::fingerprint($routes)) {
-            throw new RouteCacheException("Route cache file '{$path}' failed its staleness fingerprint check "
-                . '(corrupt or hand-edited). Regenerate it with RouteCache::write().');
+            $message = "Route cache file '{$path}' failed its staleness fingerprint check (corrupt or hand-edited).";
+
+            throw new RouteCacheException($message . ' Regenerate it with RouteCache::write().');
         }
 
         return Router::fromCompiledArray($routes);

@@ -297,8 +297,7 @@ final class Migrator
             $stolen = $this->connection->execute(SqlQuery::raw(
                 'UPDATE "' . self::LOCK_TABLE
                 . '" SET "locked_at" = ' . $nowStamp . ', "ttl" = ' . var_export($this->lockTtlSeconds, true)
-                . ', "holder" = \'' . $this->holderToken . '\''
-                . ' WHERE "id" = 1 AND "locked_at" + "ttl" <= ' . $nowStamp,
+                . ', "holder" = \'' . $this->holderToken . '\' WHERE "id" = 1 AND "locked_at" + "ttl" <= ' . $nowStamp,
             ));
             if ($stolen === 0) {
                 throw new TransactionException(
