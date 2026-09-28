@@ -51,7 +51,7 @@ $pages = [
 
 $outDir = $root . '/build/docs';
 $siteTitle = 'ZEF Framework — Dokumentasi Resmi';
-$repoUrl = 'https://github.com/mbetixz/zef-framework';
+$repoUrl = 'https://github.com/Zeflous/zef-framework';
 $apiUrl = 'api/';
 
 /** @var array<string, mixed> $meta */
@@ -329,7 +329,7 @@ foreach ($pages as $page) {
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>{$esc($title)} — {$esc($siteTitle)}</title>
-        <meta name="description" content="Dokumentasi resmi ZEF Framework (mbetixz/zef-framework) versi {$esc($version)}.">
+        <meta name="description" content="Dokumentasi resmi ZEF Framework (Zeflous/zef-framework) versi {$esc($version)}.">
         <link rel="stylesheet" href="assets/style.css">
         </head>
         <body>

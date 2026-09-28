@@ -35,6 +35,6 @@ return new Doctum($iterator, [
     'build_dir'        => __DIR__ . '/build/api',
     'cache_dir'        => __DIR__ . '/build/api-cache',
     'source_dir'       => __DIR__ . '/src/',
-    'remote_repository' => new GitHubRemoteRepository('mbetixz/zef-framework', __DIR__),
+    'remote_repository' => new GitHubRemoteRepository('Zeflous/zef-framework', __DIR__),
     'default_opened_level' => 2,
 ]);
