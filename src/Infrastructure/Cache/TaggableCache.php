@@ -16,12 +16,31 @@ namespace Zef\Framework\Cache;
  * userland key may use. `setWithTags()` writes the value and appends the key
  * to each tag's member list; `invalidateTag()` deletes every member and the
  * index itself. Plain CacheInterface passthrough methods work unchanged.
+ *
+ * Single-writer approximation (ZEF-DEEP-15 P-10, issue #169): the member
+ * list is maintained as a read-modify-write over the generic CacheInterface
+ * port — the only contract the wrapped store exposes, with no atomic
+ * list-append primitive to delegate to (the Lua-script atomicity that
+ * {@see RedisLockStore} keeps applies to the lock port, not to any
+ * CacheInterface implementation) — so two concurrent setWithTags() calls on
+ * the same tag can drop one key (last writer wins). Growth is bounded
+ * instead: every write rewrites the index with a fresh sliding TTL (see
+ * TAG_INDEX_TTL_SECONDS) so a tag that stops being written ages out, and
+ * membership is capped (see MAX_TAG_MEMBERS) by evicting the oldest
+ * members — for those, invalidation is approximate and their values expire
+ * via their own TTL.
  */
 final readonly class TaggableCache implements CacheInterface, TtlAwareCacheInterface
 {
     private const string RESERVED_PREFIX = "\0zef-tag:";
     private const string REVERSE_PREFIX = "\0zef-keytags:";
     private const int MAX_TAGS_PER_KEY = 16;
+
+    /** Sliding lease on a tag index: refreshed by every setWithTags() write. */
+    private const int TAG_INDEX_TTL_SECONDS = 86400;
+
+    /** Hard cap on members per tag; the oldest members are evicted beyond it. */
+    private const int MAX_TAG_MEMBERS = 1000;
 
     public function __construct(
         private CacheInterface $inner,
@@ -51,8 +70,16 @@ final readonly class TaggableCache implements CacheInterface, TtlAwareCacheInter
             $members = $this->readTagMembers($tag);
             if (!in_array($key, $members, true)) {
                 $members[] = $key;
-                $this->writeTagMembers($tag, $members);
+                if (count($members) > self::MAX_TAG_MEMBERS) {
+                    // Approximate invalidation (P-10, issue #169): evict the
+                    // oldest members so the per-tag index stays bounded; their
+                    // values still age out via their own TTLs.
+                    $members = array_slice($members, -self::MAX_TAG_MEMBERS);
+                }
             }
+            // Rewritten on every call so the index lease slides forward even
+            // when the key is already a member.
+            $this->writeTagMembers($tag, $members);
         }
         $this->writeKeyTags($key, $normalized);
     }
@@ -160,10 +187,13 @@ final readonly class TaggableCache implements CacheInterface, TtlAwareCacheInter
 
     private function writeTagMembers(string $tag, array $members): void
     {
-        // Tag indexes live as long as the store; only the members expire.
+        // Sliding lease (P-10, issue #169): the index carries a TTL that every
+        // setWithTags() rewrites in full, so abandoned tags evaporate instead
+        // of living as long as the store.
         $this->inner->set(
             self::RESERVED_PREFIX . $tag,
             json_encode(array_values($members), JSON_THROW_ON_ERROR),
+            self::TAG_INDEX_TTL_SECONDS,
         );
     }
 

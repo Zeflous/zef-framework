@@ -37,6 +37,16 @@ final class CurlS3HttpTransport implements S3HttpTransport
         if ($handle === false) {
             throw new StorageException('Unable to initialise the cURL handle for object storage.');
         }
+        if ($body === '' && in_array($method, ['DELETE', 'PATCH', 'POST', 'PUT'], true)
+            && !self::hasHeader($headers, 'Content-Length')) {
+            // P-8 (issue #169): real S3 answers a bodyless PUT/DELETE with
+            // 411 Length Required when the request carries no Content-Length
+            // at all — MinIO tolerates the omission, hiding the gap in dev.
+            // The zero length stays unsigned (SigV4's x-amz-content-sha256
+            // already covers the empty payload); curl keeps deriving the real
+            // length for bodied requests itself.
+            $headers['Content-Length'] = '0';
+        }
         $rawHeaders = [];
 
         try {
@@ -116,5 +126,16 @@ final class CurlS3HttpTransport implements S3HttpTransport
         }
 
         return $headers;
+    }
+
+    /**
+     * Whether the caller already supplied the header (case-insensitive),
+     * so the transport never duplicates a name curl would send twice.
+     *
+     * @param array<string,string> $headers
+     */
+    private static function hasHeader(array $headers, string $name): bool
+    {
+        return array_key_exists(strtolower($name), array_change_key_case($headers, CASE_LOWER));
     }
 }

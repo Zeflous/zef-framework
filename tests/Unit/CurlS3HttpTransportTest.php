@@ -63,6 +63,16 @@ final class CurlS3HttpTransportTest extends TestCase
             self::assertSame(1_677_672_000_000_000_000, $stat->lastModifiedUnixNano);
             self::assertFalse($storage->exists('missing'));
             self::assertNull($storage->stat('missing'));
+
+            // Regresi P-8 (issue #169): a bodyless PUT/DELETE must carry an
+            // explicit Content-Length: 0 — real S3 answers 411 Length Required
+            // when the header is missing entirely, while MinIO tolerates the
+            // omission (hiding the gap in dev). The forked server below mimics
+            // that S3 behaviour, so a 200 here proves the header went on the wire.
+            $put = $transport->request('PUT', $endpoint . '/bucket/object', [], '');
+            self::assertSame(200, $put->status, 'bodyless PUT must carry Content-Length: 0 (411 otherwise)');
+            $delete = $transport->request('DELETE', $endpoint . '/bucket/object', [], '');
+            self::assertSame(200, $delete->status, 'bodyless DELETE must carry Content-Length: 0 (411 otherwise)');
         } finally {
             pcntl_waitpid($pid, $status);
             fclose($server);
@@ -77,7 +87,7 @@ final class CurlS3HttpTransportTest extends TestCase
      */
     private function serveRequests($server): void
     {
-        for ($i = 0; $i < 6; ++$i) {
+        for ($i = 0; $i < 8; ++$i) {
             $connection = @stream_socket_accept($server, 10);
             if ($connection === false) {
                 exit(1);
@@ -87,10 +97,20 @@ final class CurlS3HttpTransportTest extends TestCase
             if ($requestLine === false) {
                 exit(1);
             }
+            $hasContentLength = false;
             while (($line = fgets($connection)) !== false && $line !== "\r\n") {
-                // Consume the request headers before replying.
+                // Consume the request headers before replying; remember whether
+                // the client stated a body length at all (P-8, issue #169).
+                if (preg_match('/^content-length:/i', $line) === 1) {
+                    $hasContentLength = true;
+                }
             }
             $status = str_contains($requestLine, '/missing ') ? '404 Not Found' : '200 OK';
+            if ((str_starts_with($requestLine, 'PUT ') || str_starts_with($requestLine, 'DELETE '))
+                && !$hasContentLength) {
+                // Real S3 rejects a bodyless method without Content-Length.
+                $status = '411 Length Required';
+            }
             $body = str_starts_with($requestLine, 'HEAD ') ? '' : 'hello world!';
             fwrite($connection, "HTTP/1.1 {$status}\r\nContent-Length: 12\r\nLast-Modified: Wed, 01 Mar 2023 12:00:00 GMT\r\nConnection: close\r\n\r\n" . $body);
             // Closing immediately makes a broken HEAD fail with a truncated

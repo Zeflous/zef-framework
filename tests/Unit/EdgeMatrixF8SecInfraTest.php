@@ -275,7 +275,7 @@ final class EdgeMatrixF8SecInfraTest extends TestCase
         );
     }
 
-    /** Perilaku APCu RIIL (ekstensi terpasang): jalur apcu_add pertama, inc naik,
+    /** Perilaku APCu RIIL (ekstensi terpasang): inc naik pada bucket,
      * boundary count==limit masih allowed, >limit ditolak, key independen, guards. */
     public function testApcuRealWindowBehaviourAndBoundaries(): void
     {
@@ -290,7 +290,11 @@ final class EdgeMatrixF8SecInfraTest extends TestCase
         self::assertTrue($d1->allowed);
         self::assertSame(2, $d1->limit);
         self::assertSame(1, $d1->remaining);
-        self::assertSame(30, $d1->retryAfter, 'reset - now == window penuh di detik yang sama');
+        // Regresi P-1 (issue #169): fixed-window bucket — retryAfter kini sisa
+        // detik menuju batas bucket ((bucket+1)*window - now), jadi selalu
+        // 1..windowSeconds, bukan windowSeconds penuh dari anchor now+window.
+        self::assertGreaterThanOrEqual(1, $d1->retryAfter);
+        self::assertLessThanOrEqual(30, $d1->retryAfter);
 
         $d2 = $limiter->check($k, 2, 30); // count 2 == limit → masih allowed
         self::assertTrue($d2->allowed);
@@ -320,11 +324,11 @@ final class EdgeMatrixF8SecInfraTest extends TestCase
         }
     }
 
-    /** Jalur jendela KADALUWARSA (stored <= now): window & counter di-re-store →
-     * hitungan mulai dari 1 lagi. Pre-seed APCu langsung memakai format kunci internal.
-     * Cek kedua membunuh FunctionCallRemoval:54 — tanpa re-store window, cek berikut
-     * akan salah reset counter lagi (remaining 1 vs 0). */
-    public function testApcuStaleWindowResetsCounter(): void
+    /** Regresi P-1 (issue #169): fixed-window bucket — counter bucket LAMA
+     * tidak pernah bocor ke bucket sekarang (hit pada T dan T+window jatuh ke
+     * dua bucket berbeda). Pre-seed APCu langsung memakai format kunci
+     * internal per-bucket (c:<sha256>:<bucketId>). */
+    public function testApcuPreviousBucketCounterDoesNotLeak(): void
     {
         if (!\extension_loaded('apcu')) {
             self::markTestSkipped('ext-apcu not available in this environment.');
@@ -333,23 +337,27 @@ final class EdgeMatrixF8SecInfraTest extends TestCase
         $limiter = new ApcuRateLimiter();
         $key = 'apcu-stale-' . \bin2hex(\random_bytes(4));
         $hash = \hash('sha256', $key);
-        \apcu_store('zef:ratelimit:w:' . $hash, \time() - 5, 600); // reset sudah lewat
-        \apcu_store('zef:ratelimit:c:' . $hash, 99, 600);          // counter basi 99
+        $window = 30;
+        $previousBucket = \intdiv(\time(), $window) - 1;
+        \apcu_store('zef:ratelimit:c:' . $hash . ':' . $previousBucket, 99, 600); // counter basi bucket lama
 
-        $d = $limiter->check($key, 2, 30);
-        self::assertTrue($d->allowed, 'jendela basi → counter reset → count 1');
+        $d = $limiter->check($key, 2, $window);
+        self::assertTrue($d->allowed, 'bucket lama tidak terbaca → count 1 di bucket baru');
         self::assertSame(1, $d->remaining);
         self::assertSame(2, $d->limit);
 
-        $d2 = $limiter->check($key, 2, 30); // window sudah di-re-anchor → count lanjut 2
+        $d2 = $limiter->check($key, 2, $window); // bucket sama → count lanjut 2
         self::assertTrue($d2->allowed);
-        self::assertSame(0, $d2->remaining, 'counter TIDAK boleh ter-reset ulang');
+        self::assertSame(0, $d2->remaining, 'counter TIDAK boleh ter-reset ulang dalam bucket yang sama');
+
+        // Counter bucket lama tidak boleh terinjak oleh penulisan bucket baru.
+        self::assertSame(99, \apcu_fetch('zef:ratelimit:c:' . $hash . ':' . $previousBucket));
     }
 
-    /** Window berisi NUMERIC STRING (bukan int): is_int gagal → jalur re-store.
-     * Membunuh LogicalAnd:53 (&& pertama → ||): mutan memilih jalur $reset=$stored
-     * sehingga retryAfter ≈ 1000, bukan 30 — asersi retryAfter membedakannya. */
-    public function testApcuNumericStringWindowForcesReanchorPath(): void
+    /** Regresi P-1 (issue #169): skema lama dua-entri (window + counter) sudah
+     * tidak dipakai — entri legacy 'w:' terabaikan; keputusan sepenuhnya dari
+     * bucket wall-clock, reset di-bounds 1..windowSeconds. */
+    public function testApcuLegacyWindowEntryIsIgnored(): void
     {
         if (!\extension_loaded('apcu')) {
             self::markTestSkipped('ext-apcu not available in this environment.');
@@ -362,11 +370,13 @@ final class EdgeMatrixF8SecInfraTest extends TestCase
 
         $d = $limiter->check($key, 2, 30);
         self::assertTrue($d->allowed);
-        self::assertSame(30, $d->retryAfter, 're-anchor wajib memakai now+window, bukan string basi');
+        self::assertGreaterThanOrEqual(1, $d->retryAfter);
+        self::assertLessThanOrEqual(30, $d->retryAfter, 'reset diambil dari batas bucket, bukan string basi');
     }
 
-    /** Pre-seed stored = now+1 (tepat +1 detik): reset - now == 1 → max(1, 1) = 1.
-     * Membunuh Increment:67 (max(1,..) → max(2,..)) pada boundary retryAfter minimum. */
+    /** Regresi P-1 (issue #169): window=1 → bucket berganti tiap detik →
+     * retryAfter tepat 1 (batas bawah). Membunuh aritmetika reset
+     * ($bucket+1)*$windowSeconds pada boundary minimum. */
     public function testApcuRetryAfterBoundaryAtOneSecond(): void
     {
         if (!\extension_loaded('apcu')) {
@@ -375,12 +385,10 @@ final class EdgeMatrixF8SecInfraTest extends TestCase
 
         $limiter = new ApcuRateLimiter();
         $key = 'apcu-bound-' . \bin2hex(\random_bytes(4));
-        $hash = \hash('sha256', $key);
-        \apcu_store('zef:ratelimit:w:' . $hash, \time() + 1, 600);
 
-        $d = $limiter->check($key, 5, 30);
+        $d = $limiter->check($key, 5, 1);
         self::assertTrue($d->allowed);
-        self::assertSame(1, $d->retryAfter, 'retryAfter == 1 pada reset-now terkecil yang mungkin');
+        self::assertSame(1, $d->retryAfter, 'retryAfter == 1: bucket 1 detik berakhir tepat di now+1');
     }
 
     // ------------------------------------------------------------------
