@@ -549,6 +549,80 @@ final class EdgeMatrixMakerTest extends TestCase
         self::assertSame('null', $io2->outLog()[0], 'null tersimpan sah — sentinel membedakannya dari missing');
     }
 
+    /** Regresi #214 — dump penuh: nilai ber-key sensitif ter-mask, key biasa utuh. */
+    public function testConfigShowerMasksSecretKeysInFullDump(): void
+    {
+        $aggregator = new ConfigAggregator();
+        $aggregator->addProvider($this->provider('Db', [
+            'host' => '127.0.0.1',
+            'password' => 'hunter2-secret-value',
+            'credentials' => ['user' => 'zef', 'token' => 'tok-9'],
+            'api_key' => 'ak-123',
+            'timeout' => 5,
+        ]));
+        $io = $this->io();
+        self::assertSame(0, new ConfigShower($aggregator, $io)->run(null));
+        $dump = $io->outLog()[0];
+
+        self::assertStringContainsString('"host": "127.0.0.1"', $dump, 'key non-sensitif harus utuh');
+        self::assertStringContainsString('"timeout": 5', $dump, 'skalar non-sensitif harus utuh');
+        self::assertStringContainsString('"password": "****(20)"', $dump, 'password wajib ter-mask dengan panjang asli');
+        self::assertStringContainsString('"api_key": "****(6)"', $dump, 'api_key wajib ter-mask');
+        self::assertStringContainsString('"credentials": "****"', $dump, 'array di bawah key sensitif di-mask menyeluruh');
+        self::assertStringNotContainsString('hunter2-secret-value', $dump, 'nilai rahasia TIDAK boleh bocor ke output');
+        self::assertStringNotContainsString('tok-9', $dump, 'nilai rahasia bersarang tidak boleh bocor');
+    }
+
+    /** Regresi #214 — dotted key lookup ke slot sensitif juga ter-mask. */
+    public function testConfigShowerMasksDottedSecretKeyLookup(): void
+    {
+        $aggregator = new ConfigAggregator();
+        $aggregator->addProvider($this->provider('Db', [
+            'tier' => ['password' => 'p@ssw0rd-long-enough', 'limit' => 500],
+        ]));
+        $io = $this->io();
+        self::assertSame(0, new ConfigShower($aggregator, $io)->run('db.tier.password'));
+        self::assertSame('"****(20)"', $io->outLog()[0], 'lookup langsung ke slot sensitif wajib ter-mask');
+        self::assertStringNotContainsString('p@ssw0rd-long-enough', $io->outLog()[0]);
+
+        $io2 = $this->io();
+        self::assertSame(0, new ConfigShower($aggregator, $io2)->run('db.tier.limit'));
+        self::assertSame('500', $io2->outLog()[0], 'lookup non-sensitif tidak boleh terpengaruh');
+    }
+
+    /** Regresi #214 — --reveal mencetak nilai asli (guard production diuji terpisah). */
+    public function testConfigShowerRevealPrintsSecretValuesVerbatim(): void
+    {
+        $aggregator = new ConfigAggregator();
+        $aggregator->addProvider($this->provider('Db', ['password' => 'hunter2-secret-value']));
+        $io = $this->io();
+        self::assertSame(0, new ConfigShower($aggregator, $io)->run(null, true));
+        self::assertStringContainsString('"password": "hunter2-secret-value"', $io->outLog()[0], '--reveal harus mencetak nilai asli');
+    }
+
+    /** Regresi #214 — --reveal ditolak saat ZEF_ENV=production. */
+    public function testConfigShowerRefusesRevealUnderProductionEnv(): void
+    {
+        $previous = getenv('ZEF_ENV');
+        putenv('ZEF_ENV=production');
+
+        try {
+            $aggregator = new ConfigAggregator();
+            $aggregator->addProvider($this->provider('Db', ['password' => 'hunter2-secret-value']));
+            $io = $this->io();
+            self::assertSame(1, new ConfigShower($aggregator, $io)->run(null, true));
+            self::assertStringContainsString('Refusing --reveal', $io->errLog()[0]);
+            self::assertSame([], $io->outLog(), 'tidak ada baris output saat reveal ditolak');
+
+            // Tanpa --reveal tetap boleh jalan di production (defaultnya masked).
+            $io2 = $this->io();
+            self::assertSame(0, new ConfigShower($aggregator, $io2)->run(null));
+            self::assertStringContainsString('"****(20)"', $io2->outLog()[0]);
+        } finally {
+            $previous === false ? putenv('ZEF_ENV') : putenv('ZEF_ENV=' . $previous);
+        }
+    }
+
     private function io(): ConsoleIO
     {
         $out = fopen('php://memory', 'r+');

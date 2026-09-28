@@ -46,6 +46,8 @@
  *   bin/zef module:list            Print registered modules (boots the app).
  *   bin/zef plugin:list            Print plugins found on disk.
  *   bin/zef config:show [key]      Dump aggregated config / one dotted key.
+ *                                  [--reveal] unmask secret-valued keys
+ *                                  (refuses under ZEF_ENV=production).
  *
  * v2.20.0 OpenAPI documentation module:
  *   bin/zef openapi:generate       Assemble the OpenAPI 3.1 document from the
@@ -141,10 +143,25 @@ if ($command === 'plugin:list') {
 }
 
 if ($command === 'config:show') {
+    // Flags (--reveal) are stripped before the positional key; the first
+    // non-flag argument wins, keeping `config:show --reveal db.password`
+    // and `config:show db.password --reveal` equivalent.
+    $keyArg = null;
+    $reveal = false;
+    foreach (array_slice($args, 2) as $arg) {
+        if ($arg === '--reveal') {
+            $reveal = true;
+            continue;
+        }
+        if (is_string($arg) && str_starts_with($arg, '--')) {
+            continue;
+        }
+        $keyArg ??= $arg;
+    }
     $app = \Zef\App\Bootstrap::createApp(false);
     $app->boot();
     try {
-        exit((new \Zef\Framework\Console\Inspector\ConfigShower($app->getConfigAggregator(), $io))->run($args[2] ?? null));
+        exit((new \Zef\Framework\Console\Inspector\ConfigShower($app->getConfigAggregator(), $io))->run($keyArg, $reveal));
     } catch (\Zef\Framework\Console\ConsoleException $e) {
         $io->err($e->getMessage());
         exit(1);
