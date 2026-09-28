@@ -233,11 +233,11 @@ final class EdgeMatrixF7CqrsEventTest extends TestCase
         self::assertSame(32, strlen($ctx->eventId));
         self::assertTrue(ctype_xdigit($ctx->eventId), 'eventId = bin2hex(random_bytes(16))');
         self::assertGreaterThan(1_000_000_000_000_000_000, $ctx->occurredAtUnixNano, 'occurredAt is nanoseconds since epoch');
-        // Windows: microtime(true) resolution is ~15 ms, so two consecutive reads
-            // can land on the same tick and the dispatcher's occurredAt equals the
-            // test's $nowNs verbatim. Tolerate the same-tick case; the assertion
-            // still forbids occurredAt from being older than $nowNs.
-            self::assertLessThanOrEqual(1_000_000_000, $nowNs - $ctx->occurredAtUnixNano + 1_000_000_000, 'occurredAt is within ~a second of now');
+        // abs() matters: when both clock reads land in the same microsecond
+        // (routine on Windows' coarse timers), the raw delta is exactly 0 and
+        // the old `delta + 1_000_000_000 < 1_000_000_000` form failed on the
+        // equality boundary — a pure timing flake, not a timestamp regression.
+        self::assertLessThan(1_000_000_000, abs($nowNs - $ctx->occurredAtUnixNano), 'occurredAt is within ~a second of now');
     }
 
     public function testDispatcherResolvedCacheIsConsistentAcrossDispatches(): void
