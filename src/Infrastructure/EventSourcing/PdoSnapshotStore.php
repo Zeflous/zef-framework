@@ -12,7 +12,9 @@ namespace Zef\Framework\EventSourcing;
 
 use Zef\Framework\Database\ConnectionInterface;
 use Zef\Framework\Database\QueryBuilder;
+use Zef\Framework\Database\QueryException;
 use Zef\Framework\Database\SqlQuery;
+use Zef\Framework\Database\SqlState;
 
 /**
  * PDO-backed {@see SnapshotStoreInterface} built on the Database Core port.
@@ -24,6 +26,15 @@ use Zef\Framework\Database\SqlQuery;
  * v2.23.0 hardening: `save()` checks the stored version first and refuses
  * to regress — a snapshot older than the persisted one is discarded, so a
  * slow writer can never clobber a newer snapshot saved concurrently.
+ *
+ * Regresi P-2 (issue #170): the guard alone only covers the snapshot that
+ * was already visible when it ran. Between the guard and the write a
+ * concurrent save can still commit a NEWER snapshot, which the previously
+ * unconditional DELETE removed and the older INSERT replaced — a silent
+ * regression. The DELETE is now version-bounded (never touches a newer
+ * row) and a unique violation on the INSERT's identity constraint is
+ * treated as the definitive lost-race signal: the version is re-checked
+ * and a strictly newer snapshot wins silently.
  */
 final readonly class PdoSnapshotStore implements SnapshotStoreInterface
 {
@@ -117,31 +128,59 @@ final readonly class PdoSnapshotStore implements SnapshotStoreInterface
 
     private function doSave(Snapshot $snapshot): void
     {
+        $existingVersion = $this->storedVersion($snapshot);
+        if ($existingVersion !== null && $existingVersion > $snapshot->version) {
+            return; // a concurrent writer already saved a newer snapshot
+        }
+
+        // Regresi P-2 (issue #170): bound the DELETE to rows at or below the
+        // version being saved — a snapshot committed by a concurrent writer
+        // between the guard above and this write must survive it.
+        $this->connection->execute(
+            $this->deleteQb()
+                ->where('aggregate_type', '=', $snapshot->aggregateType)
+                ->where('aggregate_id', '=', $snapshot->aggregateId)
+                ->where('version', '<=', $snapshot->version)
+                ->build(),
+        );
+
+        try {
+            $this->connection->execute(
+                QueryBuilder::table($this->table)->insert([
+                    'aggregate_type' => $snapshot->aggregateType,
+                    'aggregate_id' => $snapshot->aggregateId,
+                    'version' => $snapshot->version,
+                    'state' => EventJson::encode($snapshot->state, 'Snapshot state'),
+                    'created_at' => $snapshot->createdAtUnixNano,
+                ])->build(),
+            );
+        } catch (QueryException $error) {
+            if (!SqlState::isUniqueViolation($error)) {
+                throw $error;
+            }
+            $existingVersion = $this->storedVersion($snapshot);
+            if ($existingVersion === null || $existingVersion <= $snapshot->version) {
+                throw $error;
+            }
+
+            return; // lost the race to a strictly newer snapshot — never move backwards
+        }
+    }
+
+    /**
+     * Version of the currently stored snapshot for $snapshot's identity
+     * (null when the identity has no row yet).
+     */
+    private function storedVersion(Snapshot $snapshot): ?int
+    {
         $row = $this->connection->fetchOne(
             $this->selectQb()
                 ->where('aggregate_type', '=', $snapshot->aggregateType)
                 ->where('aggregate_id', '=', $snapshot->aggregateId)
                 ->build(),
         );
-        $existingVersion = $row === null ? null : RowCast::int($row['version'] ?? null);
-        if ($existingVersion !== null && $existingVersion > $snapshot->version) {
-            return; // a concurrent writer already saved a newer snapshot
-        }
-        $this->connection->execute(
-            $this->deleteQb()
-                ->where('aggregate_type', '=', $snapshot->aggregateType)
-                ->where('aggregate_id', '=', $snapshot->aggregateId)
-                ->build(),
-        );
-        $this->connection->execute(
-            QueryBuilder::table($this->table)->insert([
-                'aggregate_type' => $snapshot->aggregateType,
-                'aggregate_id' => $snapshot->aggregateId,
-                'version' => $snapshot->version,
-                'state' => EventJson::encode($snapshot->state, 'Snapshot state'),
-                'created_at' => $snapshot->createdAtUnixNano,
-            ])->build(),
-        );
+
+        return $row === null ? null : RowCast::int($row['version'] ?? null);
     }
 
     private function selectQb(): QueryBuilder

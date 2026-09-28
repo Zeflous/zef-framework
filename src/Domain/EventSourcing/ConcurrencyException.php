@@ -14,7 +14,10 @@ namespace Zef\Framework\EventSourcing;
  * Optimistic concurrency violation on an event stream.
  *
  * Raised by {@see EventStoreInterface::appendToStream()} when the last
- * committed version of the stream does not match the caller's expectation.
+ * committed version of the stream does not match the caller's expectation —
+ * including the insert-time backstop: a concurrent append that won one of
+ * the store's unique constraints after the version guard passed surfaces
+ * here too, with the driver error chained as the cause (issue #170).
  * The expected/actual pair is exposed so callers can decide to reload the
  * aggregate and retry instead of guessing what went wrong.
  */
@@ -23,9 +26,12 @@ final class ConcurrencyException extends EventSourcingException
     public function __construct(
         private readonly int $expectedVersion,
         private readonly int $actualVersion,
+        ?\Throwable $previous = null,
     ) {
         parent::__construct(
             "Concurrency conflict: expected stream version {$expectedVersion}, actual is {$actualVersion}.",
+            0,
+            $previous,
         );
     }
 

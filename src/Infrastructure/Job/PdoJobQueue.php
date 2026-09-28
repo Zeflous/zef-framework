@@ -13,6 +13,7 @@ use Zef\Framework\Database\ConnectionInterface;
 use Zef\Framework\Database\QueryBuilder;
 use Zef\Framework\Database\QueryException;
 use Zef\Framework\Database\SqlQuery;
+use Zef\Framework\Validation\Identifier;
 
 /**
  * PDO-backed {@see JobQueueInterface} built on the Database Core port —
@@ -20,9 +21,12 @@ use Zef\Framework\Database\SqlQuery;
  *
  * Ordering: (priority DESC, available_at ASC, seq ASC). `seq` is
  * `MAX(seq) + 1` computed inside the enqueue INSERT (the same portable
- * pattern PdoEventStore uses for its global sequence) and the
- * UNIQUE(job_id) constraint is the race backstop: under concurrent
- * enqueues the loser fails loudly instead of silently reordering.
+ * pattern PdoEventStore uses for its global sequence). UNIQUE(job_id) is
+ * the duplicate backstop — re-enqueueing the same job id fails loudly.
+ * UNIQUE(seq) (Regresi P-5, issue #170) is the race backstop for the
+ * MAX+1 computation: concurrent enqueues can no longer double-assign seq
+ * and silently corrupt the ordering — the loser retries with a freshly
+ * recomputed MAX+1 (bounded, see doEnqueue()).
  *
  * Claiming (dequeue): SELECT the head candidate, then DELETE it by
  * job_id inside the same transaction — rows===1 claims, rows===0 means a
@@ -45,6 +49,7 @@ use Zef\Framework\Database\SqlQuery;
 final readonly class PdoJobQueue implements JobQueueInterface
 {
     private const int MAX_CLAIM_ATTEMPTS = 8;
+
     private string $table;
 
     /** @var (\Closure(): int) */
@@ -72,28 +77,58 @@ final readonly class PdoJobQueue implements JobQueueInterface
 
     /**
      * Create the queue table (portable DDL, safe to run repeatedly).
+     *
+     * Column widths follow the domain envelope contract (Regresi P-4,
+     * issue #170): job_id and correlation_id carry
+     * Identifier::OPAQUE_ID_PATTERN ids (8..128 bytes) and trace_parent
+     * carries Identifier::TRACEPARENT_PATTERN values (55 base chars + '-'
+     * + up to 512 suffix bytes = 568). The previous 64-byte widths
+     * silently truncated — or rejected, under strict MySQL — every
+     * long-but-legal value the envelope had already accepted. SQLite is
+     * type-lenient and cannot ALTER column widths at all, and widening on
+     * MySQL/PostgreSQL needs driver-specific MODIFY/TYPE syntax, so legacy
+     * tables must be recreated to gain the wider columns — best documented
+     * here instead of half-upgraded per driver.
+     *
+     * UNIQUE(seq) (Regresi P-5, issue #170) is the concurrency backstop
+     * that turns a double-assigned MAX(seq)+1 into a retryable unique
+     * violation (see doEnqueue()). CREATE TABLE IF NOT EXISTS does not
+     * alter existing tables, so {@see JobQueueSeqBackstop::ensureUniqueIndex()}
+     * upgrades legacy tables with the PdoOutbox::createRelayIndex() pattern (best
+     * effort CREATE UNIQUE INDEX with an already-exists swallow). A
+     * legacy table that already contains double-assigned seq values —
+     * the exact corruption the backstop exists to prevent — fails that
+     * upgrade loudly instead of being silently accepted.
      */
     public function createSchema(): void
     {
         $this->connection->execute(SqlQuery::raw(
             'CREATE TABLE IF NOT EXISTS "' . $this->table . '" ('
             . '"seq" BIGINT NOT NULL, '
-            . '"job_id" VARCHAR(64) NOT NULL, '
+            . '"job_id" VARCHAR(128) NOT NULL, '
             . '"job_type" VARCHAR(191) NOT NULL, '
             . '"payload" TEXT NOT NULL, '
             . '"available_at" BIGINT NOT NULL, '
             . '"priority" INT NOT NULL, '
             . '"attempt" INT NOT NULL, '
-            . '"correlation_id" VARCHAR(64) NULL, '
-            . '"trace_parent" VARCHAR(64) NULL, '
+            . '"correlation_id" VARCHAR(128) NULL, '
+            . '"trace_parent" VARCHAR(568) NULL, '
             . '"headers" TEXT NOT NULL, '
-            . 'CONSTRAINT "uq_' . $this->table . '_job" UNIQUE ("job_id"))',
+            . 'CONSTRAINT "uq_' . $this->table . '_job" UNIQUE ("job_id"), '
+            . 'CONSTRAINT "uq_' . $this->table . '_seq" UNIQUE ("seq"))',
         ));
+        $this->seq()->ensureUniqueIndex();
     }
 
     #[\Override]
     public function enqueue(JobEnvelope $job): void
     {
+        // Regresi P-4 (issue #170): re-assert the domain's job-id grammar at
+        // the storage boundary — Identifier::assertOpaqueId caps ids at 128
+        // bytes, exactly the job_id column width, so a value that ever slips
+        // past the envelope's own validation fails loudly here instead of
+        // being silently truncated by a narrow column.
+        Identifier::assertOpaqueId($job->jobId, 'job ID');
         $payload = $this->encodePayload($job->payload);
         $headers = $this->encodePayload($job->headers);
         if ($this->maxSize !== null && $this->size() >= $this->maxSize) {
@@ -175,9 +210,20 @@ final readonly class PdoJobQueue implements JobQueueInterface
         return (int) $row['aggregate'];
     }
 
+    /**
+     * The UNIQUE(seq) backstop collaborator: built lazily (not in the
+     * constructor) so the queue's own construction stays side-effect
+     * free; one tiny allocation per enqueue is noise against the INSERT
+     * roundtrip it guards.
+     */
+    private function seq(): JobQueueSeqBackstop
+    {
+        return new JobQueueSeqBackstop($this->connection, $this->table);
+    }
+
     private function doEnqueue(JobEnvelope $job, string $payload, string $headers): void
     {
-        $this->connection->execute(new SqlQuery(
+        $insert = new SqlQuery(
             'INSERT INTO "' . $this->table . '" ('
             . '"seq", "job_id", "job_type", "payload", "available_at", "priority", "attempt", "correlation_id", "trace_parent", "headers"'
             . ') SELECT COALESCE(MAX("seq"), 0) + 1, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM "' . $this->table . '"',
@@ -192,7 +238,14 @@ final readonly class PdoJobQueue implements JobQueueInterface
                 $job->traceParent,
                 $headers,
             ],
-        ));
+        );
+
+        // Regresi P-5 (issue #170): the seq-collision retry loop, its
+        // driver-dialect classification and the legacy index upgrade
+        // live in {@see JobQueueSeqBackstop} — bounded retry, loud
+        // non-collision failures, unchanged QueryException after the
+        // attempt budget.
+        $this->seq()->insertWithSeqRetry($insert);
     }
 
     /** @param array<string, mixed> $row */
