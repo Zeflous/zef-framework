@@ -74,7 +74,7 @@
         "rector:check": "rector process --dry-run --no-progress-bar",
         "stan": "phpstan analyse --configuration=phpstan.neon.dist --memory-limit=1G",
         "docs": "php vendor/bin/doctum.php update doctum.php --no-progress",
-        "audit": "@php scripts/ci/assert-abandoned-policy.php",
+        "audit:security": "@php scripts/ci/assert-abandoned-policy.php",
         "deptrac": "deptrac analyse --config-file=deptrac.yaml --no-progress --fail-on-uncovered",
         "mutation": "infection --threads=max --min-msi=85 --min-covered-msi=90",
         "mutation:ci": "infection --threads=max --min-msi=85 --min-covered-msi=90 --logger-github",
