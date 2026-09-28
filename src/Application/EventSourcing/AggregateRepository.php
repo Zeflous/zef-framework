@@ -185,7 +185,12 @@ class AggregateRepository
 
     private function replayAfter(AggregateRoot $aggregate, string $type, string $aggregateId, int $afterVersion): void
     {
-        foreach ($this->store->loadStream($type, $aggregateId) as $event) {
+        // Regresi I-10 (issue #175): the snapshot tail cut is passed INTO the
+        // store (SQL `WHERE version > X` on the PDO adapter) instead of
+        // loading the full stream and filtering in PHP — snapshot hydration
+        // no longer pays pre-snapshot I/O. The in-loop guard stays as
+        // defence against stores that ignore the argument.
+        foreach ($this->store->loadStream($type, $aggregateId, $afterVersion) as $event) {
             if ($event->version <= $afterVersion) {
                 continue;
             }

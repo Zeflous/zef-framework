@@ -14,6 +14,7 @@ use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
+use Psr\Log\LoggerInterface;
 use Zef\Framework\Http\JsonResponse;
 
 final readonly class SecurityRuntimeMiddleware implements MiddlewareInterface
@@ -21,11 +22,19 @@ final readonly class SecurityRuntimeMiddleware implements MiddlewareInterface
     private const array SAFE_METHODS = ['GET', 'HEAD', 'OPTIONS', 'TRACE'];
     private ?CsrfTokenManager $csrf;
 
-    /** @param list<string> $trustedProxies */
+    /**
+     * @param list<string> $trustedProxies
+     *
+     * v2.31.0 (Regresi I-5 / issue #173): `$logger` is an optional PSR-3
+     * sink for swallowed limiter failures — null by default keeps the
+     * historical silent behaviour. A fail-closed mass 503 otherwise looked
+     * identical whether it was an attack or a limiter storage bug.
+     */
     public function __construct(
         private SecurityPolicy $policy,
         private RateLimiterInterface $rateLimiter,
         private array $trustedProxies = [],
+        private ?LoggerInterface $logger = null,
     ) {
         $this->csrf = $policy->csrfEnabled && $policy->csrfSecret !== ''
             ? new CsrfTokenManager($policy->csrfSecret, $policy->csrfTokenBytes, $policy->csrfTokenTtlSeconds)
@@ -64,12 +73,18 @@ final readonly class SecurityRuntimeMiddleware implements MiddlewareInterface
                     $this->policy->rateLimitMaxRequests,
                     $this->policy->rateLimitWindowSeconds,
                 );
-            } catch (RateLimiterCapacityException) {
+            } catch (RateLimiterCapacityException $e) {
                 // ZEF-DEEP-02: a full key store is not a storage failure — the
                 // request is served untracked rather than converting capacity
                 // into a global 503. Buckets that already exist keep counting.
+                $this->logSwallowedFailure('capacity exhausted (untracked fail-open)', $context->clientIp, $requestId, $e);
                 $rateDecision = null;
-            } catch (\Throwable) {
+            } catch (\Throwable $e) {
+                // Regresi I-5 (issue #173): the swallowed failure is logged —
+                // a mass 503 (fail-closed) must be diagnosable as attack vs
+                // bug. Safe context only: client IP + request id, no headers.
+                $this->logSwallowedFailure('storage failure (fail-closed 503)', $context->clientIp, $requestId, $e);
+
                 return JsonResponse::error(503, 'Service Unavailable', ['correlation_id' => $requestId], [
                     'Retry-After' => '1',
                     'X-Request-ID' => $requestId,
@@ -148,6 +163,22 @@ final readonly class SecurityRuntimeMiddleware implements MiddlewareInterface
         }
 
         return $response;
+    }
+
+    /**
+     * Regresi I-5 (issue #173): one concise error-level record per swallowed
+     * limiter failure — exactly one per failure path, never per retry. Only
+     * safe context is logged (client IP and request id); a null logger keeps
+     * the pre-v2.31.0 silent behaviour (BC for every existing wiring).
+     */
+    private function logSwallowedFailure(string $mode, string $clientIp, string $requestId, \Throwable $error): void
+    {
+        $this->logger?->error(
+            '[ZEF][security] Rate limiter ' . $mode
+            . ' for client ' . $clientIp
+            . ' on request ' . $requestId
+            . ': ' . $error::class . ': ' . $error->getMessage(),
+        );
     }
 
     /**

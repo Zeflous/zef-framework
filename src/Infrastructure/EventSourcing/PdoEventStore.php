@@ -129,19 +129,27 @@ final readonly class PdoEventStore implements EventStoreInterface
     }
 
     #[\Override]
-    public function loadStream(string $aggregateType, string $aggregateId): array
+    public function loadStream(string $aggregateType, string $aggregateId, int $afterVersion = 0): array
     {
         EventGrammar::assertAggregateType($aggregateType);
         EventGrammar::assertAggregateType($aggregateId, 'aggregate ID');
+        if ($afterVersion < 0) {
+            throw new EventSourcingException("afterVersion must be >= 0 (got {$afterVersion}).");
+        }
 
-        $rows = $this->connection->fetchAll(
-            QueryBuilder::table($this->table)
-                ->select('global_sequence', 'event_id', 'aggregate_type', 'aggregate_id', 'version', 'event_type', 'payload', 'metadata', 'recorded_at')
-                ->where('aggregate_type', '=', $aggregateType)
-                ->where('aggregate_id', '=', $aggregateId)
-                ->orderBy('version', 'ASC')
-                ->build(),
-        );
+        $query = QueryBuilder::table($this->table)
+            ->select('global_sequence', 'event_id', 'aggregate_type', 'aggregate_id', 'version', 'event_type', 'payload', 'metadata', 'recorded_at')
+            ->where('aggregate_type', '=', $aggregateType)
+            ->where('aggregate_id', '=', $aggregateId)
+        ;
+        if ($afterVersion > 0) {
+            // Regresi I-10 (issue #175): the snapshot tail cut runs in SQL —
+            // snapshot-seeded replay no longer pays full-stream I/O just to
+            // skip the pre-snapshot events in PHP.
+            $query->where('version', '>', $afterVersion);
+        }
+
+        $rows = $this->connection->fetchAll($query->orderBy('version', 'ASC')->build());
 
         return array_map($this->hydrate(...), $rows);
     }

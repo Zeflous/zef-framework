@@ -13,6 +13,7 @@ use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
+use Psr\Log\LoggerInterface;
 use Zef\Framework\Http\JsonResponse;
 
 /**
@@ -63,6 +64,17 @@ use Zef\Framework\Http\JsonResponse;
  * is merely full of live buckets, tracked identities keep working, and the
  * request is served untracked (controlled fail-open) instead of turning a
  * full store into a global 503.
+ *
+ * Observability (v2.31.0, Regresi I-5 / issue #173): every swallowed
+ * limiter failure — storage failure or capacity exhaustion — emits ONE
+ * concise error-level record on the optional PSR-3 logger (`$logger`, null
+ * by default = previous silent behaviour). Without it a mass 503 from
+ * fail-closed mode was indistinguishable from an attack versus a storage
+ * bug in production. The record carries only safe context: matched tier
+ * names, the already-fingerprinted identity (sha256 or client IP — never
+ * raw credentials) and the exception class. No metrics port is injected:
+ * the kernel telemetry path already counts 503 responses, so per-
+ * middleware counting would be a second, divergent counter.
  */
 final readonly class RateLimitMiddleware implements MiddlewareInterface
 {
@@ -83,6 +95,7 @@ final readonly class RateLimitMiddleware implements MiddlewareInterface
         private bool $failOpen = false,
         private string $identityHeader = 'X-API-Key',
         private bool $trustIdentityHeader = false,
+        private ?LoggerInterface $logger = null,
     ) {
         foreach ($rules as $rule) {
             if (!$rule instanceof RateLimitRule) {
@@ -103,20 +116,30 @@ final readonly class RateLimitMiddleware implements MiddlewareInterface
             return $handler->handle($request);
         }
 
+        $identity = null;
+
         try {
             // Identity resolution sits INSIDE the policy envelope: a resolver
             // failure must follow the same fail-open/fail-closed decision as
             // a storage failure, never surface as an unhandled 500.
             $identity = $this->resolveIdentity($request, $trustedProxies);
             $verdict = $this->tiered->evaluateAll($matched, $identity);
-        } catch (RateLimiterCapacityException) {
+        } catch (RateLimiterCapacityException $e) {
             // ZEF-DEEP-02: the store is full of LIVE buckets — identities that
             // already have a bucket are unaffected by this guard. Serving the
             // (new) identity untracked is strictly safer than converting a
             // full store into a global 503 for every client the attacker
             // crowded out.
+            $this->logSwallowedFailure('capacity exhausted (untracked fail-open)', $matched, $identity, $e);
+
             return $handler->handle($request);
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
+            $this->logSwallowedFailure(
+                $this->failOpen ? 'storage failure (fail-open)' : 'storage failure (fail-closed 503)',
+                $matched,
+                $identity,
+                $e,
+            );
             if ($this->failOpen) {
                 return $handler->handle($request);
             }
@@ -192,6 +215,29 @@ final readonly class RateLimitMiddleware implements MiddlewareInterface
         // Full 64-hex sha256: deterministic, bounded, and credentials never
         // appear verbatim in limiter storage keys.
         return hash('sha256', $value);
+    }
+
+    /**
+     * Regresi I-5 (issue #173): one concise error-level record per swallowed
+     * limiter failure. Only safe context is logged: matched tier names, the
+     * already-fingerprinted identity (sha256 hash or client IP — raw
+     * credentials never appear) and the exception class. A null logger keeps
+     * the pre-v2.31.0 silent behaviour (BC for every existing wiring).
+     *
+     * @param list<RateLimitRule> $matched
+     */
+    private function logSwallowedFailure(string $mode, array $matched, ?string $identity, \Throwable $error): void
+    {
+        $tiers = implode(
+            ',',
+            array_map(static fn (RateLimitRule $rule): string => $rule->name, $matched),
+        );
+        $this->logger?->error(
+            '[ZEF][security] Rate limiter ' . $mode
+            . ' for identity ' . ($identity ?? 'unresolved')
+            . ' on tiers [' . $tiers . ']'
+            . ': ' . $error::class . ': ' . $error->getMessage(),
+        );
     }
 
     /**

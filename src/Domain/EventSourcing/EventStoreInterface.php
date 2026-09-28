@@ -18,7 +18,12 @@ namespace Zef\Framework\EventSourcing;
  *   is committed with versions `expectedVersion+1..n`, or nothing changes
  *   and a {@see ConcurrencyException} is raised on a version mismatch;
  * - {@see loadStream()} returns the aggregate's events ordered by `version`
- *   ascending; an unknown stream is an empty list, not an error;
+ *   ascending; an unknown stream is an empty list, not an error. The
+ *   optional `$afterVersion` tail cut (default 0 = the whole stream,
+ *   v2.31.0 / Regresi I-10, issue #175) makes snapshot-seeded replay load
+ *   ONLY post-snapshot events — implementations MUST filter on it
+ *   (`WHERE version > X` in SQL adapters, in-memory elsewhere) instead of
+ *   returning the full stream for the caller to skip;
  * - {@see streamAll()} exposes the store-wide timeline ordered by
  *   `globalSequence` ascending for catch-up projections.
  *
@@ -43,9 +48,19 @@ interface EventStoreInterface
     public function appendToStream(string $aggregateType, string $aggregateId, int $expectedVersion, PendingEvent ...$events): array;
 
     /**
+     * @param string $aggregateType stream family label
+     * @param string $aggregateId   stream identity
+     * @param int    $afterVersion  lower cut (exclusive): only events with
+     *                              `version > afterVersion` are returned
+     *                              (0 = the whole stream). Lets a
+     *                              snapshot-seeded replay skip the
+     *                              pre-snapshot tail inside the store
+     *                              instead of hydrating it just to filter
+     *                              it out in PHP (Regresi I-10, issue #175)
+     *
      * @return list<StoredEvent> ordered by version ascending; empty for unknown streams
      */
-    public function loadStream(string $aggregateType, string $aggregateId): array;
+    public function loadStream(string $aggregateType, string $aggregateId, int $afterVersion = 0): array;
 
     /**
      * Store-wide timeline slice for catch-up projections.

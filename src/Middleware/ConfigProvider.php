@@ -91,12 +91,27 @@ final readonly class ConfigProvider implements ConfigProviderInterface
                         $policy = SecurityPolicy::fromEnvironment($logger, $env);
                         $rateLimiter = self::buildRateLimiter($policy, $logger, $env);
 
-                        return new SecurityRuntimeMiddleware($policy, $rateLimiter);
+                        // v2.31.0 (Regresi I-5 / issue #173): the swallowed
+                        // limiter failures are logged through the same PSR-3
+                        // sink the policy already uses.
+                        return new SecurityRuntimeMiddleware($policy, $rateLimiter, logger: $logger instanceof LoggerInterface ? $logger : null);
                     },
                     'deps' => [LoggerInterface::class],
                 ],
                 'middleware.security.rate_limit' => [
-                    'factory' => static function () use ($env): RateLimitMiddleware {
+                    'factory' => static function (?ContainerInterface $c = null) use ($env): RateLimitMiddleware {
+                        // v2.31.0 (Regresi I-5 / issue #173): same optional
+                        // PSR-3 sink as the runtime security middleware. The
+                        // container argument is optional so zero-argument
+                        // invocation (tests, manual wiring) keeps working and
+                        // simply runs with the logger disabled.
+                        $logger = null;
+
+                        try {
+                            $resolved = $c?->get(LoggerInterface::class);
+                            $logger = $resolved instanceof LoggerInterface ? $resolved : null;
+                        } catch (\Throwable) {
+                        }
                         $rules = self::parseRateLimitTiers($env->readString('ZEF_SECURITY_RATE_LIMIT_TIERS'));
                         $algorithm = RateLimitAlgorithm::fromString(
                             $env->readString('ZEF_SECURITY_RATE_LIMIT_ALGORITHM', 'sliding'),
@@ -110,6 +125,7 @@ final readonly class ConfigProvider implements ConfigProviderInterface
                             $rules,
                             failOpen: $env->readBool('ZEF_SECURITY_RATE_LIMIT_FAIL_OPEN'),
                             trustIdentityHeader: $env->readBool('ZEF_SECURITY_RATE_LIMIT_TRUST_IDENTITY_HEADER'),
+                            logger: $logger,
                         );
                     },
                     'deps' => [],
