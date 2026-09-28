@@ -94,7 +94,11 @@ final readonly class ConfigProvider implements ConfigProviderInterface
                         // v2.31.0 (Regresi I-5 / issue #173): the swallowed
                         // limiter failures are logged through the same PSR-3
                         // sink the policy already uses.
-                        return new SecurityRuntimeMiddleware($policy, $rateLimiter, logger: $logger instanceof LoggerInterface ? $logger : null);
+                        return new SecurityRuntimeMiddleware(
+                            $policy,
+                            $rateLimiter,
+                            logger: $logger instanceof LoggerInterface ? $logger : null,
+                        );
                     },
                     'deps' => [LoggerInterface::class],
                 ],
@@ -111,6 +115,10 @@ final readonly class ConfigProvider implements ConfigProviderInterface
                             $resolved = $c?->get(LoggerInterface::class);
                             $logger = $resolved instanceof LoggerInterface ? $resolved : null;
                         } catch (\Throwable) {
+                            // Optional dependency (v2.31.0, Regresi I-5): when
+                            // the container cannot resolve a PSR-3 sink the
+                            // middleware runs with logging disabled — the
+                            // limiter must stay wired either way.
                         }
                         $rules = self::parseRateLimitTiers($env->readString('ZEF_SECURITY_RATE_LIMIT_TIERS'));
                         $algorithm = RateLimitAlgorithm::fromString(

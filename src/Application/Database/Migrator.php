@@ -245,15 +245,20 @@ final class Migrator
             . '"holder" VARCHAR(64) NOT NULL DEFAULT \'\')',
         ));
         $this->ensureHolderColumn();
-        // (int) hardening: $now is inlined into the steal statement below,
-        // so a clock violating the callable():int contract must never
+        // (int) hardening: the now stamp is inlined into the steal statement
+        // below, so a clock violating the callable():int contract must never
         // reach the SQL text.
-        $now = (int) ($this->now)();
+        $nowStamp = (int) ($this->now)();
 
         try {
             $this->connection->execute(
                 QueryBuilder::table(self::LOCK_TABLE)
-                    ->insert(['id' => 1, 'locked_at' => $now, 'ttl' => $this->lockTtlSeconds, 'holder' => $this->holderToken])->build(),
+                    ->insert([
+                        'id' => 1,
+                        'locked_at' => $nowStamp,
+                        'ttl' => $this->lockTtlSeconds,
+                        'holder' => $this->holderToken,
+                    ])->build(),
             );
         } catch (QueryException) {
             $rows = $this->connection->fetchAll(
@@ -268,7 +273,7 @@ final class Migrator
             }
             $lockedAt = (int) $lockedRaw;
             $rowTtl = (float) $ttlRaw;
-            $age = $now - $lockedAt;
+            $age = $nowStamp - $lockedAt;
             if ((float) $age < $rowTtl) {
                 throw new TransactionException(
                     'Migration lock is already held (age ' . $age . 's, ttl ' . $rowTtl . 's).',
@@ -286,14 +291,14 @@ final class Migrator
             // class (numeric < text), so a `"locked_at" + "ttl" <= ?`
             // comparison would be TRUE even for a row another runner just
             // renewed — the CAS would never lose a race. Every inlined
-            // value is generated here: $now is an int, the TTL was
+            // value is generated here: $nowStamp is an int, the TTL was
             // validated positive at construction, and the holder token is
             // bin2hex — no injection surface.
             $stolen = $this->connection->execute(SqlQuery::raw(
-                'UPDATE "' . self::LOCK_TABLE . '"'
-                . ' SET "locked_at" = ' . $now . ', "ttl" = ' . var_export($this->lockTtlSeconds, true)
+                'UPDATE "' . self::LOCK_TABLE
+                . '" SET "locked_at" = ' . $nowStamp . ', "ttl" = ' . var_export($this->lockTtlSeconds, true)
                 . ', "holder" = \'' . $this->holderToken . '\''
-                . ' WHERE "id" = 1 AND "locked_at" + "ttl" <= ' . $now,
+                . ' WHERE "id" = 1 AND "locked_at" + "ttl" <= ' . $nowStamp,
             ));
             if ($stolen === 0) {
                 throw new TransactionException(

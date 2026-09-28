@@ -77,7 +77,12 @@ final readonly class SecurityRuntimeMiddleware implements MiddlewareInterface
                 // ZEF-DEEP-02: a full key store is not a storage failure — the
                 // request is served untracked rather than converting capacity
                 // into a global 503. Buckets that already exist keep counting.
-                $this->logSwallowedFailure('capacity exhausted (untracked fail-open)', $context->clientIp, $requestId, $e);
+                $this->logSwallowedFailure(
+                    'capacity exhausted (untracked fail-open)',
+                    $context->clientIp,
+                    $requestId,
+                    $e,
+                );
                 $rateDecision = null;
             } catch (\Throwable $e) {
                 // Regresi I-5 (issue #173): the swallowed failure is logged —
