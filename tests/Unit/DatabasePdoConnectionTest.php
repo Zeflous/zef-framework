@@ -407,11 +407,14 @@ final class DatabasePdoConnectionTest extends TestCase
         try {
             $conn->beginTransaction(IsolationLevel::Serializable);
             self::fail('failing SET TRANSACTION must surface as QueryException');
-        } catch (QueryException $e) {
+        } catch (QueryException $e) { // @phpstan-ignore catch.neverThrown
+            // Runtime-real: the mocked PDO::exec throws PDOException, which
+            // runStatement wraps into QueryException before beginTransaction
+            // rethrows it — a throw path static analysis cannot see through
+            // the mock's dynamic behaviour.
             self::assertStringContainsString('bad isolation', $e->getMessage());
+            self::assertSame(0, $conn->transactionLevel(), 'the opened block must not leak');
         }
-
-        self::assertSame(0, $conn->transactionLevel());
     }
 
     public function testConnectFailureMessageShape(): void
