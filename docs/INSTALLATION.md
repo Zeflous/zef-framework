@@ -18,7 +18,7 @@
 ## 2. Instalasi minimal (tanpa Composer)
 
 ```bash
-git clone https://github.com/mbetixz/zef-framework.git
+git clone https://github.com/Zeflous/zef-framework.git
 cd zef-framework
 
 php bin/zef --self-test       # 501 assertion, 0 dependensi eksternal

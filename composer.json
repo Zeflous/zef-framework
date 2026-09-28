@@ -88,11 +88,11 @@
         "php",
         "framework"
     ],
-    "homepage": "https://github.com/mbetixz/zef-framework",
+    "homepage": "https://github.com/Zeflous/zef-framework",
     "support": {
-        "issues": "https://github.com/mbetixz/zef-framework/issues",
-        "docs": "https://mbetixz.github.io/zef-framework/",
-        "source": "https://github.com/mbetixz/zef-framework"
+        "issues": "https://github.com/Zeflous/zef-framework/issues",
+        "docs": "https://zeflous.github.io/zef-framework/",
+        "source": "https://github.com/Zeflous/zef-framework"
     },
     "suggest": {
         "ext-redis": "Redis-backed distributed rate limiter store (src/Infrastructure/Security/RedisRateLimiter)",
