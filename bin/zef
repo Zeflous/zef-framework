@@ -332,12 +332,17 @@ function zef_tinker(array $argv): int
         return 1;
     }
 
+    // The composition root is always created so `$container` is available even
+    // with `--no-boot` (docs/CLI.md §5: "hanya container berdiri sendiri") —
+    // issue #211: the REPL previously started with zero variables, so the
+    // documented example `$container->get(...)` failed outright. `boot()`
+    // (providers' boot hooks, dispatch readiness) is what gets skipped.
     $vars = [];
+    $app = \Zef\App\Bootstrap::createApp(false);
+    $vars['container'] = $app->getContainer();
     if ($boot) {
-        $app = \Zef\App\Bootstrap::createApp(false);
         $app->boot();
         $vars['app'] = $app;
-        $vars['container'] = $app->getContainer();
     }
 
     $session = new \Zef\Framework\Runtime\TinkerSession($vars);

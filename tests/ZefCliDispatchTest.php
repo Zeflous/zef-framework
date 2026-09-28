@@ -60,10 +60,17 @@ final class ZefCliDispatchTest extends TestCase
     public function testTinkerSupportsNoBootMode(): void
     {
         [$exitCode, $output] = $this->runCli(
-            'tinker ' . \escapeshellarg('-e') . ' ' . \escapeshellarg('echo count(get_defined_vars());') . ' --no-boot'
+            'tinker ' . \escapeshellarg('-e') . ' '
+            . \escapeshellarg('echo $container instanceof \Psr\Container\ContainerInterface ? "container-ok" : "no-container";')
+            . ' --no-boot'
         );
 
         self::assertSame(0, $exitCode, "tinker --no-boot must exit 0:\n{$output}");
+        self::assertStringContainsString(
+            'container-ok',
+            $output,
+            'docs/CLI.md §5 promises $container in --no-boot mode ("hanya container berdiri sendiri") — issue #211'
+        );
     }
 
     /** Guard produksi: REPL menolak berjalan saat ZEF_ENV=production. */
