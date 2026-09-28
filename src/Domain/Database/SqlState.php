@@ -34,7 +34,10 @@ namespace Zef\Framework\Database;
  */
 final class SqlState
 {
-    private function __construct() {}
+    private function __construct()
+    {
+        // Static utility class (SQLSTATE dialect matching only): no instances.
+    }
 
     /**
      * True when the error is a unique-constraint violation.
