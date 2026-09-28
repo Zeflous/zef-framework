@@ -23,6 +23,8 @@ use Zef\Framework\Exception\ApiVersionUnsupportedException;
  * Everything that is malformed, oversized, or not in the supported list is
  * raised as ApiVersionUnsupportedException (a 400/406-grade outcome), never
  * as a raw PHP error. Header/query length caps block header-injection noise.
+ * Path prefixes are anchored to the registry plus the numeric version
+ * grammar, so plain /v-prefixed routes ("/vendor") never hijack negotiation.
  */
 final class ApiVersionNegotiator
 {
@@ -113,14 +115,24 @@ final class ApiVersionNegotiator
      * Splits a leading /v{token} prefix off the path.
      * "/v2/users" → ["2", "/users"]; "/users" → [null, "/users"].
      *
+     * Regresi P-11 (issue #171): the extracted token is anchored to the
+     * supported-version registry (whitelist) or to the numeric version
+     * grammar — any other /v-prefixed path word ("/vendor", "/videos") is an
+     * ordinary route, never a hijacked version prefix. Numeric-but-unregistered
+     * tokens still split so negotiate() reports them as explicit unsupported
+     * versions instead of silently falling back to the default.
+     *
      * @return array{?string, string}
      */
     public function splitPathPrefix(string $path): array
     {
         if (preg_match('#^/v([A-Za-z0-9._-]{1,' . self::MAX_TOKEN_BYTES . '})(/|$)#', $path, $m) === 1) {
-            $rest = substr($path, strlen($m[0]));
+            $token = $m[1];
+            if (isset($this->supported[$token]) || $this->isNumericVersionToken($token)) {
+                $rest = substr($path, strlen($m[0]));
 
-            return [$m[1], $rest === '' ? '/' : '/' . $rest];
+                return [$token, $rest === '' ? '/' : '/' . $rest];
+            }
         }
 
         return [null, $path];
@@ -152,5 +164,11 @@ final class ApiVersionNegotiator
     private function isValidToken(string $token): bool
     {
         return preg_match('/^[A-Za-z0-9._-]{1,' . self::MAX_TOKEN_BYTES . '}$/', $token) === 1;
+    }
+
+    /** Numeric version grammar: major[.minor[.patch]], e.g. "1", "2.3", "1.4.7". */
+    private function isNumericVersionToken(string $token): bool
+    {
+        return preg_match('/^\d{1,3}(?:\.\d{1,3}){0,2}$/', $token) === 1;
     }
 }

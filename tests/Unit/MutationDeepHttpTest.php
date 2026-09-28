@@ -83,11 +83,22 @@ final class MutationDeepHttpTest extends TestCase
     }
 
     // ------------------------------------------------------------------
-    // Superglobal fallbacks (fromServer called with null injectables)
+    // Superglobal isolation (fromServer never reads them; fromGlobals does)
     // ------------------------------------------------------------------
 
-    public function testSuperglobalFallbacksFeedCookiesQueryParsedBodyAndUploads(): void
+    public function testFromServerIgnoresPlantedSuperglobalsWhileFromGlobalsForwardsThem(): void
     {
+        // Regresi P-12 (issue #171): fromServer() must never consult the
+        // superglobals — planted process state (e.g. a stale request inside
+        // a long-running worker) must not leak into the injectable path,
+        // not even through the optional null arguments.
+        $_SERVER = [
+            'REQUEST_METHOD' => 'POST',
+            'REQUEST_URI' => '/',
+            'HTTP_HOST' => 'zef.test',
+            'CONTENT_TYPE' => 'application/x-www-form-urlencoded; charset=utf-8 ',
+            'CONTENT_LENGTH' => '7',
+        ];
         $_COOKIE = ['session' => 'abc'];
         $_GET = ['page' => '2'];
         $_POST = ['field' => 'value'];
@@ -98,17 +109,25 @@ final class MutationDeepHttpTest extends TestCase
             'error' => \UPLOAD_ERR_OK,
             'size' => \strlen('upload-payload'),
         ]];
-        $request = $this->factory([
+        $isolated = $this->factory([
             'REQUEST_METHOD' => 'POST',
             'REQUEST_URI' => '/',
             'HTTP_HOST' => 'zef.test',
             'CONTENT_TYPE' => 'application/x-www-form-urlencoded; charset=utf-8 ',
             'CONTENT_LENGTH' => '7',
         ]);
-        self::assertSame(['session' => 'abc'], $request->getCookieParams());
-        self::assertSame(['page' => '2'], $request->getQueryParams());
-        self::assertSame(['field' => 'value'], $request->getParsedBody());
-        $uploads = $request->getUploadedFiles();
+        self::assertSame([], $isolated->getCookieParams());
+        self::assertSame([], $isolated->getQueryParams());
+        self::assertNull($isolated->getParsedBody());
+        self::assertSame([], $isolated->getUploadedFiles());
+
+        // fromGlobals() is the single superglobal reader: every planted
+        // array is forwarded explicitly.
+        $global = RequestFactory::fromGlobals();
+        self::assertSame(['session' => 'abc'], $global->getCookieParams());
+        self::assertSame(['page' => '2'], $global->getQueryParams());
+        self::assertSame(['field' => 'value'], $global->getParsedBody());
+        $uploads = $global->getUploadedFiles();
         self::assertArrayHasKey('doc', $uploads);
         $upload = $uploads['doc'];
         assert($upload instanceof UploadedFileInterface);
@@ -127,16 +146,52 @@ final class MutationDeepHttpTest extends TestCase
             'CONTENT_TYPE' => 'application/json',
         ]);
         self::assertNull($request->getParsedBody());
-    }
 
-    public function testMultipartContentTypeAlsoReadsPost(): void
-    {
-        $_POST = ['multi' => 'part'];
-        $request = $this->factory([
+        // Regresi P-12 (issue #171): the media-type gate must hold on the
+        // superglobal path too — a planted $_POST never masquerades as a
+        // parsed JSON body through fromGlobals().
+        $_SERVER = [
             'REQUEST_METHOD' => 'POST',
             'REQUEST_URI' => '/',
+            'HTTP_HOST' => 'zef.test',
+            'CONTENT_TYPE' => 'application/json',
+        ];
+        self::assertNull(RequestFactory::fromGlobals()->getParsedBody());
+    }
+
+    public function testMultipartContentTypeAlsoReadsPostThroughFromGlobals(): void
+    {
+        // Regresi P-12 (issue #171): multipart form decoding reads $_POST
+        // exclusively through the explicit superglobal adapter.
+        $_SERVER = [
+            'REQUEST_METHOD' => 'POST',
+            'REQUEST_URI' => '/',
+            'HTTP_HOST' => 'zef.test',
             'CONTENT_TYPE' => 'MULTIPART/FORM-DATA',
-        ]);
+        ];
+        $_POST = ['multi' => 'part'];
+        self::assertSame(['multi' => 'part'], RequestFactory::fromGlobals()->getParsedBody());
+    }
+
+    public function testMultipartContentTypeAlsoHonorsInjectedParsedBody(): void
+    {
+        // Regresi P-12 (issue #171): the injected $parsedBody mirrors what
+        // SAPI would have decoded into $_POST; the multipart media type
+        // honors it exactly like the urlencoded one.
+        $request = RequestFactory::fromServer(
+            [
+                'REQUEST_METHOD' => 'POST',
+                'REQUEST_URI' => '/',
+                'HTTP_HOST' => 'zef.test',
+                'CONTENT_TYPE' => 'MULTIPART/FORM-DATA',
+            ],
+            [],
+            [],
+            null,
+            null,
+            null,
+            ['multi' => 'part'],
+        );
         self::assertSame(['multi' => 'part'], $request->getParsedBody());
     }
 
@@ -149,6 +204,17 @@ final class MutationDeepHttpTest extends TestCase
             'CONTENT_TYPE' => 'application/x-www-form-urlencoded',
         ]);
         self::assertNull($request->getParsedBody());
+
+        // Regresi P-12 (issue #171): the is_array guard also protects the
+        // superglobal adapter — a non-array $_POST degrades to "no parsed
+        // body" instead of poisoning the typed argument.
+        $_SERVER = [
+            'REQUEST_METHOD' => 'POST',
+            'REQUEST_URI' => '/',
+            'HTTP_HOST' => 'zef.test',
+            'CONTENT_TYPE' => 'application/x-www-form-urlencoded',
+        ];
+        self::assertNull(RequestFactory::fromGlobals()->getParsedBody());
     }
 
     public function testEmptyPostSuperglobalYieldsNullParsedBody(): void
@@ -160,6 +226,16 @@ final class MutationDeepHttpTest extends TestCase
             'CONTENT_TYPE' => 'application/x-www-form-urlencoded',
         ]);
         self::assertNull($request->getParsedBody());
+
+        // Regresi P-12 (issue #171): an empty $_POST is forwarded as "no
+        // parsed body", never as an empty form result.
+        $_SERVER = [
+            'REQUEST_METHOD' => 'POST',
+            'REQUEST_URI' => '/',
+            'HTTP_HOST' => 'zef.test',
+            'CONTENT_TYPE' => 'application/x-www-form-urlencoded',
+        ];
+        self::assertNull(RequestFactory::fromGlobals()->getParsedBody());
     }
 
     // ------------------------------------------------------------------

@@ -727,18 +727,29 @@ final class EdgeMatrixHttpTest extends TestCase
         self::assertSame('"handler-etag"', $response->getHeaderLine('ETag'));
     }
 
-    public function testIfModifiedSinceOnlyAppliesWhenNoEtagCanBeComputed(): void
+    public function testIfModifiedSinceAppliesToAnyResponseCarryingLastModified(): void
     {
         $middleware = new ETagMiddleware();
         $lastModified = 'Mon, 01 Jan 2024 10:00:00 GMT';
 
-        // Body present → the ETag path wins and IMS is ignored.
+        // Regresi P-13 (issue #171): a body-carrying response with
+        // Last-Modified must 304 an IMS-only request — the old `$etag === ''`
+        // guard kept this path dead and the client always paid the full 200.
         $withBody = $middleware->process(
             $this->serverRequest(['If-Modified-Since' => $lastModified]),
             $this->handler(new Response(200, ['Last-Modified' => $lastModified], 'b')),
         );
-        self::assertSame(200, $withBody->getStatusCode(), 'IMS is not evaluated while an ETag path exists');
-        self::assertTrue($withBody->hasHeader('ETag'));
+        self::assertSame(304, $withBody->getStatusCode(), 'IMS equal to Last-Modified must 304 even when a body is present');
+        self::assertTrue($withBody->hasHeader('ETag'), 'the computed validator travels with the 304');
+        self::assertSame('', (string) $withBody->getBody());
+
+        // Body present but changed since the client's copy → full 200.
+        $stale = $middleware->process(
+            $this->serverRequest(['If-Modified-Since' => 'Mon, 01 Jan 2024 09:59:59 GMT']),
+            $this->handler(new Response(200, ['Last-Modified' => $lastModified], 'b')),
+        );
+        self::assertSame(200, $stale->getStatusCode());
+        self::assertTrue($stale->hasHeader('ETag'));
 
         // Empty body + Last-Modified → IMS equal to Last-Modified must 304 (≤ semantics).
         $equal = $middleware->process(

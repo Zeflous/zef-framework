@@ -21,7 +21,9 @@ use Psr\Http\Server\RequestHandlerInterface;
  * strong SHA-256 ETag and evaluates the request's preconditions:
  *
  * - `If-None-Match` (ETag comparison, `*` and weak `W/` forms supported)
- * - `If-Modified-Since` (only when the handler supplied `Last-Modified`)
+ * - `If-Modified-Since` (any response carrying `Last-Modified`, body-less or
+ *   not, and never when the request also carries `If-None-Match`, per
+ *   RFC 9110 §13.1.3)
  *
  * When a precondition matches, a body-less 304 with the validator headers is
  * returned so caches can reuse their copy.
@@ -53,13 +55,20 @@ final class ETagMiddleware implements MiddlewareInterface
         }
 
         $ifModifiedSince = trim($request->getHeaderLine('If-Modified-Since'));
+        // Regresi P-13 (issue #171): RFC 9110 §13.1.3 — If-Modified-Since
+        // MUST be ignored whenever the request carries If-None-Match, even a
+        // non-matching one. The old `$etag === ''` requirement kept this path
+        // dead for body-carrying responses (an ETag is always computed for a
+        // non-empty body), so an IMS-only request always paid the full 200;
+        // any response carrying Last-Modified is now eligible, and the 304
+        // carries the validator that a 200 would have sent.
         if (
-            $etag === ''
+            $ifNoneMatch === ''
             && $lastModified !== ''
             && $ifModifiedSince !== ''
             && self::notModifiedSince($ifModifiedSince, $lastModified)
         ) {
-            return $this->notModified($response, '');
+            return $this->notModified($response, $etag);
         }
 
         if ($etag !== '' && !$response->hasHeader('ETag')) {
