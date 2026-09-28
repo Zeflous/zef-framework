@@ -248,6 +248,7 @@ if (!function_exists('zef_framework_autoload')) {
                 "Zef\\Framework\\Exception\\MethodNotAllowedException" => __DIR__ . '/../src/Domain/Exception/MethodNotAllowedException.php',
                 "Zef\\Framework\\Exception\\ModuleDependencyViolationException" => __DIR__ . '/../src/Domain/Exception/ModuleDependencyViolationException.php',
                 "Zef\\Framework\\Exception\\PayloadTooLargeException" => __DIR__ . '/../src/Domain/Exception/PayloadTooLargeException.php',
+                "Zef\\Framework\\Exception\\RouteCacheException" => __DIR__ . '/../src/Domain/Exception/RouteCacheException.php',
                 "Zef\\Framework\\Exception\\RouteConstraintException" => __DIR__ . '/../src/Domain/Exception/RouteConstraintException.php',
                 "Zef\\Framework\\Exception\\RouteNotFoundException" => __DIR__ . '/../src/Domain/Exception/RouteNotFoundException.php',
                 "Zef\\Framework\\Exception\\ServiceCircularDependencyException" => __DIR__ . '/../src/Domain/Exception/ServiceCircularDependencyException.php',

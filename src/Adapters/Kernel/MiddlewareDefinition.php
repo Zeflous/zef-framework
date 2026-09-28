@@ -43,6 +43,12 @@ final readonly class MiddlewareDefinition
         if (!is_int($priority) && !is_float($priority) && !is_string($priority)) {
             throw new InvalidConfigurationException("Middleware '{$service}' priority must be numeric.");
         }
+        // Regresi I-6 (issue #174): `group` and `tags` are parsed and
+        // validated but RESERVED FOR FUTURE USE (conditional stacks /
+        // tag-based wiring) — no behaviour keys off them yet, deliberately
+        // not implemented speculatively. `priority` IS used: PipelineFactory
+        // orders the pipeline by it (highest first, declaration order on
+        // ties).
         $tags = $config['tags'] ?? [];
         if (!is_array($tags)) {
             throw new InvalidConfigurationException("Middleware '{$service}' tags must be an array.");

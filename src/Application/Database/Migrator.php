@@ -18,7 +18,17 @@ namespace Zef\Framework\Database;
  * - supports rollback(N) in descending order;
  * - guards concurrent runners with a single-row lock table
  *   (`zef_migrations_lock`); a lock whose age exceeds the TTL recorded
- *   ON THE ROW is considered stale and stolen;
+ *   ON THE ROW is considered stale and stolen. Since v2.31.0
+ *   (Regresi I-12 / issue #175) every lock row carries a `holder`
+ *   token (random per Migrator instance): renewal is a holder-token
+ *   compare-and-swap (`UPDATE ... WHERE holder = token`, 0 rows = the
+ *   lock was lost or stolen — the run aborts instead of refreshing
+ *   somebody else's lease), the steal is ONE conditional UPDATE on the
+ *   row's own TTL (two racing runners can never both win), and release
+ *   is a compare-and-delete (a runner that lost the lock never deletes
+ *   the row its thief now owns) — the same owner-token CAS discipline
+ *   as RedisLockStore. Lock tables created before v2.31.0 are upgraded
+ *   with a best-effort `ALTER TABLE ... ADD COLUMN holder`;
  * - renews (heartbeats) the lock with the effective TTL right before
  *   each migration step, so a legitimately slow step (huge ALTER TABLE,
  *   index rebuild) is never stolen mid-flight — a migration may raise
@@ -43,6 +53,13 @@ final class Migrator
     private $now;
 
     /**
+     * Random holder token for this Migrator instance (Regresi I-12,
+     * issue #175): stamps the lock row so renew/release act only on a
+     * lock this runner still owns.
+     */
+    private readonly string $holderToken;
+
+    /**
      * @param null|callable(): int $now wall-clock unix seconds provider
      */
     public function __construct(
@@ -54,6 +71,7 @@ final class Migrator
             throw new \InvalidArgumentException('Migration lock TTL must be greater than zero.');
         }
         $this->now = $now ?? time(...);
+        $this->holderToken = bin2hex(random_bytes(16));
     }
 
     public function register(MigrationInterface $migration): void
@@ -223,14 +241,24 @@ final class Migrator
             'CREATE TABLE IF NOT EXISTS "' . self::LOCK_TABLE . '" ('
             . '"id" INTEGER NOT NULL PRIMARY KEY, '
             . '"locked_at" INTEGER NOT NULL, '
-            . '"ttl" REAL NOT NULL)',
+            . '"ttl" REAL NOT NULL, '
+            . '"holder" VARCHAR(64) NOT NULL DEFAULT \'\')',
         ));
-        $now = ($this->now)();
+        $this->ensureHolderColumn();
+        // (int) hardening: the now stamp is inlined into the steal statement
+        // below, so a clock violating the callable():int contract must never
+        // reach the SQL text.
+        $nowStamp = (int) ($this->now)();
 
         try {
             $this->connection->execute(
                 QueryBuilder::table(self::LOCK_TABLE)
-                    ->insert(['id' => 1, 'locked_at' => $now, 'ttl' => $this->lockTtlSeconds])->build(),
+                    ->insert([
+                        'id' => 1,
+                        'locked_at' => $nowStamp,
+                        'ttl' => $this->lockTtlSeconds,
+                        'holder' => $this->holderToken,
+                    ])->build(),
             );
         } catch (QueryException) {
             $rows = $this->connection->fetchAll(
@@ -245,33 +273,90 @@ final class Migrator
             }
             $lockedAt = (int) $lockedRaw;
             $rowTtl = (float) $ttlRaw;
-            $age = $now - $lockedAt;
+            $age = $nowStamp - $lockedAt;
             if ((float) $age < $rowTtl) {
                 throw new TransactionException(
                     'Migration lock is already held (age ' . $age . 's, ttl ' . $rowTtl . 's).',
                 );
             }
-            $this->connection->execute(
-                QueryBuilder::table(self::LOCK_TABLE)
-                    ->update(['locked_at' => $now, 'ttl' => $this->lockTtlSeconds])->where('id', '=', 1)->build(),
-            );
+            // Regresi I-12 (issue #175): the steal is ONE conditional
+            // UPDATE — a compare-and-swap on the row's own recorded TTL
+            // (`locked_at + ttl <= now`, the same age >= ttl boundary the
+            // check above uses). Two runners racing on the same stale row
+            // cannot both win: the loser matches 0 rows and throws instead
+            // of migrating concurrently.
+            //
+            // Raw SQL with inlined literals (no bound params) on purpose:
+            // positional params bind as TEXT, and SQLite compares by type
+            // class (numeric < text), so a `"locked_at" + "ttl" <= ?`
+            // comparison would be TRUE even for a row another runner just
+            // renewed — the CAS would never lose a race. Every inlined
+            // value is generated here: $nowStamp is an int, the TTL was
+            // validated positive at construction, and the holder token is
+            // bin2hex — no injection surface.
+            $stolen = $this->connection->execute(SqlQuery::raw(
+                'UPDATE "' . self::LOCK_TABLE
+                . '" SET "locked_at" = ' . $nowStamp . ', "ttl" = ' . var_export($this->lockTtlSeconds, true)
+                . ', "holder" = \'' . $this->holderToken . '\' WHERE "id" = 1 AND "locked_at" + "ttl" <= ' . $nowStamp,
+            ));
+            if ($stolen === 0) {
+                throw new TransactionException(
+                    'Migration lock steal lost the race: the row was renewed or stolen concurrently.',
+                );
+            }
         }
         $this->lockDepth = 1;
     }
 
     /**
+     * Best-effort holder-column upgrade for lock tables created before
+     * v2.31.0 (Regresi I-12, issue #175), following the PdoOutbox
+     * legacy-upgrade convention: duplicate-column errors from every
+     * supported driver (sqlite "duplicate column", mysql "Duplicate column
+     * name", pgsql "... already exists") are treated as "upgrade already
+     * applied".
+     */
+    private function ensureHolderColumn(): void
+    {
+        try {
+            $this->connection->execute(SqlQuery::raw(
+                'ALTER TABLE "' . self::LOCK_TABLE . '" ADD COLUMN "holder" VARCHAR(64) NOT NULL DEFAULT \'\'',
+            ));
+        } catch (QueryException $e) {
+            $message = strtolower($e->getMessage());
+            if (!str_contains($message, 'duplicate column') && !str_contains($message, 'already exists')) {
+                throw $e;
+            }
+        }
+    }
+
+    /**
      * Heartbeat: refresh the lock row with the effective TTL so other
      * runners never see this holder as stale while work progresses.
+     *
+     * Regresi I-12 (issue #175): renewal is a holder-token
+     * compare-and-swap — `UPDATE ... WHERE id = 1 AND holder = token`.
+     * Zero affected rows means this runner no longer owns the lock (lost
+     * or stolen); the run aborts instead of blindly refreshing somebody
+     * else's lease.
      */
     private function renewLock(float $ttl): void
     {
         if ($this->lockDepth === 0) {
             return;
         }
-        $this->connection->execute(
+        $renewed = $this->connection->execute(
             QueryBuilder::table(self::LOCK_TABLE)
-                ->update(['locked_at' => ($this->now)(), 'ttl' => $ttl])->where('id', '=', 1)->build(),
+                ->update(['locked_at' => ($this->now)(), 'ttl' => $ttl])
+                ->where('id', '=', 1)
+                ->where('holder', '=', $this->holderToken)
+                ->build(),
         );
+        if ($renewed === 0) {
+            throw new TransactionException(
+                'Migration lock renewal failed: this runner no longer holds the lock (lost or stolen).',
+            );
+        }
     }
 
     /**
@@ -299,8 +384,15 @@ final class Migrator
             return;
         }
         $this->lockDepth = 0;
+        // Regresi I-12 (issue #175): compare-and-delete — a runner that
+        // lost its lock must never remove the row its thief now owns
+        // (mirrors RedisLockStore's owner-token release).
         $this->connection->execute(
-            QueryBuilder::table(self::LOCK_TABLE)->where('id', '=', 1)->delete()->build(),
+            QueryBuilder::table(self::LOCK_TABLE)
+                ->where('id', '=', 1)
+                ->where('holder', '=', $this->holderToken)
+                ->delete()
+                ->build(),
         );
     }
 }

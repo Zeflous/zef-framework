@@ -86,9 +86,23 @@ final class InMemoryEventStore implements EventStoreInterface
     }
 
     #[\Override]
-    public function loadStream(string $aggregateType, string $aggregateId): array
+    public function loadStream(string $aggregateType, string $aggregateId, int $afterVersion = 0): array
     {
-        return $this->streams[$aggregateType][$aggregateId] ?? [];
+        if ($afterVersion < 0) {
+            throw new EventSourcingException("afterVersion must be >= 0 (got {$afterVersion}).");
+        }
+        $events = $this->streams[$aggregateType][$aggregateId] ?? [];
+        if ($afterVersion === 0) {
+            return $events;
+        }
+
+        // Regresi I-10 (issue #175): the tail cut is applied here — the
+        // reference adapter has no SQL to push it into, so it filters in
+        // memory with the same `version > afterVersion` semantics.
+        return array_values(array_filter(
+            $events,
+            static fn (StoredEvent $event): bool => $event->version > $afterVersion,
+        ));
     }
 
     #[\Override]
