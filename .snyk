@@ -1,0 +1,32 @@
+# Snyk (https://snyk.io) policy file.
+#
+# Scope: Snyk Code (SAST) path exclusions for `snyk code test` (snyk-security.yml).
+# The dependency (SCA) monitor is unaffected: no `ignore:` or `patch:` entries here.
+#
+# Why these exclusions are in-repo, in writing: the same discipline as the local
+# Semgrep rules in .github/semgrep/rules and the SonarCloud src/-only scope —
+# every analyzer boundary in this repository is a reviewed, documented decision,
+# never a silent skip. Re-include by deleting an entry.
+#
+# The four excluded files are CLI-only developer tooling (infection-log readers,
+# the Doctum-to-Wiki index generator, the mutation zone table generator). Their
+# path arguments are supplied by the developer or CI invoking them, and since
+# fix/code-scanning-python-pt-paths they are validated lexically and
+# containment-checked (symlinks resolved) by repo_path() before any read or
+# write. SnykCode's python/PT rule nevertheless reports every
+# CLI-argument-to-file-operation flow: it recognizes no sanitizer pattern for
+# legitimate CLI path arguments (three hardening iterations could not clear it),
+# so the rule cannot be satisfied by design for this class of tool.
+#
+# Coverage is not lost: CodeQL's python analysis and the Semgrep scripts/ pass
+# still scan these files on every push and pull request.
+exclude:
+  global:
+    - scripts/show_escapes.py:
+        reason: 'CLI-only dev tool; path args are repo_path()-guarded, and CodeQL python + Semgrep still scan it'
+    - scripts/mine_escapes.py:
+        reason: 'CLI-only dev tool; path args are repo_path()-guarded, and CodeQL python + Semgrep still scan it'
+    - scripts/ci/doctum_to_wiki.py:
+        reason: 'CLI-only CI/dev tool; path args are repo_path()-guarded, and CodeQL python + Semgrep still scan it'
+    - scripts/mutation/gen_zone_tables.py:
+        reason: 'CLI-only dev tool; path args are repo_path()-guarded, and CodeQL python + Semgrep still scan it'
