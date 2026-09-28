@@ -87,6 +87,21 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history and all branch refs. The scanner's SCM sensor needs
+          # per-file blame data and the pull-request target ref (origin/main)
+          # to compute changed lines, which define the new-code window. The
+          # default shallow checkout provided neither: every indexed file
+          # lacked blame ("Shallow clone detected, no blame information will
+          # be provided") and the scanner warned "Could not find ref 'main'
+          # in refs/heads, refs/remotes, refs/remotes/upstream or
+          # refs/remotes/origin", so the whole analysed surface was treated
+          # as new code and the new-code conditions measured the entire
+          # codebase instead of the pull-request diff (PR #227, second scan,
+          # 2026-09-28 15:19 UTC: new_lines=124,609, new_coverage 33%). A
+          # full fetch brings refs/heads/* — origin/main included — plus the
+          # history the blame computation walks.
+          fetch-depth: 0
 
       - name: Report unconfigured state (SONAR_TOKEN absent or withheld)
         # Deliberate contract: whenever this job cannot scan credentialed —
