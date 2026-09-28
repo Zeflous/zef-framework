@@ -39,7 +39,17 @@ final class RedisStoreTest extends TestCase
             self::markTestSkipped('phpredis extension not available.');
         }
         $this->redis = new \Redis();
-        if (!$this->redis->pconnect(self::HOST, self::PORT, 2.0) || !$this->redis->auth(self::PASS)) {
+        // phpredis >= 6 throws RedisException from pconnect() instead of
+        // returning false when the server is down; without the catch the
+        // documented self-skip (INSTALLATION.md §8) never triggers and every
+        // test in this class reports ERROR (issue #213).
+        $reachable = false;
+        try {
+            $reachable = $this->redis->pconnect(self::HOST, self::PORT, 2.0) && $this->redis->auth(self::PASS);
+        } catch (\RedisException) {
+            $reachable = false;
+        }
+        if (!$reachable) {
             self::markTestSkipped('Redis test server not reachable.');
         }
         $this->redis->select(0);

@@ -176,6 +176,20 @@ final class MiddlewareMutationDebtTest extends TestCase
         if (!class_exists(\Redis::class)) {
             self::markTestSkipped('ext-redis not loaded — the Redis-backed fallback paths need the client (Windows smoke profile).');
         }
+        // The WRONGPASS detail only exists when a live server rejects the
+        // credentials; with the server down the failure becomes "Connection
+        // refused" and this contract test cannot hold (issue #213). Probe
+        // reachability first so the suite self-skips as documented.
+        $probe = new \Redis();
+        $live = false;
+        try {
+            $live = $probe->pconnect('127.0.0.1', 6399, 2.0);
+        } catch (\RedisException) {
+            $live = false;
+        }
+        if (!$live) {
+            self::markTestSkipped('Redis test server (127.0.0.1:6399) not reachable — the WRONGPASS path needs a live server to reject credentials.');
+        }
         $env = new MiddlewareDebtEnv([
             'ZEF_RATE_LIMIT_STORE' => 'redis',
             'ZEF_REDIS_URL' => 'redis://:definitely-wrong-password@127.0.0.1:6399/0',

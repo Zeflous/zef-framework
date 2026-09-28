@@ -183,7 +183,16 @@ final class RuntimeSoakVariantsTest extends TestCase
             self::markTestSkipped('phpredis extension not available.');
         }
         $redis = new \Redis();
-        if (!$redis->pconnect('127.0.0.1', 6399, 2.0) || !$redis->auth('zef-test-secret')) {
+        // phpredis >= 6 throws RedisException from pconnect() instead of
+        // returning false when the server is down (issue #213) — capture it so
+        // the documented self-skip (INSTALLATION.md §8) stays true.
+        $reachable = false;
+        try {
+            $reachable = $redis->pconnect('127.0.0.1', 6399, 2.0) && $redis->auth('zef-test-secret');
+        } catch (\RedisException) {
+            $reachable = false;
+        }
+        if (!$reachable) {
             self::markTestSkipped('Redis test server not reachable.');
         }
         $redis->select(0);
