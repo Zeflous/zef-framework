@@ -171,10 +171,13 @@ final class ZefCliDispatchTest extends TestCase
         }
 
         $pipes = [];
+
         try {
-            // nosemgrep: php.lang.security.proc-open-use — test harness: spawns the
-            // framework's own CLI with a literal argv, no user-controlled input.
-            $proc = \proc_open(
+            // Bare call form (house style for SAST visibility: the pinned rules
+            // and the repo-local ban-qualified rule both see it) with an explicit
+            // disposition — the harness spawns the framework's own CLI with a
+            // literal argv, no user-controlled input ever reaches this sink.
+            $proc = proc_open( // nosemgrep: exec-use — test harness: literal argv, no user input
                 [\PHP_BINARY, $bin, ...$args],
                 [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
                 $pipes,
