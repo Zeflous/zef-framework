@@ -289,6 +289,7 @@ if (!function_exists('zef_framework_autoload')) {
                 "Zef\\Framework\\Job\\JobInterface" => __DIR__ . '/../src/Domain/Job/JobInterface.php',
                 "Zef\\Framework\\Job\\JobMiddlewareInterface" => __DIR__ . '/../src/Domain/Job/JobMiddlewareInterface.php',
                 "Zef\\Framework\\Job\\JobQueueInterface" => __DIR__ . '/../src/Domain/Job/JobQueueInterface.php',
+                "Zef\\Framework\\Job\\JobQueueSeqBackstop" => __DIR__ . '/../src/Infrastructure/Job/JobQueueSeqBackstop.php',
                 "Zef\\Framework\\Job\\JobResult" => __DIR__ . '/../src/Domain/Job/JobResult.php',
                 "Zef\\Framework\\Job\\JobTimeoutException" => __DIR__ . '/../src/Domain/Job/JobTimeoutException.php',
                 "Zef\\Framework\\Job\\LockingJobIdempotencyStore" => __DIR__ . '/../src/Application/Job/LockingJobIdempotencyStore.php',
