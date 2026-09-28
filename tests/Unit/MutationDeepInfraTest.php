@@ -89,7 +89,11 @@ final class MutationDeepInfraTest extends TestCase
         self::assertTrue($first->allowed);
         self::assertSame(3, $first->limit);
         self::assertSame(2, $first->remaining);
-        self::assertSame(60, $first->retryAfter);
+        // Regresi P-1 (issue #169): fixed-window bucket — retryAfter adalah sisa
+        // detik menuju batas bucket ((bucket+1)*window - now), selalu 1..windowSeconds,
+        // bukan windowSeconds penuh dari anchor now+window.
+        self::assertGreaterThanOrEqual(1, $first->retryAfter);
+        self::assertLessThanOrEqual(60, $first->retryAfter);
 
         $second = $limiter->check('deep-apcu', 3, 60);
         self::assertTrue($second->allowed);

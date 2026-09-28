@@ -976,7 +976,13 @@ final class EcosystemPortsV30Test extends TestCase
             . '<Contents><Key>logs/2026/b.txt</Key><Size>1</Size></Contents>'
             . '<Contents><Key>logs/2026/a.txt</Key><Size>2</Size></Contents>'
             . '</ListBucketResult>')]);
-        self::assertSame(['logs/2026/a.txt', 'logs/2026/b.txt'], $this->s3($namespaced)->list('logs/', 100));
+        self::assertSame(
+            // Regresi P-9 (issue #169): urutan S3 (leksikografik) dipertahankan
+            // apa adanya — sort() lokal sudah dihapus karena dengan pagination
+            // ia justru merusak urutan halaman server.
+            ['logs/2026/b.txt', 'logs/2026/a.txt'],
+            $this->s3($namespaced)->list('logs/', 100),
+        );
         $request = $namespaced->single();
         self::assertStringContainsString('list-type=2', $request['url']);
         self::assertStringContainsString('prefix=logs%2F', $request['url']);

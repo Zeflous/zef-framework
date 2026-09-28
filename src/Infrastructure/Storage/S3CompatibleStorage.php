@@ -21,6 +21,9 @@ final readonly class S3CompatibleStorage implements ObjectStorageInterface
 {
     private const string BUCKET_PATTERN = '/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/';
 
+    /** Pagination safety cap (P-9, issue #169): pages per list() call. */
+    private const int MAX_LIST_PAGES = 1000;
+
     private string $baseUrl;
     private string $hostHeader;
 
@@ -133,16 +136,38 @@ final readonly class S3CompatibleStorage implements ObjectStorageInterface
         if ($limit < 1 || $limit > 1000) {
             throw new \InvalidArgumentException('Listing limit must be 1..1000.');
         }
-        // ListObjectsV2 against the bucket root; path-style URL below.
-        $response = $this->signed(
-            'GET',
-            '',
-            ['list-type' => '2', 'prefix' => $prefix, 'max-keys' => (string) $limit],
-            '',
-        );
-        $this->assertSuccess($response, 'LIST objects');
+        // ListObjectsV2 against the bucket root; path-style URL below. S3
+        // may truncate the answer at one page, so the continuation token is
+        // followed until the listing completes (P-9, issue #169). S3 lists
+        // keys lexicographically and that order is preserved as-is — a local
+        // re-sort would corrupt the merged multi-page ordering.
+        $keys = [];
+        $token = null;
+        for ($page = 0;; ++$page) {
+            if ($page === self::MAX_LIST_PAGES) {
+                // Safety counter: a malformed or hostile pagination stream
+                // must fail loudly instead of looping forever.
+                throw new StorageException(
+                    'S3 listing exceeded the pagination safety cap of ' . self::MAX_LIST_PAGES . ' pages.',
+                );
+            }
+            $query = ['list-type' => '2', 'prefix' => $prefix, 'max-keys' => (string) $limit];
+            if ($token !== null) {
+                $query['continuation-token'] = $token;
+            }
+            $response = $this->signed('GET', '', $query, '');
+            $this->assertSuccess($response, 'LIST objects');
+            $pageKeys = $this->parseListResponse($response);
+            foreach ($pageKeys['keys'] as $key) {
+                $keys[] = $key;
+            }
+            $token = $pageKeys['token'];
+            if ($token === null || count($keys) >= $limit) {
+                break;
+            }
+        }
 
-        return $this->parseListResponse($response, $limit);
+        return array_slice($keys, 0, $limit);
     }
 
     /**
@@ -197,12 +222,14 @@ final readonly class S3CompatibleStorage implements ObjectStorageInterface
     }
 
     /**
-     * Extract object keys from a ListObjectsV2 document (namespace-aware:
-     * MinIO/Ceph emit the 2006-03-01 default xmlns, AWS omits it).
+     * Extract the object keys and the continuation marker from a
+     * ListObjectsV2 document (namespace-aware: MinIO/Ceph emit the
+     * 2006-03-01 default xmlns, AWS omits it). The token is non-null exactly
+     * when the page reports IsTruncated=true.
      *
-     * @return list<string>
+     * @return array{keys: list<string>, token: null|string}
      */
-    private function parseListResponse(S3HttpResponse $response, int $limit): array
+    private function parseListResponse(S3HttpResponse $response): array
     {
         if (!\function_exists('simplexml_load_string')) {
             throw new StorageException('The SimpleXML extension is required to parse S3 listing responses.');
@@ -219,8 +246,16 @@ final readonly class S3CompatibleStorage implements ObjectStorageInterface
         foreach ($root->Contents as $entry) {
             $keys[] = (string) $entry->Key;
         }
-        sort($keys);
+        if (strtolower(trim((string) $root->IsTruncated)) !== 'true') {
+            return ['keys' => $keys, 'token' => null];
+        }
+        $token = trim((string) $root->NextContinuationToken);
+        if ($token === '') {
+            // Truncated without a token is a malformed V2 document: fail
+            // loudly rather than silently reporting a partial page (P-9).
+            throw new StorageException('S3 listing response is truncated without a continuation token.');
+        }
 
-        return array_slice($keys, 0, $limit);
+        return ['keys' => $keys, 'token' => $token];
     }
 }
