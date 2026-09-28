@@ -301,6 +301,23 @@ final class EventSourcingDomainTest extends TestCase
         EventGrammar::assertPayload(['ok' => [1, 2.5, 'x', null, false]], 'p');
     }
 
+    /**
+     * Regresi P-15 (issue #170): float ber-fraksi nol (10.0) wajib tetap float
+     * setelah round-trip encode→decode. Tanpa JSON_PRESERVE_ZERO_FRACTION,
+     * json_encode menulis `10` dan replay membaca int(10) — tipe field payload
+     * berubah diam-diam antara append dan replay.
+     */
+    public function testEventJsonRoundTripPreservesZeroFractionFloats(): void
+    {
+        $value = ['amount' => 10.0, 'ratio' => 0.5, 'nested' => ['score' => 3.0], 'count' => 42];
+        $json = EventJson::encode($value, 'field');
+
+        $decoded = EventJson::decode($json, 'field');
+
+        // assertSame pins element types too: 10.0 must stay float, 42 must stay int.
+        self::assertSame($value, $decoded, 'round-trip wajib identik — 10.0 tetap float, 42 tetap int');
+    }
+
     public function testEventJsonEncodeDecodeRoundTrip(): void
     {
         $value = ['list' => [1, 2], 'map' => ['a' => 'b'], 'uni' => 'héllo'];
