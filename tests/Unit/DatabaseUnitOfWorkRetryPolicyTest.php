@@ -93,6 +93,23 @@ final class DatabaseUnitOfWorkRetryPolicyTest extends TestCase
         $p->delayMs(0);
     }
 
+    /**
+     * Regresi P-18 (issue #172): attempt besar membuat multiplier**n
+     * overflow ke INF — (int) round(INF) === 0 — sehingga backoff kolaps
+     * ke 0ms dan caller meng-hammer transaksi gagal tanpa jeda (kebalikan
+     * dari tujuan policy). Delay wajib saturasi di maxDelayMs.
+     */
+    public function testDelayMsSaturatesAtMaxWhenExponentOverflows(): void
+    {
+        $p = new UnitOfWorkRetryPolicy(maxAttempts: 3000, initialDelayMs: 100, maxDelayMs: 30_000, multiplier: 2.0);
+
+        self::assertSame(30_000, $p->delayMs(2000), 'attempt 2000: 2**1999 = INF — wajib saturasi di cap, bukan 0ms');
+        self::assertSame(30_000, $p->delayMs(PHP_INT_MAX), 'attempt ekstrem tetap saturasi di cap (tidak 0ms / negatif)');
+        // Juga guard jalur finite-tapi-raksasa: 100 * (2.0 ** 60) jauh di atas
+        // cap namun masih finite — hasil tetap cap, bukan int-cast negatif.
+        self::assertSame(30_000, $p->delayMs(61), 'produk finite raksasa juga wajib saturasi di cap');
+    }
+
     public function testIsRetryableMatchesClassAndSqlState(): void
     {
         $p = new UnitOfWorkRetryPolicy();
