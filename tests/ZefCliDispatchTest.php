@@ -29,7 +29,7 @@ final class ZefCliDispatchTest extends TestCase
     /** `bin/zef list` — katalog generator terdokumentasi harus terdaftar. */
     public function testListPrintsTheDocumentedGenerators(): void
     {
-        [$exitCode, $output] = $this->runCli('list');
+        [$exitCode, $output] = $this->runCli(['list']);
 
         self::assertSame(0, $exitCode, "bin/zef list must exit 0:\n{$output}");
 
@@ -41,7 +41,7 @@ final class ZefCliDispatchTest extends TestCase
     /** Dispatcher `make:*` — nama invalid wajib keluar non-zero, bukan menulis berkas rusak. */
     public function testMakeRejectsInvalidIdentifier(): void
     {
-        [$exitCode, $output] = $this->runCli('make:module 3Bad');
+        [$exitCode, $output] = $this->runCli(['make:module', '3Bad']);
 
         self::assertNotSame(0, $exitCode, 'an invalid identifier must not exit 0');
         self::assertStringContainsString('Invalid module name', $output);
@@ -50,7 +50,7 @@ final class ZefCliDispatchTest extends TestCase
     /** Dispatcher `tinker -e` — REPL harus benar-benar terhubung dan mengevaluasi ekspresi. */
     public function testTinkerEvaluatesExpressionThroughTheDispatchedRepl(): void
     {
-        [$exitCode, $output] = $this->runCli('tinker ' . \escapeshellarg('-e') . ' ' . \escapeshellarg('echo 40 + 2;'));
+        [$exitCode, $output] = $this->runCli(['tinker', '-e', 'echo 40 + 2;']);
 
         self::assertSame(0, $exitCode, "tinker -e must exit 0:\n{$output}");
         self::assertStringContainsString('42', $output);
@@ -60,9 +60,12 @@ final class ZefCliDispatchTest extends TestCase
     public function testTinkerSupportsNoBootMode(): void
     {
         [$exitCode, $output] = $this->runCli(
-            'tinker ' . \escapeshellarg('-e') . ' '
-            . \escapeshellarg('echo $container instanceof \Psr\Container\ContainerInterface ? "container-ok" : "no-container";')
-            . ' --no-boot'
+            [
+                'tinker',
+                '-e',
+                'echo $container instanceof \Psr\Container\ContainerInterface ? \'container-ok\' : \'no-container\';',
+                '--no-boot',
+            ],
         );
 
         self::assertSame(0, $exitCode, "tinker --no-boot must exit 0:\n{$output}");
@@ -77,8 +80,8 @@ final class ZefCliDispatchTest extends TestCase
     public function testTinkerRefusesInProductionWithoutForce(): void
     {
         [$exitCode, $output] = $this->runCli(
-            'tinker ' . \escapeshellarg('-e') . ' ' . \escapeshellarg('echo 1;'),
-            ['ZEF_ENV' => 'production']
+            ['tinker', '-e', 'echo 1;'],
+            ['ZEF_ENV' => 'production'],
         );
 
         self::assertSame(1, $exitCode, "production guard must exit 1:\n{$output}");
@@ -89,8 +92,8 @@ final class ZefCliDispatchTest extends TestCase
     public function testTinkerForceOverridesProductionGuard(): void
     {
         [$exitCode, $output] = $this->runCli(
-            'tinker ' . \escapeshellarg('-e') . ' ' . \escapeshellarg('echo 7;') . ' --force',
-            ['ZEF_ENV' => 'production']
+            ['tinker', '-e', 'echo 7;', '--force'],
+            ['ZEF_ENV' => 'production'],
         );
 
         self::assertSame(0, $exitCode, "tinker --force must exit 0:\n{$output}");
@@ -100,7 +103,7 @@ final class ZefCliDispatchTest extends TestCase
     /** Command tak dikenal tetap keluar non-zero dan menyebut katalog. */
     public function testUnknownCommandIsRejected(): void
     {
-        [$exitCode, $output] = $this->runCli('bukan-command');
+        [$exitCode, $output] = $this->runCli(['bukan-command']);
 
         self::assertNotSame(0, $exitCode);
         self::assertStringContainsString('Unknown command', $output);
@@ -109,7 +112,7 @@ final class ZefCliDispatchTest extends TestCase
     /** `bin/zef doctor` — preflight harus exit 0 pada checkout sehat. */
     public function testDoctorRunsThroughTheDispatcher(): void
     {
-        [$exitCode, $output] = $this->runCli('doctor');
+        [$exitCode, $output] = $this->runCli(['doctor']);
 
         self::assertSame(0, $exitCode, "doctor must exit 0 on a healthy checkout:\n{$output}");
         self::assertStringContainsString('ZEF doctor — environment preflight', $output);
@@ -119,7 +122,7 @@ final class ZefCliDispatchTest extends TestCase
     /** `bin/zef rr:init` — collision-safe: menolak menimpa .rr.yaml tanpa --force. */
     public function testRrInitRefusesCollisionThroughTheDispatcher(): void
     {
-        [$exitCode, $output] = $this->runCli('rr:init');
+        [$exitCode, $output] = $this->runCli(['rr:init']);
 
         self::assertNotSame(0, $exitCode, 'rr:init tanpa --force harus menolak .rr.yaml eksisting');
         self::assertStringContainsString('Use --force to regenerate', $output);
@@ -128,7 +131,7 @@ final class ZefCliDispatchTest extends TestCase
     /** `bin/zef make:app` — dispatcher harus meneruskan ke generator (usage error, bukan unknown command). */
     public function testMakeAppReachesTheGeneratorThroughTheDispatcher(): void
     {
-        [$exitCode, $output] = $this->runCli('make:app');
+        [$exitCode, $output] = $this->runCli(['make:app']);
 
         self::assertSame(1, $exitCode);
         self::assertStringContainsString('Usage: bin/zef make:app', $output, 'tanpa path harus usage error dari generator');
@@ -136,13 +139,21 @@ final class ZefCliDispatchTest extends TestCase
     }
 
     /**
-     * Run `bin/zef` as a real subprocess.
+     * Run `bin/zef` as a real subprocess — array-form proc_open, no shell.
      *
+     * Every argument reaches the child as ONE literal argv element on both
+     * Linux and Windows: the array command line bypasses `sh -c` and
+     * `cmd.exe` entirely, so expressions containing `$`, quotes and
+     * backslashes survive verbatim (the string-form exec() + escapeshellarg()
+     * predecessor mangled `$container` into a bareword constant under
+     * Windows quoting — issue #211 regression tripped over exactly that).
+     *
+     * @param list<string> $args
      * @param array<string, string> $extraEnv
      *
      * @return array{0: int, 1: string}
      */
-    private function runCli(string $arguments, array $extraEnv = []): array
+    private function runCli(array $args, array $extraEnv = []): array
     {
         $bin = __DIR__ . '/../bin/zef';
 
@@ -159,14 +170,26 @@ final class ZefCliDispatchTest extends TestCase
             \putenv("{$name}={$value}");
         }
 
+        $pipes = [];
         try {
-            $cmd = \escapeshellarg(\PHP_BINARY) . ' ' . \escapeshellarg($bin) . ' ' . $arguments . ' 2>&1';
+            // nosemgrep: php.lang.security.proc-open-use — test harness: spawns the
+            // framework's own CLI with a literal argv, no user-controlled input.
+            $proc = \proc_open(
+                [\PHP_BINARY, $bin, ...$args],
+                [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+                $pipes,
+            );
+            self::assertIsResource($proc, 'proc_open must start bin/zef');
 
-            $lines = [];
-            $exitCode = 0;
-            exec($cmd, $lines, $exitCode); // nosemgrep: exec-use
+            \fclose($pipes[0]); // stdin closed immediately: the child never consumes our input.
+            $stdout = (string) \stream_get_contents($pipes[1]);
+            $stderr = (string) \stream_get_contents($pipes[2]);
+            \fclose($pipes[1]);
+            \fclose($pipes[2]);
 
-            return [$exitCode, \implode("\n", $lines)];
+            $exitCode = \proc_close($proc);
+
+            return [$exitCode, $stdout . $stderr];
         } finally {
             foreach ($restore as $name => $previous) {
                 \putenv($previous === false ? $name : "{$name}={$previous}");
