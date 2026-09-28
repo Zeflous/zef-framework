@@ -55,17 +55,25 @@ dilaporkan adalah **keadaan runtime nyata**, bukan hasil parsing statis.
 | `bin/zef route:list` | tabel rute: METHOD, PATH, NAME, HANDLER, MODULE, PRIO + jumlah |
 | `bin/zef module:list` | modul terdaftar dari `ModuleRegistry` pasca-boot |
 | `bin/zef plugin:list` | plugin yang ditemukan di `plugins/` (sumber kebenaran: disk) |
-| `bin/zef config:show [key]` | dump config teragregasi; lookup *dotted key* opsional |
+| `bin/zef config:show [key] [--reveal]` | dump config teragregasi; lookup *dotted key* opsional; nilai ber-key sensitif otomatis di-mask |
 
 `config:show` bersifat **JSON-safe**: `Closure` → `"<closure>"`, objek →
 `"<object NamaKelas>"`, resource → `"<resource>"`. Lookup dotted key memakai sentinel
 yang membedakan *key tidak ada* (**exit 1**) dari *nilai `null` tersimpan*
 (**exit 0**) — perbedaan ini penting untuk skrip.
 
+**Redaksi rahasia:** nilai di bawah key ber-nama sensitif (`password`, `secret`,
+`token`, `credential`, `api-key`, ...) dirender `"****(<panjang>)"` secara default —
+rekaman terminal, log CI, atau paste ke issue tidak akan membocorkan kredensial.
+Flag `--reveal` mencetak nilai asli untuk debugging sadar-risiko, namun **menolak
+jalan saat `ZEF_ENV=production`** (exit 1).
+
 ```bash
 php bin/zef route:list
 php bin/zef config:show middleware.services
 php bin/zef config:show tidak.ada.key    # exit 1
+php bin/zef config:show db.password     # "****(18)" — panjang asli sebagai petunjuk
+php bin/zef config:show db.password --reveal  # nilai asli (ditolak di production)
 ```
 
 ---
