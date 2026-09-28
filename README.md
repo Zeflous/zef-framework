@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/RoadRunner-4.1-1f2937?style=for-the-badge" alt="RoadRunner 4.1">
   <img src="https://img.shields.io/badge/Architecture-Hexagonal-38bdf8?style=for-the-badge" alt="Hexagonal">
   <br>
-  <img src="https://img.shields.io/badge/Kelas%20PSR--4-932-818cf8?style=for-the-badge" alt="932 kelas">
+  <img src="https://img.shields.io/badge/Kelas%20PSR--4-933-818cf8?style=for-the-badge" alt="933 kelas">
   <img src="https://img.shields.io/badge/Test%20PHPUnit-3186-c084fc?style=for-the-badge" alt="3186 test">
   <img src="https://img.shields.io/badge/Coverage%20gate-%E2%89%A5%2090%25-22c55e?style=for-the-badge" alt="Coverage gate 90%">
   <img src="https://img.shields.io/badge/Mutation%20gate-MSI%20%E2%89%A5%2085-f59e0b?style=for-the-badge" alt="Mutation gate MSI 85">
