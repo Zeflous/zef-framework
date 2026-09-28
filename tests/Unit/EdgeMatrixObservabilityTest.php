@@ -1041,12 +1041,11 @@ final class EdgeMatrixObservabilityTest extends TestCase
         // traceState dipertahankan.
         $c2 = TraceContextPropagator::extract($this->validTraceParent(), 'vendor=1');
         self::assertSame('vendor=1', $c2->traceState);
-        // Ditolak: zero-id, flag di luar bit 0, format salah.
+        // Ditolak: zero-id, format salah. (Bit flag reserved TIDAK lagi
+        // ditolak — lihat testTraceContextReservedFlagBitsAreMaskedNotDropped.)
         foreach ([
             '00-' . str_repeat('0', 32) . '-' . str_repeat('b', 16) . '-01',
             '00-' . str_repeat('a', 32) . '-' . str_repeat('0', 16) . '-01',
-            $this->validTraceParent('ff'),
-            $this->validTraceParent('02'),
             '00-' . str_repeat('g', 32) . '-' . str_repeat('b', 16) . '-01',
             '01-' . str_repeat('a', 32) . '-' . str_repeat('b', 16) . '-01',
             'too-short',
@@ -1057,6 +1056,23 @@ final class EdgeMatrixObservabilityTest extends TestCase
         ] as $bad) {
             self::assertNull(TraceContextPropagator::extract($bad), $bad);
         }
+    }
+
+    public function testTraceContextReservedFlagBitsAreMaskedNotDropped(): void
+    {
+        // Regresi P-23 (issue #172): bit flag reserved (0x02..0x80) TIDAK
+        // lagi membatalkan seluruh trace context — W3C Trace Context
+        // mengabaikan bit tak dikenal; hanya bit 0 (sampled) yang
+        // dipertahankan dan inject() memancarkan flags tersanitasi.
+        $sampled = TraceContextPropagator::extract($this->validTraceParent('ff'));
+        self::assertInstanceOf(SpanContext::class, $sampled);
+        self::assertTrue($sampled->sampled);
+        self::assertSame($this->validTraceParent('01'), TraceContextPropagator::inject($sampled));
+
+        $unsampled = TraceContextPropagator::extract($this->validTraceParent('02'));
+        self::assertInstanceOf(SpanContext::class, $unsampled);
+        self::assertFalse($unsampled->sampled);
+        self::assertSame($this->validTraceParent('00'), TraceContextPropagator::inject($unsampled));
     }
 
     public function testTraceContextInjectRoundtrip(): void

@@ -335,6 +335,85 @@ final class DatabasePdoConnectionTest extends TestCase
         self::assertSame(0, $this->conn->transactionLevel());
     }
 
+    public function testIsolationStatementOrderingIsDriverAware(): void
+    {
+        // Regresi P-6 (issue #172): PostgreSQL scopes `SET TRANSACTION
+        // ISOLATION LEVEL` to the CURRENT transaction block and silently
+        // ignores it outside one, so the SET must follow BEGIN; MySQL
+        // scopes it to the session's NEXT transaction, so it must precede
+        // BEGIN. The mock records the statement order without a server.
+        $order = [];
+        $pdo = $this->createMock(\PDO::class);
+        $pdo->method('beginTransaction')->willReturnCallback(static function () use (&$order): bool {
+            $order[] = 'BEGIN';
+
+            return true;
+        });
+        $pdo->method('exec')->willReturnCallback(static function (string $statement) use (&$order): int {
+            $order[] = $statement;
+
+            return 0;
+        });
+        $pdo->method('commit')->willReturnCallback(static function () use (&$order): bool {
+            $order[] = 'COMMIT';
+
+            return true;
+        });
+
+        $pgsql = new PdoConnection(ConnectionConfig::fromArray([
+            'driver' => 'pgsql', 'host' => 'h', 'dbname' => 'd',
+        ]), $pdo);
+        $pgsql->beginTransaction(IsolationLevel::Serializable);
+        self::assertSame(['BEGIN', 'SET TRANSACTION ISOLATION LEVEL SERIALIZABLE'], $order);
+        $pgsql->commit();
+        self::assertSame(
+            ['BEGIN', 'SET TRANSACTION ISOLATION LEVEL SERIALIZABLE', 'COMMIT'],
+            $order,
+        );
+
+        $mysql = new PdoConnection(ConnectionConfig::fromArray([
+            'driver' => 'mysql', 'host' => 'h', 'dbname' => 'd',
+        ]), $pdo);
+        $mysql->beginTransaction(IsolationLevel::RepeatableRead);
+        self::assertSame(
+            [
+                'BEGIN',
+                'SET TRANSACTION ISOLATION LEVEL SERIALIZABLE',
+                'COMMIT',
+                'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ',
+                'BEGIN',
+            ],
+            $order,
+        );
+        $mysql->commit();
+    }
+
+    public function testPostgresIsolationFailureAfterBeginRollsBackOpenBlock(): void
+    {
+        // Regresi P-6 (issue #172): when the post-BEGIN SET fails on
+        // PostgreSQL, the just-opened block must not leak — the adapter
+        // stays at level 0 and the handle is rolled back.
+        $pdo = $this->createMock(\PDO::class);
+        $pdo->expects(self::once())->method('beginTransaction')->willReturn(true);
+        $pdo->expects(self::once())->method('exec')
+            ->with('SET TRANSACTION ISOLATION LEVEL SERIALIZABLE')
+            ->willThrowException(new \PDOException('bad isolation'))
+        ;
+        $pdo->expects(self::once())->method('rollBack')->willReturn(true);
+        $conn = new PdoConnection(ConnectionConfig::fromArray([
+            'driver' => 'pgsql', 'host' => 'h', 'dbname' => 'd',
+        ]), $pdo);
+
+        try {
+            $conn->beginTransaction(IsolationLevel::Serializable);
+            self::fail('failing SET TRANSACTION must surface as QueryException');
+        } catch (QueryException $e) {
+            self::assertStringContainsString('bad isolation', $e->getMessage());
+        }
+
+        self::assertSame(0, $conn->transactionLevel());
+    }
+
     public function testConnectFailureMessageShape(): void
     {
         $mysql = new PdoConnection(ConnectionConfig::fromArray([

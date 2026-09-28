@@ -52,10 +52,14 @@ interface ConnectionInterface
      * Begin a transaction. Calling it while already inside one opens a
      * SAVEPOINT (nesting); $isolation may only be requested at level 0.
      *
-     * Isolation semantics (v2.18.0 audit clarification):
+     * Isolation semantics (v2.18.0 audit clarification; ordering made
+     * driver-aware by P-6, issue #172):
      * - the isolation level is applied ONCE, via
-     *   `SET TRANSACTION ISOLATION LEVEL`, immediately before the
-     *   outermost BEGIN, and governs the ENTIRE transaction scope
+     *   `SET TRANSACTION ISOLATION LEVEL`, anchored to the outermost
+     *   BEGIN — BEFORE it on MySQL (there the statement scopes to the
+     *   session's NEXT transaction), immediately AFTER it on PostgreSQL
+     *   (outside a transaction block the statement is a silent no-op
+     *   there) — and governs the ENTIRE transaction scope
      *   (including every savepoint opened within it);
      * - requesting an isolation level while nested (level > 0) throws
      *   TransactionException — savepoints cannot change isolation on

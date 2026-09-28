@@ -12,6 +12,17 @@ namespace Zef\Framework\Observability;
 
 final class TraceContextPropagator
 {
+    /**
+     * Parses a `traceparent` header into a {@see SpanContext}, or returns
+     * null when the header cannot be trusted (grammar mismatch, zero ids).
+     *
+     * P-23 (issue #172): per W3C Trace Context, only bit 0 of the flags
+     * octet is defined (sampled); vendors may emit future/flow bits in the
+     * remaining 7. Dropping the whole context on any reserved bit would
+     * discard a perfectly valid trace, so unknown bits are IGNORED — the
+     * flags are masked down to the sampled bit and propagation continues
+     * with the sanitized value (inject() re-emits `01`/`00`).
+     */
     public static function extract(string $traceParent, ?string $traceState = null): ?SpanContext
     {
         $value = trim($traceParent);
@@ -22,9 +33,6 @@ final class TraceContextPropagator
             return null;
         }
         $flags = hexdec($m[3]);
-        if (($flags & 0xFE) !== 0) {
-            return null;
-        }
 
         return new SpanContext(strtolower($m[1]), strtolower($m[2]), ($flags & 1) === 1, $traceState);
     }

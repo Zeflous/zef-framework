@@ -348,6 +348,67 @@ final class OpenApiSpecValidatorTest extends TestCase
         self::assertNull($cache->get('1.0.0'));
     }
 
+    public function testCacheKeysAreFingerprintScoped(): void
+    {
+        // Regresi P-22 (issue #172): the version alone does not identify a
+        // spec — two applications (or two deploys with different route
+        // tables) sharing one cache backend must not read each other's
+        // documents, while the same fingerprint still shares one scope.
+        $fake = new class implements CacheInterface {
+            /** @var array<string, mixed> */
+            public array $items = [];
+
+            #[\Override]
+            public function get(string $key, mixed $default = null): mixed
+            {
+                return $this->items[$key] ?? $default;
+            }
+
+            #[\Override]
+            public function set(string $key, mixed $value, ?int $ttlSeconds = null): void
+            {
+                $this->items[$key] = $value;
+            }
+
+            #[\Override]
+            public function delete(string $key): void
+            {
+                unset($this->items[$key]);
+            }
+
+            #[\Override]
+            public function has(string $key): bool
+            {
+                return isset($this->items[$key]);
+            }
+
+            #[\Override]
+            public function clear(): void
+            {
+                $this->items = [];
+            }
+        };
+        $appA = new SpecificationCache($fake, 60, 'routes-hash-a');
+        $appB = new SpecificationCache($fake, 60, 'routes-hash-b');
+
+        $appA->set('1.0.0', ['openapi' => '3.1.0', 'app' => 'A']);
+        self::assertNull($appB->get('1.0.0'), 'distinct fingerprints must yield distinct keys');
+        self::assertSame(['openapi' => '3.1.0', 'app' => 'A'], $appA->get('1.0.0'));
+
+        $appA2 = new SpecificationCache($fake, 60, 'routes-hash-a');
+        self::assertSame(['openapi' => '3.1.0', 'app' => 'A'], $appA2->get('1.0.0'));
+
+        $appA->invalidate('1.0.0');
+        self::assertNull($appA2->get('1.0.0'), 'invalidate() must target the fingerprinted key');
+
+        // Default fingerprint keeps the legacy key layout (BC for existing
+        // deployments); fingerprinted entries never claim the legacy key.
+        $legacy = new SpecificationCache($fake);
+        $legacy->set('2.0.0', ['openapi' => '3.1.0']);
+        self::assertArrayHasKey('zef.openapi.spec.2.0.0', $fake->items);
+        self::assertArrayNotHasKey('zef.openapi.spec.1.0.0', $fake->items);
+    }
+
     public function testJsonSerializerIsReusableForDocuments(): void
     {
         $serializer = new JsonSpecificationSerializer();

@@ -19,6 +19,7 @@ use Zef\Framework\Cache\CacheItem;
 use Zef\Framework\Cache\DefaultCacheKeyNormalizer;
 use Zef\Framework\Cache\InMemoryCache;
 use Zef\Framework\Cache\InMemoryCacheStore;
+use Zef\Framework\Cache\SystemCacheClock;
 use Zef\Framework\Cache\TaggableCache;
 use Zef\Framework\Cache\TieredCache;
 
@@ -398,6 +399,44 @@ final class EdgeMatrixF8CacheTest extends TestCase
         self::assertTrue($store->has('k1'));
         self::assertTrue($store->has('k10000'));
     }
+
+    // ------------------------------------------------------------------
+    // SystemCacheClock (P-24, issue #172)
+    // ------------------------------------------------------------------
+
+    /** Regresi P-24 (issue #172): unix-ns nyata (~1.77e18), bukan hrtime sejak boot (~4.2e12). */
+    public function testSystemClockReturnsUnixNanoMagnitude(): void
+    {
+        $now = new SystemCacheClock()->nowUnixNano();
+
+        self::assertGreaterThan(1_000_000_000_000_000_000, $now, 'hrtime sejak boot hanya ~4.2e12');
+        $reference = (int) round(microtime(true) * 1_000_000_000);
+        self::assertLessThan(5_000_000_000, abs($now - $reference), 'harus ~microtime dalam toleransi 5 detik');
+    }
+
+    /** Regresi P-24: deadline yang ditulis clock ini kedaluwarsa relatif kepadanya. */
+    public function testCacheItemWrittenWithSystemClockExpiresRelativeToIt(): void
+    {
+        $clock = new SystemCacheClock();
+        $store = new InMemoryCacheStore(50, $clock);
+        $cache = new InMemoryCache($store, clock: $clock);
+
+        $cache->set('fresh', 'v', 3600);
+        self::assertSame('v', $cache->get('fresh'));
+        self::assertGreaterThanOrEqual(3590, $cache->getRemainingTtlSeconds('fresh'));
+        self::assertLessThanOrEqual(3600, $cache->getRemainingTtlSeconds('fresh'));
+
+        // Deadline tepat satu nanodetik di masa lalu → expired (inclusive >=).
+        $store->set('stale', new CacheItem('old', $clock->nowUnixNano() - 1));
+        self::assertNull($store->get('stale'));
+        self::assertFalse($cache->has('stale'));
+
+        // Jalur default CacheItem::isExpired() (wall clock unix-ns, tanpa
+        // argumen) juga menganggap deadline masa lalu sebagai expired.
+        self::assertTrue(new CacheItem('old', $clock->nowUnixNano() - 1_000_000_000)->isExpired());
+        self::assertFalse(new CacheItem('v', $clock->nowUnixNano() + 10_000_000_000)->isExpired());
+    }
+
     // ------------------------------------------------------------------
     // Fixtures
     // ------------------------------------------------------------------

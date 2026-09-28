@@ -19,7 +19,13 @@ final readonly class CacheItem
 
     public function isExpired(?int $nowUnixNano = null): bool
     {
+        // P-24 (issue #172): $expiresAtUnixNano is unix nanoseconds, so the
+        // default "now" must be a wall-clock reading (microtime), not
+        // hrtime(true) — monotonic nanoseconds (~4.2e12 since boot) would
+        // make a persisted unix-ns deadline look eternally fresh. The
+        // microtime float quantises near 1e18 to ~256 ns steps: irrelevant
+        // at cache-TTL granularity.
         return $this->expiresAtUnixNano !== null
-            && ($nowUnixNano ?? hrtime(true)) >= $this->expiresAtUnixNano;
+            && ($nowUnixNano ?? (int) round(microtime(true) * 1_000_000_000)) >= $this->expiresAtUnixNano;
     }
 }

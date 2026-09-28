@@ -25,7 +25,11 @@ use Zef\Framework\Observability\MeterInterface;
  * - transaction() cleans up callback and commit failures, preserving the
  *   original exception; uncertain cleanup makes this adapter unusable;
  * - isolation levels are applied via `SET TRANSACTION ISOLATION LEVEL`
- *   before the outermost BEGIN; SQLite rejects the concept outright;
+ *   with driver-aware ordering: MySQL scopes the statement to the
+ *   session's NEXT transaction, so it runs before the outermost BEGIN;
+ *   PostgreSQL honours it only inside the transaction block (outside one
+ *   it is a silent no-op), so it runs right after BEGIN and before the
+ *   transaction's first statement; SQLite rejects the concept outright;
  * - isolation is a TRANSACTION-SCOPE property, not a SAVEPOINT one: a
  *   nested beginTransaction()/transaction() call cannot change it (a
  *   nested transaction() call silently drops the isolation argument —
@@ -111,6 +115,7 @@ final class PdoConnection implements ConnectionInterface
     public function beginTransaction(?IsolationLevel $isolation = null): void
     {
         $pdo = $this->pdo();
+        $setIsolation = null;
         if ($isolation instanceof IsolationLevel) {
             if ($this->level > 0) {
                 throw new TransactionException(
@@ -122,13 +127,40 @@ final class PdoConnection implements ConnectionInterface
                     'SQLite does not support isolation levels; pass null instead of ' . $isolation->value . '.',
                 );
             }
-            $this->runStatement('SET TRANSACTION ISOLATION LEVEL ' . $isolation->value);
+            $setIsolation = 'SET TRANSACTION ISOLATION LEVEL ' . $isolation->value;
         }
         if ($this->level === 0) {
+            // P-6 (issue #172): a bare `SET TRANSACTION ISOLATION LEVEL` is
+            // scoped differently per driver — MySQL applies it to the NEXT
+            // transaction of the session (correct before BEGIN), while
+            // PostgreSQL applies it to the CURRENT transaction block and
+            // silently ignores it outside one (a no-op before BEGIN). The
+            // pgsql placement below stays valid until the transaction's
+            // first statement.
+            if ($setIsolation !== null && $this->config->driver === 'mysql') {
+                $this->runStatement($setIsolation);
+            }
+
             try {
                 $pdo->beginTransaction();
             } catch (\PDOException $e) {
                 throw new TransactionException('Failed to begin transaction: ' . $e->getMessage(), 0, $e);
+            }
+            if ($setIsolation !== null && $this->config->driver !== 'mysql') {
+                try {
+                    $this->runStatement($setIsolation);
+                } catch (QueryException $e) {
+                    // The block opened above must not leak when the SET
+                    // fails; the level counter was never incremented, so a
+                    // direct PDO rollback restores a consistent handle.
+                    try {
+                        $pdo->rollBack();
+                    } catch (\Throwable) {
+                        // Keep the original failure; cleanup is best-effort.
+                    }
+
+                    throw $e;
+                }
             }
         } else {
             if ($this->level >= self::MAX_NESTING) {

@@ -161,7 +161,20 @@ final class ObservabilityTest extends TestCase
 
         self::assertNull(TraceContextPropagator::extract('garbage'));
         self::assertNull(TraceContextPropagator::extract('00-' . \str_repeat('0', 32) . '-' . self::SPAN_ID . '-01'));
-        self::assertNull(TraceContextPropagator::extract('00-' . self::TRACE_ID . '-' . self::SPAN_ID . '-ff'));
+
+        // Regresi P-23 (issue #172): reserved flag bits no longer drop the
+        // whole context — per W3C Trace Context unknown bits are ignored,
+        // only the sampled bit survives, and inject() re-emits sanitized
+        // flags (01/00).
+        $vendorBits = TraceContextPropagator::extract('00-' . self::TRACE_ID . '-' . self::SPAN_ID . '-ff');
+        self::assertNotNull($vendorBits);
+        self::assertTrue($vendorBits->sampled);
+        self::assertSame('00-' . self::TRACE_ID . '-' . self::SPAN_ID . '-01', TraceContextPropagator::inject($vendorBits));
+        $flowBit = TraceContextPropagator::extract('00-' . self::TRACE_ID . '-' . self::SPAN_ID . '-02');
+        self::assertNotNull($flowBit);
+        self::assertFalse($flowBit->sampled);
+        self::assertSame('00-' . self::TRACE_ID . '-' . self::SPAN_ID . '-00', TraceContextPropagator::inject($flowBit));
+
         self::assertSame($parent, TraceContextPropagator::inject($ctx));
     }
 
