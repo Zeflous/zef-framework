@@ -93,7 +93,8 @@ def main() -> int:
         repo_path(sys.argv[2], "output directory"),
     )
     base = sys.argv[3].rstrip("/") if len(sys.argv) > 3 else ""
-    data = json.loads(src.read_text(encoding="utf-8"))
+    with open(src, encoding="utf-8") as fh:
+        data = json.loads(fh.read())
     items = data.get("items", [])
 
     if not items:

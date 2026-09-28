@@ -243,7 +243,8 @@ def main() -> int:
         ]
         for r in rows:
             md.append(f"| `{r[0]}` | {r[1]} | {r[2]} | {r[3]} | {r[4]} | `{r[5]}` |")
-        report_path.write_text("\n".join(md) + "\n")
+        with open(report_path, "w", encoding="utf-8") as fh:
+            fh.write("\n".join(md) + "\n")
 
     # Propagate a contract violation instead of shipping a silently wrong table.
     for r in rows:
