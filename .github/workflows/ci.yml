@@ -123,7 +123,11 @@ jobs:
         run: php bin/zef --self-test=v211
 
       - name: PHPUnit (native in-process suites)
-        run: vendor/bin/phpunit
+        # --log-junit feeds the release-docs ratchet below: build/junit.xml
+        # is the evidence file behind the README test-count badge, so a PR
+        # that adds tests but forgets the badge fails in the same PR
+        # (issue #215, recurrence #87).
+        run: vendor/bin/phpunit --log-junit build/junit.xml
 
       - name: PHPStan (level max + strict-rules + frozen baseline)
         run: vendor/bin/phpstan analyse --configuration=phpstan.neon.dist --memory-limit=1G --no-progress

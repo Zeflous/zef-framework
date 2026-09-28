@@ -221,7 +221,7 @@
 - [x] Self-test runner CLI → `bin/zef --self-test` · Dev server → `bin/zef --serve` · Lint → `composer lint`
 - [x] Route inspector → `bin/zef route:list` (v2.8.0) · Code generators → `bin/zef make:*` (v2.8.0: module/handler/middleware; **v2.16.0 ZEF Maker: plugin, config, command, query, entity, valueobject, service**; **v2.29.0: `make:app` — scaffold aplikasi standalone** — engine hexagonal `src/Infrastructure/Console`) · Command catalog → `bin/zef list [--json]` · Inspectors → `module:list`, `plugin:list`, `config:show` (v2.16.0)
 - [x] **v2.29.0 DX release**: standalone app scaffolding (`make:app`) · RoadRunner transparency (`rr:init` dari knob `ZEF_*`, collision-safe) · environment preflight + boot smoke (`doctor`, exit 1 hanya pada FAIL) · tutorial Zero-to-Hero (`TUTORIAL-CQRS-101.md`, diverifikasi end-to-end) · kontrak manifest + registry plugin (`PLUGINS.md`)
-- [x] Tinker/REPL (v2.10.0: `TinkerSession` + `bin/zef tinker`) · Debug toolbar · Profiler · Hot reload
+- [x] Tinker/REPL (v2.10.0: `TinkerSession` + `bin/zef tinker`) — [ ] Debug toolbar · [ ] Profiler · [ ] Hot reload
 - [ ] PhpStorm/VS Code plugin · Beautiful error pages (parsial: `ErrorResponseFactory`)
 
 ---
