@@ -11,6 +11,7 @@ use Zef\Framework\Console\Generator\RoadRunnerConfigGenerator;
 use Zef\Framework\Console\Inspector\Doctor;
 use Zef\Framework\Console\ScaffoldWriter;
 use Zef\Framework\Console\ZefMaker;
+use Zef\Framework\Foundation\ZefVersion;
 
 /**
  * v2.29.0 DX release — kurikulum edge-case adversarial untuk tiga tool baru:
@@ -73,13 +74,23 @@ final class EdgeMatrixDxToolsTest extends TestCase
         self::assertSame('demo/app', $composer['name'] ?? null);
         $require = $composer['require'] ?? null;
         self::assertIsArray($require);
-        self::assertSame('^2.29.0', $require['mbetixz/zef-framework'] ?? null, 'constraint framework harus mengikuti rilis');
+        self::assertSame('^' . ZefVersion::VERSION, $require['mbetixz/zef-framework'] ?? null, 'constraint framework harus mengikuti rilis');
         self::assertSame('^8.4', $require['php'] ?? null);
         $repos = $composer['repositories'] ?? null;
         self::assertIsArray($repos);
         $repo = $repos[0] ?? null;
         self::assertIsArray($repo);
         self::assertSame('path', $repo['type'] ?? null, 'framework dirujuk lewat path repository');
+
+        // Regresi #210: path-repo tanpa pin `versions` di-resolve Composer sebagai
+        // `dev-main`, sehingga constraint bertag tidak pernah cocok dan
+        // `composer install` gagal pada scaffold baru.
+        $options = $repo['options'] ?? null;
+        self::assertIsArray($options, 'path repository wajib punya options');
+        $versions = $options['versions'] ?? null;
+        self::assertIsArray($versions, 'options path-repo wajib punya peta versions');
+        $pinned = $versions['mbetixz/zef-framework'] ?? null;
+        self::assertSame(ZefVersion::VERSION, $pinned, 'pin versions path-repo wajib = ZefVersion::VERSION (issue #210)');
 
         // Skeleton wajib PHP-valid — bukti "boots, serves and passes PHPStan".
         foreach (['app/Bootstrap.php', 'modules/Demo/ConfigProvider.php', 'modules/Demo/HomeHandler.php', 'public/index.php', 'bin/worker.php', 'bin/zef'] as $file) {
