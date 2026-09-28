@@ -123,13 +123,7 @@ final readonly class ConfigShower
     /** Does this dotted config path point at a secret-looking slot? */
     private function pathIsSecret(string $dottedKey): bool
     {
-        foreach (explode('.', $dottedKey) as $segment) {
-            if ($this->isSecretKey($segment)) {
-                return true;
-            }
-        }
-
-        return false;
+        return array_any(explode('.', $dottedKey), fn (string $segment): bool => $this->isSecretKey($segment));
     }
 
     private function isSecretKey(string $key): bool
