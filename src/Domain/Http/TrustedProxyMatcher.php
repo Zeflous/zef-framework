@@ -78,8 +78,3 @@ final class TrustedProxyMatcher
         return (ord($ipBin[$fullBytes]) & $mask) === (ord($networkBin[$fullBytes]) & $mask);
     }
 }
-
-/*
- * Static factory for JSON error responses.
- * Eliminates hand-built JSON strings scattered across the codebase.
- */

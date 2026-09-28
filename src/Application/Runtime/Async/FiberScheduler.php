@@ -250,7 +250,22 @@ final class FiberScheduler
             // The main task needs no observed flag: surfaceFailures() keys
             // off its state before the unobserved-failure scan runs.
             $mainTask = $this->assertOwnedTask($this->spawn($main, 'main'), 'run()');
-            $this->pump();
+
+            try {
+                $this->pump();
+            } catch (DeadlockException $deadlock) {
+                // N-12 (issue #176): the deadlock-abort path used to skip
+                // surfaceFailures() entirely, so a main/unobserved failure
+                // the run was already carrying was silently discarded —
+                // violating the documented surfacing order (main first,
+                // then unobserved failures, then deadlocks detected
+                // mid-pump). Surface the failures first; the deadlock is
+                // chained as the previous exception of an unobserved
+                // aggregate, or rethrown unchanged when nothing surfaces.
+                $this->surfaceFailures($mainTask, $deadlock);
+
+                throw $deadlock;
+            }
             $this->surfaceFailures($mainTask);
 
             return 0;
@@ -519,7 +534,7 @@ final class FiberScheduler
         }
     }
 
-    private function surfaceFailures(FiberTask $mainTask): void
+    private function surfaceFailures(FiberTask $mainTask, ?DeadlockException $deadlock = null): void
     {
         $mainState = $mainTask->state();
 
@@ -536,7 +551,7 @@ final class FiberScheduler
         }
 
         if ($unobserved !== []) {
-            throw new UnobservedTaskException($unobserved);
+            throw new UnobservedTaskException($unobserved, $deadlock);
         }
     }
 

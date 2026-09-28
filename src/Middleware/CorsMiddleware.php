@@ -123,5 +123,3 @@ final readonly class CorsMiddleware implements MiddlewareInterface
         return OriginPolicy::normalizeOrigin($origin);
     }
 }
-
-// Retained for legacy modules; core now depends on Psr\Log\LoggerInterface.

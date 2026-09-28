@@ -106,7 +106,19 @@ final class PdoConnection implements ConnectionInterface
 
     public function lastInsertId(): ?string
     {
-        $id = $this->pdo()->lastInsertId();
+        try {
+            $id = $this->pdo()->lastInsertId();
+        } catch (\PDOException $e) {
+            // N-15 (issue #176): e.g. PostgreSQL lastval() is undefined
+            // until the session's first INSERT — map it onto the
+            // ConnectionException family like every other PDO call
+            // instead of leaking a raw PDOException.
+            throw new QueryException(
+                'Failed to retrieve last insert ID: ' . $e->getMessage(),
+                (int) $e->getCode(),
+                $e,
+            );
+        }
 
         // '' and false = no support; '0' = no insert yet (MySQL/SQLite).
         return (in_array($id, ['', false, '0'], true)) ? null : $id;

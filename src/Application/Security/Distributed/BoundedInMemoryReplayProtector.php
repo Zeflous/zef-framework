@@ -39,16 +39,30 @@ final class BoundedInMemoryReplayProtector implements ReplayProtectorInterface
             return new ReplayResult(ReplayDecision::REJECTED);
         }
         $cutoff = $nowMs - $this->windowMs;
-        foreach ($this->seen as $id => $seenAt) {
-            if ($seenAt < $cutoff) {
-                unset($this->seen[$id]);
+        // N-6 (issue #176): the stale sweep is lazy — it only runs under
+        // capacity pressure, so the steady-state check is O(1) instead of
+        // O(capacity) per request. Decision semantics are unchanged: an
+        // entry older than the window is evicted on touch (its replay
+        // window has lapsed, so the id is re-acceptable), and UNAVAILABLE
+        // still fires only when the entries surviving the sweep fill the
+        // capacity. The array stays bounded by $capacity either way,
+        // because admission requires a free slot.
+        $seenAt = $this->seen[$replayId] ?? null;
+        if ($seenAt !== null) {
+            if ($seenAt >= $cutoff) {
+                return new ReplayResult(ReplayDecision::DUPLICATE);
             }
-        }
-        if (isset($this->seen[$replayId])) {
-            return new ReplayResult(ReplayDecision::DUPLICATE);
+            unset($this->seen[$replayId]);
         }
         if (count($this->seen) >= $this->capacity) {
-            return new ReplayResult(ReplayDecision::UNAVAILABLE);
+            foreach ($this->seen as $id => $at) {
+                if ($at < $cutoff) {
+                    unset($this->seen[$id]);
+                }
+            }
+            if (count($this->seen) >= $this->capacity) {
+                return new ReplayResult(ReplayDecision::UNAVAILABLE);
+            }
         }
         $this->seen[$replayId] = $nowMs;
 

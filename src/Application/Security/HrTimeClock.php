@@ -24,6 +24,19 @@ use Zef\Framework\Cache\SystemCacheClock;
  */
 final class HrTimeClock implements CacheClockInterface
 {
+    /**
+     * N-5 (issue #176): the method NAME is inherited from the shared port
+     * ({@see CacheClockInterface::nowUnixNano()} — kept for BC; renaming it
+     * would break every implementor), but this implementation's semantics
+     * are MONOTONIC nanoseconds from an arbitrary epoch (hrtime(true),
+     * ~4.2e12 since boot), deliberately NOT unix epoch nanoseconds. The
+     * v2.25.0 rate-limit algorithms only consume differences and window
+     * indices, which are invariant under any fixed time base, and a
+     * monotonic base is immune to wall-clock steps (NTP/DST). It has
+     * therefore genuinely diverged from Infrastructure SystemCacheClock,
+     * which since P-24 (issue #172) returns real unix-ns wall time for
+     * cross-process cache deadlines — never mix the two in one comparison.
+     */
     #[\Override]
     public function nowUnixNano(): int
     {

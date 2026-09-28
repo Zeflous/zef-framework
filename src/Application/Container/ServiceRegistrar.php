@@ -26,7 +26,13 @@ final readonly class ServiceRegistrar
         ?string $module = null,
         string $lifetime = ServiceLifetime::SINGLETON,
     ): void {
-        if ($id === '' || $this->registry->hasFactory($id) || $this->registry->hasAlias($id)) {
+        // N-19 (issue #176): an empty/invalid identifier is its own failure —
+        // reporting it as "already registered" described a collision that
+        // never happened.
+        if ($id === '') {
+            throw new InvalidFactoryException("Factory for '{$id}' is invalid: service ID must not be empty.");
+        }
+        if ($this->registry->hasFactory($id) || $this->registry->hasAlias($id)) {
             throw new InvalidFactoryException("Factory for '{$id}' is invalid: service ID already registered.");
         }
         ServiceLifetime::assert($lifetime);
@@ -40,7 +46,12 @@ final readonly class ServiceRegistrar
 
     public function alias(string $alias, string $target, ?string $module = null): void
     {
-        if ($alias === '' || $this->registry->hasFactory($alias) || $this->registry->hasAlias($alias)) {
+        // N-19 (issue #176): same split as register() — an empty alias is an
+        // invalid identifier, not a collision.
+        if ($alias === '') {
+            throw new InvalidFactoryException("Factory for '{$alias}' is invalid: alias must not be empty.");
+        }
+        if ($this->registry->hasFactory($alias) || $this->registry->hasAlias($alias)) {
             throw new InvalidFactoryException("Factory for '{$alias}' is invalid: ID already registered.");
         }
         if ($target === '') {

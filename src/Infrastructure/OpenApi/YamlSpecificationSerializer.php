@@ -146,7 +146,9 @@ final class YamlSpecificationSerializer
 
     private function needsQuoting(string $value): bool
     {
-        if (preg_match('/^[\s]|\s$/', $value) === 1) {
+        // SonarCloud php:S5850 (issue #176): group the anchored
+        // alternatives explicitly so each anchor binds to one branch.
+        if (preg_match('/^(?:\s)|\s$/', $value) === 1) {
             return true;
         }
         if (preg_match('/[\x00-\x1F\x7F]/', $value) === 1) {

@@ -77,6 +77,14 @@ final class RequestFactory
         ?array $uploadedFiles = null,
     ): ServerRequestInterface {
         $method = strtoupper((string) ($server['REQUEST_METHOD'] ?? 'GET'));
+        // N-13 (issue #176): RFC 9110 §9.1 method tokens are case-sensitive,
+        // but ZEF deliberately normalizes the request method to uppercase
+        // at this single ingress boundary. Every internal consumer already
+        // compares methods case-insensitively (Router::match/add(), the
+        // security/CORS/ETag middlewares all strtoupper() before comparing),
+        // and userland overwhelmingly writes `getMethod() === 'GET'` —
+        // preserving the raw token would silently break those handlers on
+        // non-canonical clients while buying nothing the pipeline needs.
         $protocol = self::protocolVersion((string) ($server['SERVER_PROTOCOL'] ?? 'HTTP/1.1'));
         $headers = self::extractHeaders($server);
         $uri = self::buildUri($server, $trustedHosts, $trustedProxies);
@@ -537,7 +545,13 @@ final class RequestFactory
             }
             for ($i = 0; $i < $length; ++$i) {
                 $char = $label[$i];
-                if (!(($char >= 'a' && $char <= 'z') || ($char >= '0' && $char <= '9') || $char === '-')) {
+                // N-11 (issue #176): '_' is accepted to align with
+                // Uri::assertHost()'s RFC 3986 reg-name grammar — RFC 9110
+                // defines Host as reg-name and '_' is unreserved, so
+                // intranet names like "my_service.internal" must validate
+                // identically at both layers instead of being accepted by
+                // Uri and rejected at the ingress boundary.
+                if (!(($char >= 'a' && $char <= 'z') || ($char >= '0' && $char <= '9') || $char === '-' || $char === '_')) {
                     return false;
                 }
             }

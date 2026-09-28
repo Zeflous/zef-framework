@@ -12,6 +12,15 @@ namespace Zef\Framework\Security;
 
 final readonly class RedisRateLimiter implements RateLimiterInterface
 {
+    /**
+     * N-1 (issue #176): $maxKeys is accepted for configuration symmetry
+     * with the in-process limiter adapters and validated, but this
+     * adapter keeps NO per-key state, so it cannot bound the shared
+     * store's memory — bounding is the store's responsibility (Redis
+     * maxmemory with an eviction policy). Keys this limiter creates
+     * expire through the store's per-window TTL, so the resident set
+     * only grows with distinct active keys, which maxmemory caps.
+     */
     public function __construct(
         private SharedRateLimitStoreInterface $store,
         private int $maxKeys = 10000,

@@ -35,9 +35,13 @@ final class InProcessJobWorker
         private readonly ?JobQueueInterface $deadLetterQueue = null,
         private readonly int $pollIntervalMs = 10,
         private readonly SleeperInterface $sleeper = new SystemSleeper(),
+        private readonly ?int $jobTimeoutMs = null,
     ) {
         if ($pollIntervalMs < 0 || $pollIntervalMs > 60_000) {
             throw new \InvalidArgumentException('Invalid job poll interval.');
+        }
+        if ($this->jobTimeoutMs !== null && $this->jobTimeoutMs < 1) {
+            throw new \InvalidArgumentException('Job timeout must be positive.');
         }
         if ($deadLetterQueue instanceof JobQueueInterface && $deadLetterQueue === $queue) {
             // Same instance as main queue: unknown-type / max-attempt jobs
@@ -183,6 +187,13 @@ final class InProcessJobWorker
             );
         }
         $context = new JobContext($job->jobId, $job->attempt, $job->correlationId, $job->traceParent, $job->headers);
+        if ($this->jobTimeoutMs !== null) {
+            // N-17 (issue #176): without a deadline the JobTimeoutException
+            // branch of JobContext::throwIfCancelled() was unreachable from
+            // the built-in worker — the context it hands to handlers never
+            // carried one. null keeps the legacy no-timeout behaviour.
+            $context = $context->withDeadlineMs($this->jobTimeoutMs);
+        }
         $run = function () use ($handler, $job, $context): mixed {
             $next = \Closure::fromCallable($handler);
             for ($i = count($this->middleware) - 1; $i >= 0; --$i) {

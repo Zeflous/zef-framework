@@ -13,10 +13,13 @@ namespace Zef\Framework\Observability;
  * Renders a MeterInterface snapshot into the Prometheus text exposition
  * format (version 0.0.4) consumed by Prometheus / VictoriaMetrics / etc.
  *
- * Semantics:
- * - counter series (increment)  -> `<name>{labels} count` and `<name>_sum`
- *   (count == sum for pure counters; both are emitted for correctness)
- * - histogram-style observations (observe) -> `<name>_count` + `<name>_sum`
+ * Semantics (N-20, issue #176 — aligned with the code, not ahead of it):
+ * - counter series (increment)  -> `<name>{labels} count` ONLY. A pure
+ *   counter has count == sum, so `_sum` would duplicate the value and is
+ *   not emitted.
+ * - histogram-style observations (observe) where sum != count ->
+ *   `<name>` plus the classic histogram members `<name>_count` and
+ *   `<name>_sum`
  * - metric names are sanitized to `[a-zA-Z0-9_:]`, label names to
  *   `[a-zA-Z0-9_]`; label values are escaped per the exposition format
  * - series with no attributes omit the `{...}` block entirely
