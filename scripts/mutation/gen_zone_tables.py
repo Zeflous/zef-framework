@@ -53,6 +53,40 @@ FLOOR = 95.0
 CAMPAIGN_LABEL = "campaign 2026-09-23"
 
 
+def repo_path(raw: str, what: str) -> Path:
+    """Resolve a CLI-supplied path and refuse anything outside the repository.
+
+    Every path this tool writes stays inside the checkout by construction, and
+    a `--report` target must obey the same rule: a mistyped or injected
+    argument must never point `write_text()` at an arbitrary location
+    (code-scanning rule python/PT). The argument is validated lexically
+    before any Path object is built, and validated again after resolution, so
+    a symlink that lives in the repo but points outward is refused as well.
+    """
+    _refuse = f"ERROR: {what} must stay inside the repository: {raw}"
+    if not raw:
+        print(f"ERROR: {what} must not be empty.", file=sys.stderr)
+        sys.exit(2)
+    # Lexical gate, before any Path is constructed: the only valid shapes are
+    # a relative path without parent-escape segments, or an absolute path that
+    # already starts at the repository root. Everything else is refused here.
+    normalized = raw.replace("\\", "/")
+    if normalized.startswith("~") or ".." in normalized.split("/"):
+        print(_refuse, file=sys.stderr)
+        sys.exit(2)
+    root_str = str(REPO).rstrip("/")
+    if normalized.startswith("/") and normalized != root_str and not normalized.startswith(root_str + "/"):
+        print(_refuse, file=sys.stderr)
+        sys.exit(2)
+    # Resolution gate: resolve symlinks and re-verify containment at the real
+    # location, so a link inside the repo but points outward is refused too.
+    resolved = Path(normalized).resolve()
+    if resolved != REPO and REPO not in resolved.parents:
+        print(_refuse, file=sys.stderr)
+        sys.exit(2)
+    return resolved
+
+
 def canonical_zones() -> list[str]:
     zones = []
     for raw in ZONES_TSV.read_text().splitlines():
@@ -165,6 +199,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--report", default=None, help="also write a markdown table here")
     args = ap.parse_args()
+    report_path = repo_path(args.report, "--report target") if args.report else None
 
     zones = canonical_zones()
     EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
@@ -201,14 +236,15 @@ def main() -> int:
         print(f"rows carrying a measurement-disagreement note: {notes}")
     print("row numbers are derived from the cited evidence file (single source of truth)")
 
-    if args.report:
+    if report_path is not None:
         md = [
             "| Zona | MSI | Covered MSI | Mutan | Status | Bukti |",
             "|---|---:|---:|---:|---|---|",
         ]
         for r in rows:
             md.append(f"| `{r[0]}` | {r[1]} | {r[2]} | {r[3]} | {r[4]} | `{r[5]}` |")
-        Path(args.report).write_text("\n".join(md) + "\n")
+        with open(report_path, "w", encoding="utf-8") as fh:
+            fh.write("\n".join(md) + "\n")
 
     # Propagate a contract violation instead of shipping a silently wrong table.
     for r in rows:
