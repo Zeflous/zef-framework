@@ -1,6 +1,6 @@
 # Security Policy
 
-This document states how a security problem in **ZEF Framework** (`mbetixz/zef-framework`)
+This document states how a security problem in **ZEF Framework** (`Zeflous/zef-framework`)
 is reported, what is in scope, and what the repository already enforces on every
 change. It describes the project as it is; where a rule is aspirational rather than
 enforced, it is marked as such.
@@ -36,7 +36,7 @@ the only reporting channel: no security email address is published for this proj
 and none should be inferred.
 
 1. Open the repository's **Security** tab and choose **Report a vulnerability**
-   ([direct link](https://github.com/mbetixz/zef-framework/security/advisories/new)).
+   ([direct link](https://github.com/Zeflous/zef-framework/security/advisories/new)).
    This creates a private advisory visible only to you and the maintainers.
 2. Include the details listed below.
 3. The maintainers triage the report **in that advisory**. Discussion, remediation

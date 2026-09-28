@@ -58,7 +58,7 @@ jobs:
           python3 scripts/ci/doctum_to_wiki.py \
             build/api/doctum-search.json \
             build/wiki-index \
-            "https://mbetixz.github.io/zef-framework/api"
+            "https://zeflous.github.io/zef-framework/api"
 
       - name: Verify index output
         shell: bash

@@ -1,9 +1,9 @@
 # ZEF Framework — Official Documentation
 
-Dokumentasi resmi **ZEF Framework** (`mbetixz/zef-framework`) — framework PHP 8.4
+Dokumentasi resmi **ZEF Framework** (`Zeflous/zef-framework`) — framework PHP 8.4
 berarsitektur *Hexagonal (Ports & Adapters)* dengan worker RoadRunner.
 
-> **API reference (generated):** <https://mbetixz.github.io/zef-framework/>
+> **API reference (generated):** <https://zeflous.github.io/zef-framework/>
 > — dibangun otomatis oleh Doctum pada setiap push ke `main`.
 
 ---
