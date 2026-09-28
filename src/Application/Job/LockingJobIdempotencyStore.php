@@ -101,11 +101,13 @@ final readonly class LockingJobIdempotencyStore implements JobIdempotencyStoreIn
             } catch (\Throwable $releaseFailure) {
                 // N-16 (issue #176): prefer the logger port; error_log() is
                 // only the no-logger fallback.
+                $reason = 'lease remains held until TTL lapse; retries for this key are blocked until then';
                 $message = sprintf(
-                    'Idempotency lease release failed for key "%s" (window %ds): %s — lease remains held until TTL lapse; retries for this key are blocked until then.',
+                    'Idempotency lease release failed for key "%s" (window %ds): %s — %s.',
                     $key,
                     $ttlSeconds,
                     $releaseFailure->getMessage(),
+                    $reason,
                 );
                 if ($this->logger instanceof LoggerInterface) {
                     $this->logger->error($message, [

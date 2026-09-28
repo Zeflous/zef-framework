@@ -146,9 +146,11 @@ final class YamlSpecificationSerializer
 
     private function needsQuoting(string $value): bool
     {
-        // SonarCloud php:S5850 (issue #176): group the anchored
-        // alternatives explicitly so each anchor binds to one branch.
-        if (preg_match('/^(?:\s)|\s$/', $value) === 1) {
+        // SonarCloud php:S5850/S5867/S6395 (issue #176): the leading and
+        // trailing whitespace probes run as two flat patterns — no
+        // alternation, no grouping — and each carries the u flag so the
+        // probe stays Unicode-aware.
+        if (preg_match('/^\s/u', $value) === 1 || preg_match('/\s$/u', $value) === 1) {
             return true;
         }
         if (preg_match('/[\x00-\x1F\x7F]/', $value) === 1) {

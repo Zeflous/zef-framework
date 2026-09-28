@@ -550,8 +550,11 @@ final class RequestFactory
                 // defines Host as reg-name and '_' is unreserved, so
                 // intranet names like "my_service.internal" must validate
                 // identically at both layers instead of being accepted by
-                // Uri and rejected at the ingress boundary.
-                if (!(($char >= 'a' && $char <= 'z') || ($char >= '0' && $char <= '9') || $char === '-' || $char === '_')) {
+                // Uri and rejected at the ingress boundary. The allowed
+                // alphabet (lowercase alphanumerics, '-' and '_') is
+                // expressed as a strpbrk charset so the branch stays a
+                // single, flat condition.
+                if (strpbrk($char, 'abcdefghijklmnopqrstuvwxyz0123456789-_') === false) {
                     return false;
                 }
             }
