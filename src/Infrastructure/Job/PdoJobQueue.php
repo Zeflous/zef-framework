@@ -55,8 +55,6 @@ final readonly class PdoJobQueue implements JobQueueInterface
     /** @var (\Closure(): int) */
     private \Closure $clock;
 
-    private JobQueueSeqBackstop $seq;
-
     /**
      * @param ConnectionInterface    $connection database port
      * @param string                 $table      queue table name
@@ -75,7 +73,6 @@ final readonly class PdoJobQueue implements JobQueueInterface
         }
         $this->table = $table;
         $this->clock = $clock ?? static fn (): int => (int) (microtime(true) * 1_000_000_000);
-        $this->seq = new JobQueueSeqBackstop($connection, $table);
     }
 
     /**
@@ -120,7 +117,7 @@ final readonly class PdoJobQueue implements JobQueueInterface
             . 'CONSTRAINT "uq_' . $this->table . '_job" UNIQUE ("job_id"), '
             . 'CONSTRAINT "uq_' . $this->table . '_seq" UNIQUE ("seq"))',
         ));
-        $this->seq->ensureUniqueIndex();
+        $this->seq()->ensureUniqueIndex();
     }
 
     #[\Override]
@@ -213,6 +210,17 @@ final readonly class PdoJobQueue implements JobQueueInterface
         return (int) $row['aggregate'];
     }
 
+    /**
+     * The UNIQUE(seq) backstop collaborator: built lazily (not in the
+     * constructor) so the queue's own construction stays side-effect
+     * free; one tiny allocation per enqueue is noise against the INSERT
+     * roundtrip it guards.
+     */
+    private function seq(): JobQueueSeqBackstop
+    {
+        return new JobQueueSeqBackstop($this->connection, $this->table);
+    }
+
     private function doEnqueue(JobEnvelope $job, string $payload, string $headers): void
     {
         $insert = new SqlQuery(
@@ -237,7 +245,7 @@ final readonly class PdoJobQueue implements JobQueueInterface
         // live in {@see JobQueueSeqBackstop} — bounded retry, loud
         // non-collision failures, unchanged QueryException after the
         // attempt budget.
-        $this->seq->insertWithSeqRetry($insert);
+        $this->seq()->insertWithSeqRetry($insert);
     }
 
     /** @param array<string, mixed> $row */
