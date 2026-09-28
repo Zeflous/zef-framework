@@ -41,6 +41,24 @@ TYPE_LABEL = {"C": "Class", "I": "Interface", "T": "Trait", "N": "Namespace", "M
 TYPE_ORDER = {"C": 0, "I": 1, "T": 2}
 MANIFEST = "_generated.txt"
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def repo_path(raw: str, what: str) -> Path:
+    """Resolve a CLI-supplied path and refuse anything outside the repository.
+
+    Both the search index this tool reads and the directory it writes live
+    inside the checkout, so a mistyped or injected argument must never reach
+    `read_text()`, `mkdir()` or `write_text()` at an arbitrary location
+    (code-scanning rule python/PT). Symlinks are resolved too, so a link that
+    lives in the repo but points outward is rejected as well.
+    """
+    resolved = Path(raw).resolve()
+    if resolved != REPO_ROOT and REPO_ROOT not in resolved.parents:
+        print(f"ERROR: {what} must stay inside the repository: {raw}", file=sys.stderr)
+        sys.exit(2)
+    return resolved
+
 
 def slug(text: str) -> str:
     """A Wiki page name must be a safe, stable filename."""
@@ -52,7 +70,10 @@ def main() -> int:
         print(__doc__)
         return 2
 
-    src, out = Path(sys.argv[1]), Path(sys.argv[2])
+    src, out = (
+        repo_path(sys.argv[1], "Doctum search index"),
+        repo_path(sys.argv[2], "output directory"),
+    )
     base = sys.argv[3].rstrip("/") if len(sys.argv) > 3 else ""
     data = json.loads(src.read_text(encoding="utf-8"))
     items = data.get("items", [])

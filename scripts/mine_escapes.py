@@ -8,12 +8,31 @@ Output: daftar escape per file kelas, diurutkan dari escape terbanyak:
 import re
 import sys
 from collections import defaultdict
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def repo_path(raw: str, what: str) -> Path:
+    """Resolve a CLI-supplied path and refuse anything outside the repository.
+
+    The infection log this tool mines is produced inside the checkout, so a
+    mistyped or injected argument must never point `open()` at arbitrary files
+    outside it (code-scanning rule python/PT). Symlinks are resolved too, so a
+    link that lives in the repo but points outward is rejected as well.
+    """
+    resolved = Path(raw).resolve()
+    if resolved != REPO_ROOT and REPO_ROOT not in resolved.parents:
+        print(f"ERROR: {what} must stay inside the repository: {raw}", file=sys.stderr)
+        sys.exit(2)
+    return resolved
+
 
 def main() -> int:
     if len(sys.argv) < 2:
         print("usage: mine_escapes.py <infection-log-file> [label]", file=sys.stderr)
         return 2
-    log_path = sys.argv[1]
+    log_path = repo_path(sys.argv[1], "infection log")
     label = sys.argv[2] if len(sys.argv) > 2 else "escapes"
     text = open(log_path, encoding="utf-8", errors="replace").read()
 
