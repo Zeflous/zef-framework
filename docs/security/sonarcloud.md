@@ -138,7 +138,8 @@ The workflow ships fully wired; only the SonarCloud account side is manual:
 | --- | --- | --- |
 | Scanner action | `SonarSource/sonarqube-scan-action` v8.2.2 | full commit SHA `ba9859eae8dd6bd29e412f25ddbbef3d032000f4` (repository policy: every action pinned to a full-length SHA) |
 | Scanner engine | downloaded by the action from the pinned action's logic | version is a property of the pinned action commit; upgrades are deliberate pull requests |
-| Analysis scope | `src/`, `tests/` (505 + 175 files) | `sonar.exclusions` in `sonar-project.properties` — an explicit exclusion list, because SonarCloud's new analysis-scope UX ignores `sonar.sources`/`sonar.tests` and analyses the whole project by default (re-scoped 2026-09-28, measured on PR #227); reviewable in-tree |
+| Analysis scope | `src/` only (505 files) | `sonar.exclusions` in `sonar-project.properties` — an explicit exclusion list, because SonarCloud's new analysis-scope UX ignores `sonar.sources`/`sonar.tests` and analyses the whole project by default (re-scoped 2026-09-28, measured on PR #227; `tests/` was moved out 2026-09-29 — see "Analysis scope v4" below); reviewable in-tree |
+| Issue suppressions | `php:S1523` on two by-design `eval()` sites (`TinkerSession.php`, `AutowireAotCompiler.php`) | `sonar.issue.ignore.multicriteria` in `sonar-project.properties`, two file-scoped criteria with the rationale in comments — matching the inline `nosemgrep` triage the Semgrep lane already carries for the same sites |
 | Checkout depth | full history (`fetch-depth: 0`) | the scanner's SCM sensor needs blame data and the `origin/main` ref to compute the new-code window; a shallow checkout makes the whole analysis read as new code |
 | Coverage-path exclusions | `modules/`, `plugins/` (demo code instrumented by the clover report but outside the analysis scope) | the `**/modules/**` and `**/plugins/**` patterns of `sonar.exclusions` in `sonar-project.properties`, reviewable in-tree |
 | Quality gate | server-side "Sonar way" (new code) | SonarCloud project settings |
@@ -147,6 +148,42 @@ There is no local engine to pin because the analysis runs server-side; the
 reviewable, immutable input is the action commit plus the properties file.
 Engine upgrades happen by re-pinning the action SHA in a reviewed pull request,
 mirroring how the Semgrep engine digest is upgraded in `php-sast.yml`.
+
+### Analysis scope v4 (2026-09-29): src/ only — why tests/ left the analysis
+
+The v3 scope kept parity with the pre-UX analysis (`src/` + `tests/`, 680
+files). The first main-branch analysis of the fresh org-mode project
+(`zeflous_zef-framework`, 2026-09-28 16:10 UTC) then measured what that
+parity costs on a project whose new-code window is young: **the whole
+analyzed surface read as new code**, and with `tests/` inside the scope the
+gate red on three counts at once —
+
+* **coverage 33.6% vs the real 97.0%**: the scope UX has no `sonar.tests`
+  equivalent, so test files are counted as production code in the coverage
+  denominator while the bridged clover report (which instruments
+  `src`+`modules`+`plugins` only) provides no data for them. Every test
+  file measures 0%.
+* **reliability E**: 976 bugs, overwhelmingly test-file findings — ~690
+  CRITICAL `php:S5783` (try-block shape) and all 16 BLOCKERs
+  (`php:S1799` exit() fixtures, `php:S2007` loose fixture functions).
+* **security D**: test-fixture `eval()`/assert findings counting as
+  vulnerabilities.
+
+The same arithmetic would have re-run on **every future pull request that
+adds tests**: new test lines are new code, their S5783/S2007 findings are
+new-code issues, and the Sonar way gate (reliability A on new code) would
+fail every test-writing PR. That is an unusable gate, not a strict one.
+
+The v4 decision: **SonarCloud reviews the product code (`src/`)
+only.** Test-code quality is owned by strictly stronger in-repo gates that
+Sonar's test-style rules cannot complement, let alone replace: the mutation
+zone ratchet (`composer mutation:zones` — per-zone floors enforced on every
+push, aggregate MSI 85 / covered 90 on release tags), PHPStan level max
+with strict rules over `tests/` too, and PHPUnit's `failOnRisky`/strict
+policies. The two `php:S1523` suppressions above keep the src-only security
+rating honest on the two deliberate, documented `eval()` features (REPL
+tinker; AOT container compile) — the same triage the Semgrep lane already
+records inline at those sites.
 
 ## 5. What this gate explicitly is not
 
@@ -254,7 +291,8 @@ scope decision. Two notes for future readers:
 | Red job, "project not found" / 401 | `sonar.projectKey` / `sonar.organization` / `SONAR_TOKEN` mismatch — section 3 |
 | Green job with the no-credentials notice | `SONAR_TOKEN` not set, or a pull request whose secrets GitHub withholds (`dependabot[bot]` author, fork head) — section 2 / section 3 step 6 |
 | Green job, step summary says "Coverage bridge (v2) — verdict: **fallback**" | no coverage artifact for this commit (CI red, no CI run in 45 min, or artifact unavailable) — coverage condition skipped for that run, everything else enforced; the CI lane is the authoritative coverage gate in that case |
-| WARN `Failed to resolve N file path(s) in PHPUnit coverage clover.xml report` | the clover report references files outside the analysis scope — paths under `modules/` or `plugins/` are declared out of scope via `sonar.exclusions` and stay quiet (section 6); paths anywhere **else** mean a new directory is emitting coverage data: decide consciously — drop the matching `sonar.exclusions` pattern (adding the tree to the analysed scope) or exclude it from the PHPUnit instrumentation scope |
+| WARN `Failed to resolve N file path(s) in PHPUnit coverage clover.xml report` | the clover report references files outside the analysis scope — paths under `modules/`, `plugins/` or `tests/` are declared out of scope via `sonar.exclusions` and stay quiet (section 6); paths anywhere **else** mean a new directory is emitting coverage data: decide consciously — drop the matching `sonar.exclusions` pattern (adding the tree to the analysed scope) or exclude it from the PHPUnit instrumentation scope |
+| Red job on a push to main, new-code numbers sized like the whole codebase, ratings like coverage 33% / reliability E / security D | the **first analysis of a freshly created project** (or one whose new-code window has no baseline yet): everything indexed counts as new code, so long-standing overall debt gates at once. Measured 2026-09-28 on the org-mode migration. Fixes: scope hygiene (v4 — see section 4) so the overall debt is the product code's real debt, then let the next push re-evaluate |
 | Red job, "quality gate failed", new-code numbers sized like the whole codebase (`new_lines` in the six figures) | the new-code window was computed over the entire analysis instead of the pull-request diff — two measured causes on PR #227 (2026-09-28): a shallow checkout (no blame, no `origin/main` ref, so every file reads as new) and the new analysis-scope UX indexing files outside `src/`+`tests/` — check `fetch-depth: 0` on the checkout step and the `sonar.exclusions` list |
 | Scanner log: "The following properties are configured but have no effect: sonar.sources, sonar.tests" | SonarCloud's new analysis-scope UX is active: scope is controlled by `sonar.exclusions` only — this is expected and documented (section 6); the properties are deliberately absent from `sonar-project.properties` |
 | Red job, "quality gate failed", coverage condition | new code measured below the Sonar way floor on the bridged clover data — fix the code or review the gate in SonarCloud (a reviewed decision, not a workflow edit) |

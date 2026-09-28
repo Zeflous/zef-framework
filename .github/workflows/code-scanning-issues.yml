@@ -1,0 +1,81 @@
+# Code scanning alerts → tracker issues (automatic mirror).
+#
+# What this workflow is: every finding in Security & Quality → Code scanning
+# (Semgrep OSS from php-sast.yml, SnykCode from snyk-security.yml, and the
+# CodeQL default-setup analyses) becomes an ordinary, triageable tracker
+# issue automatically, and stops being one automatically when the alert is
+# fixed or dismissed. The synchroniser is scripts/ci/sync-code-scanning-
+# issues.sh; the full contract (dedup marker, labels, close/reopen rules,
+# per-run creation cap, triage guide) is documented in
+# docs/security/code-scanning-issues.md — read it before changing this file.
+#
+# Why workflow_run + schedule, not webhooks: the documented way to react to
+# code-scanning events in real time is the `code_scanning_alert` webhook
+# (https://docs.github.com/en/code-security/concepts/code-scanning/
+# integration-with-code-scanning#integrations-with-webhooks), but a webhook
+# needs an external receiver (a server or a GitHub App) that this repository
+# deliberately does not maintain. The repo-native equivalent is:
+#   * workflow_run on "PHP SAST" and "Snyk Security" — both upload SARIF on
+#     every push to main, so their completion is the earliest moment the
+#     alert set for the new head commit is queryable. This is near-real-time
+#     (minutes after the analyzers finish).
+#   * a daily schedule sweep — the catch-all that also picks up alerts from
+#     the CodeQL default setup (a dynamic workflow outside .github/workflows,
+#     which workflow_run cannot target) and anything the event-driven runs
+#     missed. GitHub's cron scheduler drops peak-minute slots; minute 23 at
+#     03:xx UTC stays off the :00/:30 peaks (same lesson as
+#     auto-update-prs.yaml).
+#   * workflow_dispatch for manual runs (also used to exercise the sync on a
+#     branch before it lands).
+#
+# This workflow never runs on pull_request events: it is not a status check
+# and must never interact with the protected main branch's required contexts.
+# It only mirrors the alert state of the default branch's latest analyses.
+
+name: Code Scanning Issues
+
+on:
+  workflow_run:
+    workflows: ["PHP SAST", "Snyk Security"]
+    types: [completed]
+    branches: ["main"]
+  schedule:
+    - cron: '23 3 * * *'
+  workflow_dispatch:
+
+# One sync at a time: two triggers (SAST + Snyk completing around the same
+# minute) must not race each other into double-filing an issue. A queued
+# second run costs seconds and re-converges to the same state (the sync is
+# idempotent); cancelling it would save nothing and hide a real sync.
+concurrency:
+  group: code-scanning-issues
+  cancel-in-progress: false
+
+# Least privilege: read the code-scanning alerts, write the tracker issues
+# (issue creation/closing and label management are all under issues: write).
+# No checkout of secrets, no contents write, no PR authority.
+permissions:
+  security-events: read
+  issues: write
+
+jobs:
+  sync:
+    name: Sync code-scanning alerts to tracker issues
+    runs-on: ubuntu-latest
+    # The sync is a handful of API calls; anything longer is a stuck network
+    # call that should self-terminate instead of holding a runner.
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        # Pinned to a full commit SHA, matching the convention used in
+        # .github/workflows/ci.yml. The synchroniser script is versioned in
+        # this repository; workflow_run runs always use the default branch's
+        # copy of both the workflow and the script it calls.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Sync alerts to tracker issues
+        env:
+          # gh CLI authentication: the job's github.token carries exactly the
+          # workflow-level permissions declared above.
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci/sync-code-scanning-issues.sh
