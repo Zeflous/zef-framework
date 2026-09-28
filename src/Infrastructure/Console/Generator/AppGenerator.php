@@ -37,6 +37,7 @@ use Zef\Framework\Console\GeneratorInterface;
 use Zef\Framework\Console\InvalidNameException;
 use Zef\Framework\Console\NamingRules;
 use Zef\Framework\Console\ScaffoldWriter;
+use Zef\Framework\Foundation\ZefVersion;
 
 final readonly class AppGenerator implements GeneratorInterface
 {
@@ -274,6 +275,11 @@ final readonly class AppGenerator implements GeneratorInterface
     {
         $moduleNamespace = "Zef\\Module\\{$pascal}";
 
+        // The path repository below carries an explicit `versions` pin derived
+        // from ZefVersion::VERSION. Without it, Composer resolves the path repo
+        // as `dev-main` (this repo has no `version` composer field), which never
+        // satisfies a tagged constraint and breaks `composer install` on a
+        // freshly scaffolded app (issue #210).
         $composer = [
             'name' => "{$kebab}/app",
             'description' => "Standalone ZEF Framework application '{$kebab}' (scaffolded by bin/zef make:app).",
@@ -281,12 +287,19 @@ final readonly class AppGenerator implements GeneratorInterface
             'license' => 'MIT',
             'require' => [
                 'php' => '^8.4',
-                'mbetixz/zef-framework' => '^2.29.0',
+                'mbetixz/zef-framework' => '^' . ZefVersion::VERSION,
                 'spiral/roadrunner-http' => '^4.1',
                 'nyholm/psr7' => '^1.8',
             ],
             'repositories' => [
-                ['type' => 'path', 'url' => $frameworkRef, 'options' => ['symlink' => true]],
+                [
+                    'type' => 'path',
+                    'url' => $frameworkRef,
+                    'options' => [
+                        'symlink' => true,
+                        'versions' => ['mbetixz/zef-framework' => ZefVersion::VERSION],
+                    ],
+                ],
             ],
             'autoload' => [
                 'psr-4' => [
