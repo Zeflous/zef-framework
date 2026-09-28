@@ -105,7 +105,7 @@ jobs:
         run: composer check-platform-reqs
 
       - name: Abandoned-package audit policy
-        run: composer run-script audit --no-interaction
+        run: composer run-script audit:security --no-interaction
 
       - name: Syntax check (php -l over first-party files)
         run: php scripts/lint.php
