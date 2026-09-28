@@ -36,7 +36,16 @@ final class RedisLockStoreTest extends TestCase
             self::markTestSkipped('phpredis extension not available.');
         }
         $this->redis = new \Redis();
-        if (!$this->redis->pconnect(self::HOST, self::PORT, 2.0) || !$this->redis->auth(self::PASS)) {
+        // Same phpredis >= 6 RedisException capture as RedisStoreTest (issue #213):
+        // the documented self-skip (INSTALLATION.md §8) must survive a dead server.
+        $reachable = false;
+
+        try {
+            $reachable = $this->redis->pconnect(self::HOST, self::PORT, 2.0) && $this->redis->auth(self::PASS);
+        } catch (\RedisException) {
+            $reachable = false;
+        }
+        if (!$reachable) {
             self::markTestSkipped('Redis test server not reachable.');
         }
         $this->redis->select(0);
