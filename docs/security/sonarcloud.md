@@ -86,7 +86,7 @@ The workflow ships fully wired; only the SonarCloud account side is manual:
    organization, Administration → Subscription (Manage your subscription) →
    switch to the OSS plan.
 3. **Create project manually**: "Create project → Manually", pick the
-   organization, set the project key to `mbetixz_zef-framework` (or note the
+   organization, set the project key to `zeflous_zef-framework` (or note the
    key SonarCloud assigns and align `sonar-project.properties` in the same
    change). Choose **public project** — the OSS plan applies to public
    repositories.
@@ -101,18 +101,25 @@ The workflow ships fully wired; only the SonarCloud account side is manual:
    User Token") and save it as the repository secret `SONAR_TOKEN`
    (Settings → Secrets and variables → Actions). The name is fixed by
    `.github/workflows/sonarcloud.yml`. Any token whose SonarCloud identity is
-   a member of the organization **mbetixz** works — the personal-mode key
-   (`mbetixz_zef-framework`) and the org-mode key (`zeflous_zef-framewrok`)
-   both authenticate, because a SonarCloud token carries the permissions of
+   a member of the organization **zeflous** works — the org-mode key
+   (`zeflous_zef-framework`) and the legacy personal-mode key
+   (`mbetixz_zef-framework`) both authenticated while both organizations
+   shared a member, because a SonarCloud token carries the permissions of
    the *user*, across every organization that user belongs to. The token
-   currently stored (updated 2026-09-27 23:01 UTC) is verified green against
-   `mbetixz_zef-framework` by the scan on `main` at 23:03 UTC the same day.
-   The parallel project **`zeflous_zef-framework`** in the SonarCloud
-   organization `zeflous` is *not* referenced by this repository and should be
-   deleted (Administration → Deletion) so only one project carries the history:
-   a SonarCloud organization can only decorate pull requests of GitHub repos
-   owned by the account/org it is bound to, and this repository lives under
-   the personal account `mbetixz`, not under the GitHub org `Zeflous`.
+   currently stored (rotated 2026-09-28, org-mode migration) is an org-key
+   identity of the organization **zeflous**.
+   The org-mode migration (2026-09-28) followed the repository transfer to
+   the GitHub organization `Zeflous`: a SonarCloud organization can only
+   decorate pull requests of GitHub repos owned by the account/org it is
+   bound to, so the referenced project is now **`zeflous_zef-framework`**
+   in the SonarCloud organization `zeflous`, and the legacy personal-mode
+   project `mbetixz_zef-framework` in the organization `mbetixz` (first
+   credentialed analysis 2026-09-27, decoration confirmed on PR #207) is no
+   longer referenced and should be deleted (Administration → Deletion) so
+   only one project carries the history. The migration also starts a fresh
+   new-code period on the org-mode project: the previous project's
+   accumulated new-code window (which had drifted to a 3.8% duplication
+   density against the 3% gate on `main`, 2026-09-28) does not carry over.
 7. **Verify**: Actions tab → *SonarCloud* workflow → *Run workflow* (manual
    dispatch is enabled for exactly this). The first run analyses `main` and
    must end green. If the log shows a tiny "N files indexed" count and no
