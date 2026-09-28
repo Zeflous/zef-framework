@@ -66,9 +66,14 @@ final class TelemetrySanitizer
 
     public static function redact(string $value, int $limit = 2048): string
     {
+        // P-21 (issue #172): pairs may quote the key and/or the value — JSON-style
+        // log lines ("password":"x" or 'token'='y') previously passed through
+        // UNREDACTED because the separator had to follow the bare keyword. The
+        // vocabulary is widened (pwd, passphrase, credentials, private key) to
+        // track the config-surface matcher used by the inspector.
         $value = preg_replace(
-            '/(password|passwd|token|secret|api[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|authorization)\s*[:=]\s*([^\s,;]+)/i',
-            '$1=[REDACTED]',
+            '/(["\']?)(password|passwd|pwd|passphrase|secret|token|api[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|authorization|credentials|credential|private[_-]?key)\1\s*[:=]\s*(["\']?)([^\s,;"\']+)\3/i',
+            '$2=[REDACTED]',
             $value,
         ) ?? $value;
         $value = preg_replace('/\bBearer\s+[A-Za-z0-9._~+\/-]+=*/i', 'Bearer [REDACTED]', $value) ?? $value;
