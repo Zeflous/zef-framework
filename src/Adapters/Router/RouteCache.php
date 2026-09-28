@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace Zef\Framework\Router;
 
+use Zef\Framework\Exception\RouteCacheException;
 use Zef\Framework\Foundation\ZefVersion;
 
 /**
@@ -79,11 +80,11 @@ final class RouteCache
     public static function load(string $path): Router
     {
         if (!is_file($path)) {
-            throw new \RuntimeException("Route cache file '{$path}' does not exist.");
+            throw new RouteCacheException("Route cache file '{$path}' does not exist.");
         }
         $data = include $path;
         if (!is_array($data)) {
-            throw new \RuntimeException("Route cache file '{$path}' did not return an array.");
+            throw new RouteCacheException("Route cache file '{$path}' did not return an array.");
         }
         $version = $data['version'] ?? null;
         if ($version !== ZefVersion::VERSION) {
@@ -91,15 +92,19 @@ final class RouteCache
                 ? "framework version '{$version}'"
                 : 'no version stamp (legacy pre-v2.31.0 bare route array)';
 
-            throw new \RuntimeException("Route cache file '{$path}' is stale ({$origin}; running "
+            throw new RouteCacheException("Route cache file '{$path}' is stale ({$origin}; running "
                 . ZefVersion::VERSION . '). Regenerate it with RouteCache::write().');
         }
         $routes = $data['routes'] ?? null;
         if (!is_array($routes)) {
-            throw new \RuntimeException("Route cache file '{$path}' has no route table. Regenerate it with RouteCache::write().");
+            $message = "Route cache file '{$path}' has no route table.";
+
+            throw new RouteCacheException($message . ' Regenerate it with RouteCache::write().');
         }
         if (($data['fingerprint'] ?? null) !== self::fingerprint($routes)) {
-            throw new \RuntimeException("Route cache file '{$path}' failed its staleness fingerprint check (corrupt or hand-edited). Regenerate it with RouteCache::write().");
+            $message = "Route cache file '{$path}' failed its staleness fingerprint check (corrupt or hand-edited).";
+
+            throw new RouteCacheException($message . ' Regenerate it with RouteCache::write().');
         }
 
         return Router::fromCompiledArray($routes);
@@ -118,6 +123,54 @@ final class RouteCache
      */
     public static function loadIfFresh(string $path, Router $current): ?Router
     {
+        $envelope = self::readFreshEnvelope($path);
+        if ($envelope !== null) {
+            $currentFingerprint = self::fingerprint($current->exportRoutes());
+            if ($envelope['fingerprint'] === $currentFingerprint
+                && self::fingerprint($envelope['routes']) === $currentFingerprint) {
+                return Router::fromCompiledArray($envelope['routes']);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Reads and structurally validates the cache envelope (version stamp,
+     * route table, stored fingerprint): any structural miss — file absent
+     * or unreadable, corrupt include, non-array payload, legacy bare
+     * array, cross-release stamp — yields null.
+     *
+     * @return null|array{routes: array<mixed>, fingerprint: string}
+     */
+    private static function readFreshEnvelope(string $path): ?array
+    {
+        $data = self::includeEnvelope($path);
+        if ($data === null) {
+            return null;
+        }
+        $routes = $data['routes'] ?? null;
+        $stored = $data['fingerprint'] ?? null;
+        if (($data['version'] ?? null) !== ZefVersion::VERSION || !is_array($routes) || !is_string($stored)) {
+            return null;
+        }
+
+        return ['routes' => $routes, 'fingerprint' => $stored];
+    }
+
+    /**
+     * Includes the cache artifact and returns its payload as an array.
+     *
+     * Deliberately a plain include (not include_once): the artifact is a
+     * side-effect-free `<?php return array(...);` data file, and repeated
+     * in-process reads must keep seeing the payload — include_once would
+     * hand back true on the second read, a silent permanent soft-miss for
+     * long-running RoadRunner workers.
+     *
+     * @return null|array<mixed>
+     */
+    private static function includeEnvelope(string $path): ?array
+    {
         if (!is_file($path) || !is_readable($path)) {
             return null;
         }
@@ -127,20 +180,8 @@ final class RouteCache
         } catch (\Throwable) {
             return null; // corrupt payload — soft miss
         }
-        if (!is_array($data) || ($data['version'] ?? null) !== ZefVersion::VERSION) {
-            return null;
-        }
-        $stored = $data['fingerprint'] ?? null;
-        $routes = $data['routes'] ?? null;
-        if (!is_array($routes) || !is_string($stored)) {
-            return null;
-        }
-        $currentFingerprint = self::fingerprint($current->exportRoutes());
-        if ($stored !== $currentFingerprint || self::fingerprint($routes) !== $currentFingerprint) {
-            return null;
-        }
 
-        return Router::fromCompiledArray($routes);
+        return is_array($data) ? $data : null;
     }
 
     /**

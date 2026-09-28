@@ -172,8 +172,8 @@ final class PipelineOrderRecorder
 final class RecordingMiddleware implements MiddlewareInterface
 {
     public function __construct(
-        private string $label,
-        private PipelineOrderRecorder $recorder,
+        private readonly string $label,
+        private readonly PipelineOrderRecorder $recorder,
     ) {}
 
     #[\Override]

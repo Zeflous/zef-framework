@@ -90,7 +90,7 @@ final readonly class PipelineFactory
         foreach ($definitions as $index => $definition) {
             $tagged[] = [$definition->priority, $index, $definition];
         }
-        usort($tagged, self::compareByPriority(...));
+        usort($tagged, $this->compareByPriority(...));
         $ordered = [];
         foreach ($tagged as $row) {
             $ordered[] = $row[2];
@@ -105,7 +105,7 @@ final readonly class PipelineFactory
      * @param array{0:int,1:int,2:MiddlewareDefinition} $a
      * @param array{0:int,1:int,2:MiddlewareDefinition} $b
      */
-    private static function compareByPriority(array $a, array $b): int
+    private function compareByPriority(array $a, array $b): int
     {
         $cmp = $b[0] <=> $a[0];
 

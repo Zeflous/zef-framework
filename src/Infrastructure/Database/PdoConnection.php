@@ -127,53 +127,9 @@ final class PdoConnection implements ConnectionInterface
     public function beginTransaction(?IsolationLevel $isolation = null): void
     {
         $pdo = $this->pdo();
-        $setIsolation = null;
-        if ($isolation instanceof IsolationLevel) {
-            if ($this->level > 0) {
-                throw new TransactionException(
-                    'Isolation level may only be requested on the outermost transaction (current level: ' . $this->level . ').',
-                );
-            }
-            if ($this->config->driver === 'sqlite') {
-                throw new ConnectionException(
-                    'SQLite does not support isolation levels; pass null instead of ' . $isolation->value . '.',
-                );
-            }
-            $setIsolation = 'SET TRANSACTION ISOLATION LEVEL ' . $isolation->value;
-        }
+        $setIsolation = $this->isolationStatement($isolation);
         if ($this->level === 0) {
-            // P-6 (issue #172): a bare `SET TRANSACTION ISOLATION LEVEL` is
-            // scoped differently per driver — MySQL applies it to the NEXT
-            // transaction of the session (correct before BEGIN), while
-            // PostgreSQL applies it to the CURRENT transaction block and
-            // silently ignores it outside one (a no-op before BEGIN). The
-            // pgsql placement below stays valid until the transaction's
-            // first statement.
-            if ($setIsolation !== null && $this->config->driver === 'mysql') {
-                $this->runStatement($setIsolation);
-            }
-
-            try {
-                $pdo->beginTransaction();
-            } catch (\PDOException $e) {
-                throw new TransactionException('Failed to begin transaction: ' . $e->getMessage(), 0, $e);
-            }
-            if ($setIsolation !== null && $this->config->driver !== 'mysql') {
-                try {
-                    $this->runStatement($setIsolation);
-                } catch (QueryException $e) {
-                    // The block opened above must not leak when the SET
-                    // fails; the level counter was never incremented, so a
-                    // direct PDO rollback restores a consistent handle.
-                    try {
-                        $pdo->rollBack();
-                    } catch (\Throwable) {
-                        // Keep the original failure; cleanup is best-effort.
-                    }
-
-                    throw $e;
-                }
-            }
+            $this->beginOutermost($pdo, $setIsolation);
         } else {
             if ($this->level >= self::MAX_NESTING) {
                 throw new TransactionException(
@@ -261,6 +217,80 @@ final class PdoConnection implements ConnectionInterface
         $this->unusable = true;
         $this->handle = null;
         $this->level = 0;
+    }
+
+    /**
+     * Validates an isolation request and renders the driver statement.
+     * A null request passes through unchanged; misuse fails fast —
+     * isolation belongs to the outermost transaction only, and SQLite
+     * has no isolation dialect at all.
+     */
+    private function isolationStatement(?IsolationLevel $isolation): ?string
+    {
+        if (!$isolation instanceof IsolationLevel) {
+            return null;
+        }
+        if ($this->level > 0) {
+            throw new TransactionException(
+                'Isolation level may only be requested on the outermost transaction (current level: ' . $this->level . ').',
+            );
+        }
+        if ($this->config->driver === 'sqlite') {
+            throw new ConnectionException(
+                'SQLite does not support isolation levels; pass null instead of ' . $isolation->value . '.',
+            );
+        }
+
+        return 'SET TRANSACTION ISOLATION LEVEL ' . $isolation->value;
+    }
+
+    /**
+     * Opens the outermost transaction block, placing the isolation
+     * statement on the driver-correct side of BEGIN.
+     */
+    private function beginOutermost(\PDO $pdo, ?string $setIsolation): void
+    {
+        // P-6 (issue #172): a bare `SET TRANSACTION ISOLATION LEVEL` is
+        // scoped differently per driver — MySQL applies it to the NEXT
+        // transaction of the session (correct before BEGIN), while
+        // PostgreSQL applies it to the CURRENT transaction block and
+        // silently ignores it outside one (a no-op before BEGIN). The
+        // pgsql placement below stays valid until the transaction's
+        // first statement.
+        if ($setIsolation !== null && $this->config->driver === 'mysql') {
+            $this->runStatement($setIsolation);
+        }
+
+        try {
+            $pdo->beginTransaction();
+        } catch (\PDOException $e) {
+            throw new TransactionException('Failed to begin transaction: ' . $e->getMessage(), 0, $e);
+        }
+        if ($setIsolation !== null && $this->config->driver !== 'mysql') {
+            $this->applyPostBeginIsolation($pdo, $setIsolation);
+        }
+    }
+
+    /**
+     * Applies the isolation statement after BEGIN (the PostgreSQL
+     * dialect scope) and guarantees the freshly opened block never
+     * leaks: when the SET fails the level counter was never
+     * incremented, so a direct PDO rollback restores a consistent
+     * handle before the original failure escapes.
+     */
+    private function applyPostBeginIsolation(\PDO $pdo, string $setIsolation): void
+    {
+        try {
+            $this->runStatement($setIsolation);
+        } catch (QueryException $e) {
+            try {
+                $pdo->rollBack();
+            } catch (\Throwable) {
+                // Keep the original failure; cleanup is best-effort.
+            }
+
+            throw $e;
+        }
     }
 
     /**

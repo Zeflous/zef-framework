@@ -235,8 +235,7 @@ final readonly class RateLimitMiddleware implements MiddlewareInterface
         $this->logger?->error(
             '[ZEF][security] Rate limiter ' . $mode
             . ' for identity ' . ($identity ?? 'unresolved')
-            . ' on tiers [' . $tiers . ']'
-            . ': ' . $error::class . ': ' . $error->getMessage(),
+            . ' on tiers [' . $tiers . ']: ' . $error::class . ': ' . $error->getMessage(),
         );
     }
 
