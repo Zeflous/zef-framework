@@ -169,12 +169,17 @@ mirroring how the Semgrep engine digest is upgraded in `php-sast.yml`.
 The CI lane uploads `build/clover.xml` as the artifact **`coverage-clover`**
 for every commit it analyses (ci.yml, "Upload coverage evidence"). This lane
 consumes that artifact for the *same commit*: the bridge step waits for the
-CI run whose head SHA matches this run's SHA (both workflows trigger on the
-same `pull_request`/`push` events, so the SHAs coincide — the merge-commit
-SHA on pull requests, the branch head on pushes), downloads the artifact and
-passes `-Dsonar.php.coverage.reportPaths=build/clover.xml` to the scanner.
-The quality gate's coverage-on-new-code condition is therefore computed on
-real PHPUnit data measured by the exact execution the CI lane already gated.
+CI run triggered by the same event. The matching key is the sha the Actions
+API reports runs by — the pull request **head** sha on `pull_request` events,
+the branch head on `push` — which is NOT `GITHUB_SHA` inside a
+`pull_request` job (that is the ephemeral merge commit of
+`refs/pull/N/merge`; querying by it matches no run at all — measured live on
+PR #209, where the CI lane had completed while the bridge kept polling). The
+bridge therefore resolves the PR head sha from the event payload, downloads
+the artifact and passes `-Dsonar.php.coverage.reportPaths=build/clover.xml`
+to the scanner. The quality gate's coverage-on-new-code condition is
+therefore computed on real PHPUnit data measured by the exact execution the
+CI lane already gated.
 
 The wait is bounded by the CI job's own timeout (45 minutes, matched in the
 bridge step); the job timeout was raised to 60 minutes accordingly. Typical

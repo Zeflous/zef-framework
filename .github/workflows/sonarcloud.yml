@@ -120,16 +120,32 @@ jobs:
         # Coverage bridge v2 — docs/security/sonarcloud.md section 6. The CI
         # job uploads build/clover.xml as the artifact "coverage-clover" for
         # every commit it analyses; this step consumes the artifact of the
-        # SAME commit (identical head SHA: both workflows trigger on the same
-        # pull_request/push events) so the scanner's coverage-on-new-code
-        # gate condition is computed on real data. It usually just waits for
-        # the in-flight CI run to finish.
+        # SAME commit so the scanner's coverage-on-new-code gate condition is
+        # computed on real data. It usually just waits for the in-flight CI
+        # run to finish.
+        #
+        # SHA RESOLUTION (live bug, PR #209, 2026-09-28): the Actions API
+        # reports workflow runs by the sha of the head that triggered them —
+        # the pull request HEAD on pull_request events, the branch head on
+        # push. GITHUB_SHA inside a pull_request job is NOT that sha: it is
+        # the ephemeral merge commit of refs/pull/N/merge. Querying
+        # "actions/runs?head_sha=<merge commit>" therefore matches NOTHING —
+        # measured live: the CI lane had completed, yet the bridge kept
+        # polling toward its deadline. The PR head sha is resolved from the
+        # event payload itself, the authoritative source.
         if: env.SONAR_TOKEN != ''
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           sha="${GITHUB_SHA}"
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] && [ -f "${GITHUB_EVENT_PATH}" ]; then
+            pr_head=$(jq -r '.pull_request.head.sha // empty' "${GITHUB_EVENT_PATH}" 2>/dev/null || true)
+            if [ -n "${pr_head}" ]; then
+              sha="${pr_head}"
+            fi
+          fi
+          echo "Bridging coverage for reported head sha ${sha:0:8} (event: ${GITHUB_EVENT_NAME})."
           # Match the CI job's own bound (timeout-minutes: 45 in ci.yml):
           # beyond it the CI lane has failed on its own terms and this gate
           # must not hold the check open longer than the lane it feeds on.
