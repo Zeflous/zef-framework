@@ -2617,7 +2617,7 @@ parameters:
 			path: tests/Unit/ObservabilityTest.php
 
 		-
-			message: '#^Method Psr\\Log\\AbstractLogger@anonymous/tests/Unit/ObservabilityTest\.php\:384\:\:log\(\) has parameter \$context with no value type specified in iterable type array\.$#'
+			message: '#^Method Psr\\Log\\AbstractLogger@anonymous/tests/Unit/ObservabilityTest\.php\:397\:\:log\(\) has parameter \$context with no value type specified in iterable type array\.$#'
 			identifier: missingType.iterableValue
 			count: 1
 			path: tests/Unit/ObservabilityTest.php
@@ -2635,13 +2635,13 @@ parameters:
 			path: tests/Unit/ObservabilityTest.php
 
 		-
-			message: '#^Property Psr\\Log\\AbstractLogger@anonymous/tests/Unit/ObservabilityTest\.php\:384\:\:\$sink \(list\<array\{string, string, array\<string, mixed\>\}\>\) does not accept non\-empty\-list\<array\{string, string, array\}\>\.$#'
+			message: '#^Property Psr\\Log\\AbstractLogger@anonymous/tests/Unit/ObservabilityTest\.php\:397\:\:\$sink \(list\<array\{string, string, array\<string, mixed\>\}\>\) does not accept non\-empty\-list\<array\{string, string, array\}\>\.$#'
 			identifier: assign.propertyType
 			count: 1
 			path: tests/Unit/ObservabilityTest.php
 
 		-
-			message: '#^Property Psr\\Log\\AbstractLogger@anonymous/tests/Unit/ObservabilityTest\.php\:384\:\:\$sink is never read, only written\.$#'
+			message: '#^Property Psr\\Log\\AbstractLogger@anonymous/tests/Unit/ObservabilityTest\.php\:397\:\:\$sink is never read, only written\.$#'
 			identifier: property.onlyWritten
 			count: 1
 			path: tests/Unit/ObservabilityTest.php

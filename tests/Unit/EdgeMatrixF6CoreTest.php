@@ -1104,9 +1104,20 @@ final class EdgeMatrixF6CoreTest extends TestCase
         self::assertTrue($item->isExpired(1000));
         self::assertTrue($item->isExpired(1001));
         self::assertFalse($item->isExpired(5));
-        // hrtime path: expiry sangat kecil -> pasti lewat; PHP_INT_MAX -> belum.
+        // Default "now" (unix-ns wall clock, P-24 issue #172): expiry sangat
+        // kecil -> pasti lewat; PHP_INT_MAX -> belum.
         self::assertTrue(new CacheItem('v', 1)->isExpired());
         self::assertFalse(new CacheItem('v', PHP_INT_MAX)->isExpired());
+    }
+
+    public function testCacheItemDefaultNowIsUnixNanoWallClock(): void
+    {
+        // Regresi P-24 (issue #172): default "now" harus unix-ns (wall
+        // clock), bukan hrtime — deadline unix-ns masa depan tetap hidup,
+        // deadline masa lalu tetap lewat.
+        $now = (int) round(microtime(true) * 1_000_000_000);
+        self::assertFalse(new CacheItem('v', $now + 10_000_000_000)->isExpired());
+        self::assertTrue(new CacheItem('v', $now - 1_000_000_000)->isExpired());
     }
 
     // ------------------------------------------- CorrelationHeaders (3 escape)
