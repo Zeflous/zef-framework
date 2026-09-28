@@ -44,6 +44,7 @@ final class RedisStoreTest extends TestCase
         // documented self-skip (INSTALLATION.md §8) never triggers and every
         // test in this class reports ERROR (issue #213).
         $reachable = false;
+
         try {
             $reachable = $this->redis->pconnect(self::HOST, self::PORT, 2.0) && $this->redis->auth(self::PASS);
         } catch (\RedisException) {

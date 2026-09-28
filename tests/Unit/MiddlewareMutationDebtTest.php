@@ -182,6 +182,7 @@ final class MiddlewareMutationDebtTest extends TestCase
         // reachability first so the suite self-skips as documented.
         $probe = new \Redis();
         $live = false;
+
         try {
             $live = $probe->pconnect('127.0.0.1', 6399, 2.0);
         } catch (\RedisException) {
