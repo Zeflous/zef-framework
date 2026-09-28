@@ -26,28 +26,45 @@ final class RequestFactory
      *
      * v2.6.0: split into fromGlobals() (superglobal adapter) and
      * fromServer() (injectable) so SAPI state can be simulated in tests.
+     *
+     * Regresi P-12 (issue #171): the ONLY superglobal reader. Every SAPI
+     * source array ($_SERVER, $_GET, $_COOKIE, $_POST, $_FILES) is
+     * forwarded explicitly so fromServer() itself never consults
+     * process-global state — a long-running worker that reuses the process
+     * can no longer observe stale/foreign request data through silent
+     * fallbacks.
      */
     public static function fromGlobals(
         array $trustedHosts = [],
         array $trustedProxies = [],
         ?RequestBodyPolicy $bodyPolicy = null,
     ): ServerRequestInterface {
-        return self::fromServer($_SERVER, $trustedHosts, $trustedProxies, $bodyPolicy);
+        return self::fromServer(
+            $_SERVER,
+            $trustedHosts,
+            $trustedProxies,
+            $bodyPolicy,
+            is_array($_GET) ? $_GET : [],
+            is_array($_COOKIE) ? $_COOKIE : [],
+            is_array($_POST) && $_POST !== [] ? $_POST : null,
+            $_FILES ?? [],
+        );
     }
 
     /**
-     * Injectable variant of fromGlobals(): identical behavior, but reads
-     * from an explicit SAPI array instead of the $_SERVER superglobal.
-     * The optional $query/$cookies/$parsedBody/$uploadedFiles arguments
-     * make the remaining SAPI state injectable too (previously $_GET,
-     * $_COOKIE, $_POST and $_FILES leaked through, so a worker reusing
-     * the process saw stale/foreign superglobal state).
+     * Injectable variant of fromGlobals(): identical behavior, but never
+     * reads superglobals — every SAPI source array is passed explicitly.
+     * Omitted (null) $query/$cookies/$uploadedFiles default to empty. The
+     * $parsedBody argument mirrors what SAPI would have decoded into $_POST,
+     * so it is honored only for the two form media types; every other
+     * content type starts as null and is decoded downstream via
+     * decodeJsonBody().
      *
      * @param array<string,mixed> $server
-     * @param array<string,mixed> $query
-     * @param array<string,mixed> $cookies
-     * @param array<string,mixed> $parsedBody
-     * @param array<string,mixed> $uploadedFiles
+     * @param array<mixed> $query
+     * @param array<mixed> $cookies
+     * @param array<mixed> $parsedBody
+     * @param array<mixed> $uploadedFiles
      */
     public static function fromServer(
         array $server,
@@ -63,9 +80,12 @@ final class RequestFactory
         $protocol = self::protocolVersion((string) ($server['SERVER_PROTOCOL'] ?? 'HTTP/1.1'));
         $headers = self::extractHeaders($server);
         $uri = self::buildUri($server, $trustedHosts, $trustedProxies);
-        $cookies ??= is_array($_COOKIE) ? $_COOKIE : [];
-        $query ??= is_array($_GET) ? $_GET : [];
-        $uploads = self::normalizeUploads($uploadedFiles ?? $_FILES ?? []);
+        // Regresi P-12 (issue #171): a null argument means "not supplied",
+        // never "fall back to the superglobal" — cross-request state must
+        // not leak into workers that reuse the process.
+        $cookies ??= [];
+        $query ??= [];
+        $uploads = self::normalizeUploads($uploadedFiles ?? []);
         $bodyPolicy ??= new RequestBodyPolicy();
         $contentLengthHeader = (string) ($headers['content-length'][0] ?? '');
         if (
@@ -81,12 +101,17 @@ final class RequestFactory
         }
         $body = new LimitedInputStream(new Stream($input), $bodyPolicy);
         $contentType = strtolower(trim(explode(';', (string) ($headers['content-type'][0] ?? ''))[0]));
+        // Regresi P-12 (issue #171): the injected $parsedBody mirrors what
+        // SAPI would have decoded into $_POST, so it is honored only for the
+        // two form media types; every other content type starts null and is
+        // decoded downstream (decodeJsonBody()).
+        $formBody = $parsedBody;
         $parsedBody = null;
         if (
             $contentType === 'application/x-www-form-urlencoded'
             || $contentType === 'multipart/form-data'
         ) {
-            $parsedBody ??= is_array($_POST) && $_POST !== [] ? $_POST : null;
+            $parsedBody ??= $formBody;
         }
 
         return new ServerRequest(
