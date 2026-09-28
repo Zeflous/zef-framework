@@ -452,6 +452,21 @@ final class EdgeMatrixF6CoreTest extends TestCase
         }
     }
 
+    /**
+     * Regresi P-18 (issue #172): attempt besar membuat multiplier**n
+     * overflow ke INF — (int) round(INF) === 0 — sehingga worker meng-hammer
+     * handler gagal tanpa jeda (thundering herd yang justru mau dicegah).
+     * Delay wajib saturasi di maxDelayMs.
+     */
+    public function testJobRetryDelaySaturatesAtMaxWhenExponentOverflows(): void
+    {
+        $p = new RetryPolicy(3000, 100, 30000, 2.0);
+
+        self::assertSame(30000, $p->delayMs(2000), 'attempt 2000: 2**1999 = INF — wajib saturasi di cap, bukan 0ms');
+        self::assertSame(30000, $p->delayMs(PHP_INT_MAX), 'attempt ekstrem tetap saturasi di cap (tidak 0ms / negatif)');
+        self::assertSame(30000, $p->delayMs(61), 'produk finite raksasa juga wajib saturasi di cap');
+    }
+
     public function testJobRetryJitterStaysInRangeAndCapped(): void
     {
         $p = new RetryPolicy(5, 100, 1000, 2.0, 100);

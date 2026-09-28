@@ -145,7 +145,14 @@ final readonly class UnitOfWorkRetryPolicy
         if ($attempt < 1) {
             throw new \InvalidArgumentException('Attempt must be positive.');
         }
-        $raw = (int) round($this->initialDelayMs * ($this->multiplier ** max(0, $attempt - 1)));
+        $product = $this->initialDelayMs * ($this->multiplier ** max(0, $attempt - 1));
+        // P-18 (issue #172): a large attempt (or multiplier) overflows the
+        // product to INF, and (int) round(INF) === 0 — collapsing the backoff
+        // to 0ms and letting the caller hammer a failing transaction, the
+        // exact thundering herd this policy exists to prevent. (An int-cast
+        // of a huge-but-finite float goes negative for the same reason.)
+        // Saturate at the cap whenever the product exceeds it, before any cast.
+        $raw = $product > $this->maxDelayMs ? $this->maxDelayMs : (int) round($product);
         $delay = min($this->maxDelayMs, $raw);
         if ($this->jitterMs > 0) {
             $delay += random_int(0, $this->jitterMs);
