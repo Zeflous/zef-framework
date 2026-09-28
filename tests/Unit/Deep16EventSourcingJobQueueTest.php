@@ -452,7 +452,7 @@ final class InterleavingConnection implements ConnectionInterface
     {
         if (str_contains($query->sql, $this->needle)) {
             ++$this->matchingStatements;
-            if ($this->interleave !== null) {
+            if ($this->interleave instanceof \Closure) {
                 ($this->interleave)();
                 $this->interleave = null;
             }

@@ -34,36 +34,16 @@ final class SqlStateTest extends TestCase
     {
         // SQLite: a flat SQLSTATE 23000 for EVERY integrity error — only the
         // message text separates UNIQUE from NOT NULL/CHECK/FK.
-        self::assertTrue(SqlState::isUniqueViolation(self::queryError(
-            'UNIQUE constraint failed: zef_events.stream',
-            23000,
-            ['23000', 19, 'UNIQUE constraint failed: zef_events.stream'],
-        )));
+        self::assertTrue(SqlState::isUniqueViolation($this->queryError('UNIQUE constraint failed: zef_events.stream', 23000, ['23000', 19, 'UNIQUE constraint failed: zef_events.stream'])));
         // MySQL/MariaDB: SQLSTATE 23000 + driver code 1062 (ER_DUP_ENTRY).
-        self::assertTrue(SqlState::isUniqueViolation(self::queryError(
-            "Duplicate entry 'job-42' for key 'uq_zef_job_queue_seq'",
-            23000,
-            ['23000', 1062, "Duplicate entry 'job-42' for key 'uq_zef_job_queue_seq'"],
-        )));
+        self::assertTrue(SqlState::isUniqueViolation($this->queryError("Duplicate entry 'job-42' for key 'uq_zef_job_queue_seq'", 23000, ['23000', 1062, "Duplicate entry 'job-42' for key 'uq_zef_job_queue_seq'"])));
         // PostgreSQL: the SQL-standard unique_violation SQLSTATE 23505.
-        self::assertTrue(SqlState::isUniqueViolation(self::queryError(
-            'duplicate key value violates unique constraint "uq_zef_job_queue_seq"',
-            23505,
-            ['23505', 7, 'duplicate key value violates unique constraint "uq_zef_job_queue_seq"'],
-        )));
+        self::assertTrue(SqlState::isUniqueViolation($this->queryError('duplicate key value violates unique constraint "uq_zef_job_queue_seq"', 23505, ['23505', 7, 'duplicate key value violates unique constraint "uq_zef_job_queue_seq"'])));
         // Rewritten driver messages must still classify by code: PostgreSQL
         // reports the SQLSTATE in getCode(), MySQL the driver code in
         // errorInfo[1] (PdoConnection chains the PDOException with both).
-        self::assertTrue(SqlState::isUniqueViolation(self::queryError(
-            'driver message rewritten by the proxy middleware',
-            23505,
-            ['23505', 0, 'driver message rewritten by the proxy middleware'],
-        )));
-        self::assertTrue(SqlState::isUniqueViolation(self::queryError(
-            'driver message rewritten by the proxy middleware',
-            23000,
-            ['23000', 1062, 'driver message rewritten by the proxy middleware'],
-        )));
+        self::assertTrue(SqlState::isUniqueViolation($this->queryError('driver message rewritten by the proxy middleware', 23505, ['23505', 0, 'driver message rewritten by the proxy middleware'])));
+        self::assertTrue(SqlState::isUniqueViolation($this->queryError('driver message rewritten by the proxy middleware', 23000, ['23000', 1062, 'driver message rewritten by the proxy middleware'])));
     }
 
     /**
@@ -75,18 +55,10 @@ final class SqlStateTest extends TestCase
     {
         // SQLite folds NOT NULL (and CHECK/FK) violations into the same flat
         // 23000 as unique violations — the message text is the only witness.
-        self::assertFalse(SqlState::isUniqueViolation(self::queryError(
-            'NOT NULL constraint failed: zef_jobs.job_id',
-            23000,
-            ['23000', 19, 'NOT NULL constraint failed: zef_jobs.job_id'],
-        )));
+        self::assertFalse(SqlState::isUniqueViolation($this->queryError('NOT NULL constraint failed: zef_jobs.job_id', 23000, ['23000', 19, 'NOT NULL constraint failed: zef_jobs.job_id'])));
         // MySQL lock-wait timeout: SQLSTATE 40001 / driver 1205 — transient,
         // owned by UnitOfWorkRetryPolicy, never a concurrency backstop.
-        self::assertFalse(SqlState::isUniqueViolation(self::queryError(
-            'Lock wait timeout exceeded; try restarting transaction',
-            40001,
-            ['40001', 1205, 'Lock wait timeout exceeded; try restarting transaction'],
-        )));
+        self::assertFalse(SqlState::isUniqueViolation($this->queryError('Lock wait timeout exceeded; try restarting transaction', 40001, ['40001', 1205, 'Lock wait timeout exceeded; try restarting transaction'])));
         // No chained PDO driver error (e.g. a builder grammar violation).
         self::assertFalse(SqlState::isUniqueViolation(new QueryException('Invalid identifier.')));
     }
@@ -97,7 +69,7 @@ final class SqlStateTest extends TestCase
      *
      * @param list<int|string> $errorInfo
      */
-    private static function queryError(string $driverMessage, int $sqlState, array $errorInfo): QueryException
+    private function queryError(string $driverMessage, int $sqlState, array $errorInfo): QueryException
     {
         $driver = new \PDOException($driverMessage, $sqlState);
         $driver->errorInfo = $errorInfo;
