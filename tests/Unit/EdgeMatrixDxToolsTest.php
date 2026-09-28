@@ -87,7 +87,9 @@ final class EdgeMatrixDxToolsTest extends TestCase
         // `composer install` gagal pada scaffold baru.
         $options = $repo['options'] ?? null;
         self::assertIsArray($options, 'path repository wajib punya options');
-        $pinned = $options['versions']['mbetixz/zef-framework'] ?? null;
+        $versions = $options['versions'] ?? null;
+        self::assertIsArray($versions, 'options path-repo wajib punya peta versions');
+        $pinned = $versions['mbetixz/zef-framework'] ?? null;
         self::assertSame(ZefVersion::VERSION, $pinned, 'pin versions path-repo wajib = ZefVersion::VERSION (issue #210)');
 
         // Skeleton wajib PHP-valid — bukti "boots, serves and passes PHPStan".
