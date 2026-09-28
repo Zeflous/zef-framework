@@ -132,6 +132,7 @@ The workflow ships fully wired; only the SonarCloud account side is manual:
 | Scanner action | `SonarSource/sonarqube-scan-action` v8.2.2 | full commit SHA `ba9859eae8dd6bd29e412f25ddbbef3d032000f4` (repository policy: every action pinned to a full-length SHA) |
 | Scanner engine | downloaded by the action from the pinned action's logic | version is a property of the pinned action commit; upgrades are deliberate pull requests |
 | Analysis scope | `src/`, `tests/` | `sonar-project.properties`, reviewable in-tree |
+| Coverage-path exclusions | `modules/`, `plugins/` (demo code instrumented by the clover report but outside the analysis scope) | `sonar.exclusion` in `sonar-project.properties`, reviewable in-tree |
 | Quality gate | server-side "Sonar way" (new code) | SonarCloud project settings |
 
 There is no local engine to pin because the analysis runs server-side; the
@@ -198,6 +199,35 @@ fallback") and via `::notice::`. The properties file deliberately contains no
 coverage keys: the posture is chosen per run, in the workflow, where the
 artifact availability is actually known.
 
+**Out-of-scope paths in the clover report.** The clover report arrives with a
+wider instrumentation scope than this analysis: `phpunit.xml.dist`
+instruments `src/`, `modules/` and `plugins/` (the CI coverage gate asserts on
+all three), while this lane analyses `src/` and `tests/` only. Every bridged
+scan therefore contains coverage entries for the 14 `modules/` + `plugins/`
+demo files that resolve to no analysed file, which sonar-php logs as the WARN
+`Failed to resolve 14 file path(s) in PHPUnit coverage clover.xml report.
+Nothing is imported related to file(s): ...` (measured on the main scan of
+2026-09-28 00:46 UTC, run 36362712437). The mismatch is deliberate — the demo
+modules are not production code this gate judges — and
+`sonar.exclusion=**/modules/**,**/plugins/**` declares it: the PHP analyzer
+filters unresolved report paths through those patterns (sonar-php's
+`AbstractReportImporter`), so the expected warning is suppressed while
+nothing else changes — the patterns match nothing under `src/` or `tests/`.
+The warning remains a useful tripwire: if it ever re-appears, a path *outside*
+those two directories is emitting coverage data, and that deserves a conscious
+scope decision. Two notes for future readers:
+
+1. If the analysis scope is ever widened to include `modules/` or `plugins/`
+   (their coverage would then be imported too), remove the `sonar.exclusion`
+   line first — it would keep those files out of the analysis entirely.
+2. This is not a `sonar.projectBaseDir` problem, and hardcoding a runner path
+   here would not silence this warning: the scan action already passes
+   `-Dsonar.projectBaseDir=.`, the log shows `Base dir:
+   /home/runner/work/zef-framework/zef-framework` matching the clover paths,
+   and coverage for `src/` resolves fine (97%). A wrong base directory would
+   fail to resolve *every* file in the report — hundreds — not exactly the
+   out-of-scope ones.
+
 ## 7. Failure modes and their meaning
 
 | Symptom | Meaning |
@@ -208,5 +238,6 @@ artifact availability is actually known.
 | Red job, "project not found" / 401 | `sonar.projectKey` / `sonar.organization` / `SONAR_TOKEN` mismatch — section 3 |
 | Green job with the no-credentials notice | `SONAR_TOKEN` not set, or a pull request whose secrets GitHub withholds (`dependabot[bot]` author, fork head) — section 2 / section 3 step 6 |
 | Green job, step summary says "Coverage bridge (v2) — verdict: **fallback**" | no coverage artifact for this commit (CI red, no CI run in 45 min, or artifact unavailable) — coverage condition skipped for that run, everything else enforced; the CI lane is the authoritative coverage gate in that case |
+| WARN `Failed to resolve N file path(s) in PHPUnit coverage clover.xml report` | the clover report references files outside the analysis scope — paths under `modules/` or `plugins/` are declared out of scope via `sonar.exclusion` and stay quiet (section 6); paths anywhere **else** mean a new directory is emitting coverage data: decide consciously — add it to `sonar.sources` (and drop the matching `sonar.exclusion` pattern first) or exclude it from the PHPUnit instrumentation scope |
 | Red job, "quality gate failed", coverage condition | new code measured below the Sonar way floor on the bridged clover data — fix the code or review the gate in SonarCloud (a reviewed decision, not a workflow edit) |
 | Job runs ~20 minutes before the verdict | normal: the bridge waits for the CI lane of the same commit — see section 6 |
