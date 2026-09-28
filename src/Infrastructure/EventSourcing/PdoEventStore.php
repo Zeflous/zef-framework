@@ -12,7 +12,9 @@ namespace Zef\Framework\EventSourcing;
 
 use Zef\Framework\Database\ConnectionInterface;
 use Zef\Framework\Database\QueryBuilder;
+use Zef\Framework\Database\QueryException;
 use Zef\Framework\Database\SqlQuery;
+use Zef\Framework\Database\SqlState;
 
 /**
  * PDO-backed {@see EventStoreInterface} built on the Database Core port.
@@ -21,6 +23,13 @@ use Zef\Framework\Database\SqlQuery;
  * surrounding transaction and aborts with {@see ConcurrencyException}
  * before writing anything — the UNIQUE(aggregate_type, aggregate_id,
  * version) index in {@see createSchema()} is the database-level backstop.
+ * When the guard passes but a concurrent append still wins one of the
+ * store's unique constraints (a repeatable-read snapshot of the stream, a
+ * racing MAX(global_sequence) computation), the loser's driver error is
+ * mapped onto the same {@see ConcurrencyException} instead of a raw
+ * QueryException (Regresi P-3, issue #170) — catch-based retry logic
+ * never misses a real conflict, and the driver error stays chained as
+ * the exception's cause.
  *
  * Global sequence: `MAX(global_sequence) + 1` computed inside the same
  * transaction — portable across MySQL/SQLite/PostgreSQL without relying
@@ -165,16 +174,7 @@ final readonly class PdoEventStore implements EventStoreInterface
      */
     private function doAppend(string $aggregateType, string $aggregateId, int $expectedVersion, array $events): array
     {
-        $last = $this->connection->fetchOne(
-            QueryBuilder::table($this->table)
-                ->select('version')
-                ->where('aggregate_type', '=', $aggregateType)
-                ->where('aggregate_id', '=', $aggregateId)
-                ->orderBy('version', 'DESC')
-                ->limit(1)
-                ->build(),
-        );
-        $actual = isset($last['version']) ? RowCast::int($last['version']) : 0;
+        $actual = $this->currentVersion($aggregateType, $aggregateId);
         if ($actual !== $expectedVersion) {
             throw new ConcurrencyException($expectedVersion, $actual);
         }
@@ -201,22 +201,62 @@ final readonly class PdoEventStore implements EventStoreInterface
             );
         }
         foreach ($created as $event) {
-            $this->connection->execute(
-                QueryBuilder::table($this->table)->insert([
-                    'global_sequence' => $event->globalSequence,
-                    'event_id' => $event->eventId,
-                    'aggregate_type' => $event->aggregateType,
-                    'aggregate_id' => $event->aggregateId,
-                    'version' => $event->version,
-                    'event_type' => $event->eventType,
-                    'payload' => EventJson::encode($event->payload, 'Stored event payload'),
-                    'metadata' => EventJson::encode($event->metadata, 'Stored event metadata'),
-                    'recorded_at' => $event->recordedAtUnixNano,
-                ])->build(),
-            );
+            try {
+                $this->connection->execute(
+                    QueryBuilder::table($this->table)->insert([
+                        'global_sequence' => $event->globalSequence,
+                        'event_id' => $event->eventId,
+                        'aggregate_type' => $event->aggregateType,
+                        'aggregate_id' => $event->aggregateId,
+                        'version' => $event->version,
+                        'event_type' => $event->eventType,
+                        'payload' => EventJson::encode($event->payload, 'Stored event payload'),
+                        'metadata' => EventJson::encode($event->metadata, 'Stored event metadata'),
+                        'recorded_at' => $event->recordedAtUnixNano,
+                    ])->build(),
+                );
+            } catch (QueryException $error) {
+                // Regresi P-3 (issue #170): the version guard above can pass
+                // while a concurrent append has already committed the same
+                // stream version (repeatable-read snapshot) or grabbed the
+                // same global sequence — the unique index rejects the loser,
+                // who must surface the port's ConcurrencyException so
+                // catch-based retry logic sees the real conflict. The
+                // re-selected stream version fills the actual slot; the
+                // driver error stays chained as the cause.
+                if (!SqlState::isUniqueViolation($error)) {
+                    throw $error;
+                }
+
+                throw new ConcurrencyException(
+                    $expectedVersion,
+                    $this->currentVersion($aggregateType, $aggregateId),
+                    $error,
+                );
+            }
         }
 
         return $created;
+    }
+
+    /**
+     * Last committed version of the stream (0 when the stream is empty) —
+     * the optimistic-concurrency guard and the insert-time backstop's
+     * re-check read the same coordinate.
+     */
+    private function currentVersion(string $aggregateType, string $aggregateId): int
+    {
+        $last = $this->connection->fetchOne(
+            QueryBuilder::table($this->table)
+                ->select('version')
+                ->where('aggregate_type', '=', $aggregateType)
+                ->where('aggregate_id', '=', $aggregateId)
+                ->orderBy('version', 'DESC')
+                ->limit(1)
+                ->build(),
+        );
+
+        return isset($last['version']) ? RowCast::int($last['version']) : 0;
     }
 
     /**
