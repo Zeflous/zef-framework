@@ -21,6 +21,7 @@ namespace Zef\Framework\Console\Inspector;
 use Zef\Framework\Config\ConfigAggregator;
 use Zef\Framework\Console\ConsoleIO;
 use Zef\Framework\Foundation\Env;
+use Zef\Framework\Foundation\EnvInterface;
 use Zef\Framework\Observability\TelemetrySanitizer;
 
 final readonly class ConfigShower
@@ -41,10 +42,18 @@ final readonly class ConfigShower
         'signing-key', 'signing_key', 'client-key', 'client_key',
     ];
 
+    private EnvInterface $env;
+
     public function __construct(
         private ConfigAggregator $aggregator,
         private ConsoleIO $io,
-    ) {}
+        ?EnvInterface $env = null,
+    ) {
+        // Issue #55: production reads the environment through the injected
+        // port, never the static facade. The concrete default keeps the
+        // standalone CLI call sites (bin/zef) zero-config.
+        $this->env = $env ?? new Env();
+    }
 
     public function run(?string $key, bool $reveal = false): int
     {
@@ -144,6 +153,6 @@ final readonly class ConfigShower
 
     private function isProduction(): bool
     {
-        return strcasecmp(Env::string('ZEF_ENV'), 'production') === 0;
+        return strcasecmp($this->env->readString('ZEF_ENV'), 'production') === 0;
     }
 }
