@@ -97,6 +97,91 @@ foreach ($securityChecks as $label => $needle) {
     }
 }
 
+// 4. Quantitative stats ratchet (issue #215 — second recurrence of #87's
+//    drift class: the version half was pinned, the numbers were not, so the
+//    badges drifted 43% behind while the release line looked healthy).
+//
+//    a) CLASS COUNT — deterministic, no execution needed: the number of
+//       entries in the static classmap autoload/zef_autoload.php is the
+//       zero-composer source of truth for "Kelas PSR-4". The README badge
+//       and its alt text must carry exactly that number.
+//
+//    b) TEST COUNT — from build/junit.xml when present. CI's PHPUnit step
+//       writes the JUnit log in the same job before this ratchet runs, so
+//       on the protected branch the badge/table/comment can never drift
+//       from the suite again. Locally the file usually does not exist;
+//       the check then degrades to a notice instead of guessing from a
+//       stale or absent run. Assertion and skip counts are intentionally
+//       NOT asserted: they vary with the environment (a locally running
+//       Redis on 6379 changes them by a couple of counts), while the test
+//       count is stable everywhere.
+
+$autoload = (string) file_get_contents($root . '/autoload/zef_autoload.php');
+$classCount = (int) preg_match_all('/"[^"]+"\s*=>\s*__DIR__/', $autoload);
+if ($classCount < 1) {
+    $fail('Cannot count the static classmap entries.', [
+        'file' => 'autoload/zef_autoload.php',
+    ]);
+}
+
+if (1 !== preg_match('/Kelas%20PSR--4-(\d+)-/', $readme, $badgeClass)) {
+    $fail('README.md does not carry the Kelas PSR-4 badge in the expected shape.', [
+        'expected pattern' => 'Kelas%20PSR--4-<number>-',
+    ]);
+}
+if ((int) $badgeClass[1] !== $classCount) {
+    $fail('README.md class-count badge drifted from the static classmap.', [
+        'badge says' => $badgeClass[1],
+        'classmap entries' => $classCount,
+        'source of truth' => 'autoload/zef_autoload.php',
+    ]);
+}
+if (!str_contains($readme, 'alt="' . $classCount . ' kelas"')) {
+    $fail('README.md badge alt text does not match the classmap count.', [
+        'expected to contain' => 'alt="' . $classCount . ' kelas"',
+    ]);
+}
+
+$junitPath = $root . '/build/junit.xml';
+if (is_file($junitPath)) {
+    $junit = simplexml_load_file($junitPath);
+    $suite = $junit instanceof SimpleXMLElement ? ($junit->testsuite ?? null) : null;
+    $suiteTests = $suite instanceof SimpleXMLElement ? (int) $suite['tests'] : 0;
+    if ($suiteTests < 1) {
+        $fail('Cannot read the test count from build/junit.xml.', [
+            'file' => 'build/junit.xml',
+        ]);
+    }
+
+    if (1 !== preg_match('/Test%20PHPUnit-(\d+)-/', $readme, $badgeTests)) {
+        $fail('README.md does not carry the Test PHPUnit badge in the expected shape.', [
+            'expected pattern' => 'Test%20PHPUnit-<number>-',
+        ]);
+    }
+    if ((int) $badgeTests[1] !== $suiteTests) {
+        $fail('README.md test-count badge drifted from the executed suite.', [
+            'badge says' => $badgeTests[1],
+            'junit reports' => $suiteTests,
+            'source of truth' => 'build/junit.xml',
+        ]);
+    }
+
+    $readmeTestRefs = [
+        'badge alt text' => 'alt="' . $suiteTests . ' test"',
+        'gate table row' => '<code>' . $suiteTests . '</code> test',
+        'quickstart comment' => 'Tests: ' . $suiteTests . ',',
+    ];
+    foreach ($readmeTestRefs as $label => $needle) {
+        if (!str_contains($readme, $needle)) {
+            $fail("README.md test count ({$suiteTests}) is missing from the {$label}.", [
+                'expected to contain' => $needle,
+            ]);
+        }
+    }
+} else {
+    fwrite(STDERR, "RELEASE_DOCS_RATCHET_NOTE: build/junit.xml not found — test-count assertions skipped (run 'vendor/bin/phpunit --log-junit build/junit.xml' to enable).\n");
+}
+
 if ($asJson) {
     echo json_encode(['status' => 'OK', 'version' => $version, 'files' => ['README.md', 'SECURITY.md']]), PHP_EOL;
 } else {
