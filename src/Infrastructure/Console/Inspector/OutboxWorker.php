@@ -68,21 +68,7 @@ final readonly class OutboxWorker
         $once = (bool) ($options['once'] ?? false);
 
         $running = true;
-        if (function_exists('pcntl_async_signals')) {
-            pcntl_async_signals(true);
-            $io = $this->io;
-            $handleStop = static function (int $signal) use ($relay, $io, &$running): void {
-                $released = $relay->releaseLease();
-                $io->out("outbox:work signal {$signal} — released {$released} lease(s), exiting");
-                $running = false;
-            };
-            if (defined('SIGTERM')) {
-                pcntl_signal(SIGTERM, $handleStop);
-            }
-            if (defined('SIGINT')) {
-                pcntl_signal(SIGINT, $handleStop);
-            }
-        }
+        $this->installStopHandler($relay, $running);
 
         $processed = 0;
         $batches = 0;
@@ -111,6 +97,33 @@ final readonly class OutboxWorker
         $this->io->out("outbox:work — {$processed} processed in {$batches} batch(es)");
 
         return 0;
+    }
+
+    /**
+     * Installs the SIGTERM/SIGINT lease-release handlers (when the pcntl
+     * extension is loaded) so a stopped worker releases its leases and the
+     * loop (watching $running) drains cleanly.
+     *
+     * @param bool $running by-reference loop flag flipped to false on signal
+     */
+    private function installStopHandler(OutboxRelay $relay, bool &$running): void
+    {
+        if (!function_exists('pcntl_async_signals')) {
+            return;
+        }
+        pcntl_async_signals(true);
+        $io = $this->io;
+        $handleStop = static function (int $signal) use ($relay, $io, &$running): void {
+            $released = $relay->releaseLease();
+            $io->out("outbox:work signal {$signal} — released {$released} lease(s), exiting");
+            $running = false;
+        };
+        if (defined('SIGTERM')) {
+            pcntl_signal(SIGTERM, $handleStop);
+        }
+        if (defined('SIGINT')) {
+            pcntl_signal(SIGINT, $handleStop);
+        }
     }
 
     /**
