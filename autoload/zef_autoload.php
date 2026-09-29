@@ -305,6 +305,8 @@ if (!function_exists('zef_framework_autoload')) {
                 "Zef\\Framework\\Job\\Scheduler" => __DIR__ . '/../src/Application/Job/Scheduler.php',
                 "Zef\\Framework\\Kernel\\ApplicationConfigState" => __DIR__ . '/../src/Adapters/Kernel/ApplicationConfigState.php',
                 "Zef\\Framework\\Kernel\\FrameworkServiceRegistrar" => __DIR__ . '/../src/Adapters/Kernel/FrameworkServiceRegistrar.php',
+                "Zef\\Framework\\Kernel\\HttpRequestRunner" => __DIR__ . '/../src/Adapters/Kernel/HttpRequestRunner.php',
+                "Zef\\Framework\\Kernel\\KernelBootSequence" => __DIR__ . '/../src/Adapters/Kernel/KernelBootSequence.php',
                 "Zef\\Framework\\Kernel\\KernelGraphFactory" => __DIR__ . '/../src/Adapters/Kernel/KernelGraphFactory.php',
                 "Zef\\Framework\\Kernel\\ObservabilityServiceRegistrar" => __DIR__ . '/../src/Adapters/Kernel/ObservabilityServiceRegistrar.php',
                 "Zef\\Framework\\Message\\DeduplicatingMiddleware" => __DIR__ . '/../src/Application/Message/DeduplicatingMiddleware.php',
