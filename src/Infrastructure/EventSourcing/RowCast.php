@@ -20,16 +20,33 @@ namespace Zef\Framework\EventSourcing;
  */
 final class RowCast
 {
-    private function __construct() {}
+    private function __construct()
+    {
+        // Pure static narrowing utility: instantiation is forbidden by design.
+    }
 
     public static function int(mixed $value): int
     {
-        return is_int($value) ? $value : (is_numeric($value) ? (int) $value : 0);
+        if (is_int($value)) {
+            return $value;
+        }
+        if (is_numeric($value)) {
+            return (int) $value;
+        }
+
+        return 0;
     }
 
     public static function string(mixed $value): string
     {
-        return is_string($value) ? $value : (is_scalar($value) ? (string) $value : '');
+        if (is_string($value)) {
+            return $value;
+        }
+        if (is_scalar($value)) {
+            return (string) $value;
+        }
+
+        return '';
     }
 
     public static function nullableString(mixed $value): ?string

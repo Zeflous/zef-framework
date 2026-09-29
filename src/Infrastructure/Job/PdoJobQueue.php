@@ -67,7 +67,7 @@ final readonly class PdoJobQueue implements JobQueueInterface
         ?\Closure $clock = null,
         private ?int $maxSize = null,
     ) {
-        new QueryBuilder()->quoteIdentifier($table, 'table');
+        self::assertValidTableName($table);
         if ($maxSize !== null && $maxSize < 1) {
             throw new \InvalidArgumentException('Job queue capacity must be positive.');
         }
@@ -103,19 +103,7 @@ final readonly class PdoJobQueue implements JobQueueInterface
     public function createSchema(): void
     {
         $this->connection->execute(SqlQuery::raw(
-            'CREATE TABLE IF NOT EXISTS "' . $this->table . '" ('
-            . '"seq" BIGINT NOT NULL, '
-            . '"job_id" VARCHAR(128) NOT NULL, '
-            . '"job_type" VARCHAR(191) NOT NULL, '
-            . '"payload" TEXT NOT NULL, '
-            . '"available_at" BIGINT NOT NULL, '
-            . '"priority" INT NOT NULL, '
-            . '"attempt" INT NOT NULL, '
-            . '"correlation_id" VARCHAR(128) NULL, '
-            . '"trace_parent" VARCHAR(568) NULL, '
-            . '"headers" TEXT NOT NULL, '
-            . 'CONSTRAINT "uq_' . $this->table . '_job" UNIQUE ("job_id"), '
-            . 'CONSTRAINT "uq_' . $this->table . '_seq" UNIQUE ("seq"))',
+            'CREATE TABLE IF NOT EXISTS "' . $this->table . '" (' . $this->columnDefinition() . ')',
         ));
         $this->seq()->ensureUniqueIndex();
     }
@@ -129,8 +117,8 @@ final readonly class PdoJobQueue implements JobQueueInterface
         // past the envelope's own validation fails loudly here instead of
         // being silently truncated by a narrow column.
         Identifier::assertOpaqueId($job->jobId, 'job ID');
-        $payload = $this->encodePayload($job->payload);
-        $headers = $this->encodePayload($job->headers);
+        $payload = JobRowCodec::encodePayload($job->payload);
+        $headers = JobRowCodec::encodePayload($job->headers);
         if ($this->maxSize !== null && $this->size() >= $this->maxSize) {
             throw new \OverflowException('Job queue capacity exceeded.');
         }
@@ -165,7 +153,18 @@ final readonly class PdoJobQueue implements JobQueueInterface
             $claimed = $this->connection->transaction(function () use ($now): false|JobEnvelope|null {
                 $rows = $this->connection->fetchAll(
                     QueryBuilder::table($this->table)
-                        ->select('seq', 'job_id', 'job_type', 'payload', 'available_at', 'priority', 'attempt', 'correlation_id', 'trace_parent', 'headers')
+                        ->select(
+                            'seq',
+                            'job_id',
+                            'job_type',
+                            'payload',
+                            'available_at',
+                            'priority',
+                            'attempt',
+                            'correlation_id',
+                            'trace_parent',
+                            'headers',
+                        )
                         ->where('available_at', '<=', $now)
                         ->orderBy('priority', 'DESC')
                         ->orderBy('available_at', 'ASC')
@@ -184,7 +183,7 @@ final readonly class PdoJobQueue implements JobQueueInterface
                         ->build(),
                 );
 
-                return $deleted === 1 ? $this->hydrate($row) : null;
+                return $deleted === 1 ? JobRowCodec::hydrate($row) : null;
             });
             if ($claimed instanceof JobEnvelope) {
                 return $claimed;
@@ -211,6 +210,39 @@ final readonly class PdoJobQueue implements JobQueueInterface
     }
 
     /**
+     * Storage-boundary validation of the table name (same grammar the
+     * QueryBuilder enforces on identifiers): rejected here, at construction,
+     * instead of failing on the first INSERT with a cryptic SQL error.
+     */
+    private static function assertValidTableName(string $table): void
+    {
+        new QueryBuilder()->quoteIdentifier($table, 'table');
+    }
+
+    /**
+     * Portable column/constraint definition shared by every driver: the
+     * column widths follow the domain envelope contract documented on
+     * {@see createSchema()}.
+     */
+    private function columnDefinition(): string
+    {
+        return implode(', ', [
+            '"seq" BIGINT NOT NULL',
+            '"job_id" VARCHAR(128) NOT NULL',
+            '"job_type" VARCHAR(191) NOT NULL',
+            '"payload" TEXT NOT NULL',
+            '"available_at" BIGINT NOT NULL',
+            '"priority" INT NOT NULL',
+            '"attempt" INT NOT NULL',
+            '"correlation_id" VARCHAR(128) NULL',
+            '"trace_parent" VARCHAR(568) NULL',
+            '"headers" TEXT NOT NULL',
+            'CONSTRAINT "uq_' . $this->table . '_job" UNIQUE ("job_id")',
+            'CONSTRAINT "uq_' . $this->table . '_seq" UNIQUE ("seq")',
+        ]);
+    }
+
+    /**
      * The UNIQUE(seq) backstop collaborator: built lazily (not in the
      * constructor) so the queue's own construction stays side-effect
      * free; one tiny allocation per enqueue is noise against the INSERT
@@ -223,10 +255,17 @@ final readonly class PdoJobQueue implements JobQueueInterface
 
     private function doEnqueue(JobEnvelope $job, string $payload, string $headers): void
     {
+        $columns = implode(', ', [
+            '"seq"', '"job_id"', '"job_type"', '"payload"', '"available_at"',
+            '"priority"', '"attempt"', '"correlation_id"', '"trace_parent"', '"headers"',
+        ]);
         $insert = new SqlQuery(
-            'INSERT INTO "' . $this->table . '" ('
-            . '"seq", "job_id", "job_type", "payload", "available_at", "priority", "attempt", "correlation_id", "trace_parent", "headers"'
-            . ') SELECT COALESCE(MAX("seq"), 0) + 1, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM "' . $this->table . '"',
+            sprintf(
+                'INSERT INTO "%1$s" (%2$s) SELECT COALESCE(MAX("seq"), 0) + 1, %3$s FROM "%1$s"',
+                $this->table,
+                $columns,
+                '?, ?, ?, ?, ?, ?, ?, ?, ?',
+            ),
             [
                 $job->jobId,
                 $job->jobType,
@@ -246,70 +285,5 @@ final readonly class PdoJobQueue implements JobQueueInterface
         // non-collision failures, unchanged QueryException after the
         // attempt budget.
         $this->seq()->insertWithSeqRetry($insert);
-    }
-
-    /** @param array<string, mixed> $row */
-    private function hydrate(array $row): JobEnvelope
-    {
-        return new JobEnvelope(
-            $this->str($row['job_id'] ?? null),
-            $this->str($row['job_type'] ?? null),
-            $this->decodePayload($this->str($row['payload'] ?? null)),
-            $this->intVal($row['available_at'] ?? null),
-            $this->intVal($row['priority'] ?? null),
-            $this->intVal($row['attempt'] ?? null),
-            $row['correlation_id'] === null ? null : $this->str($row['correlation_id']),
-            $row['trace_parent'] === null ? null : $this->str($row['trace_parent']),
-            $this->decodeHeaders($this->str($row['headers'] ?? null)),
-        );
-    }
-
-    /** Row narrowing: PDO rows are array<string, mixed>; ids are strings. */
-    private function str(mixed $value): string
-    {
-        return is_string($value) ? $value : (is_scalar($value) ? (string) $value : '');
-    }
-
-    /** Row narrowing: numeric columns (int on SQLite, string on MySQL PDO). */
-    private function intVal(mixed $value): int
-    {
-        return is_int($value) ? $value : (is_numeric($value) ? (int) $value : 0);
-    }
-
-    private function encodePayload(mixed $payload): string
-    {
-        try {
-            return json_encode($payload, \JSON_THROW_ON_ERROR | \JSON_PRESERVE_ZERO_FRACTION);
-        } catch (\JsonException $error) {
-            throw new \InvalidArgumentException('Job payload must be JSON-serializable.', 0, $error);
-        }
-    }
-
-    private function decodePayload(string $payload): mixed
-    {
-        try {
-            return json_decode($payload, true, 512, \JSON_THROW_ON_ERROR);
-        } catch (\JsonException $error) {
-            throw JobExecutionException::corruptPayload($error);
-        }
-    }
-
-    /**
-     * Header round-trip narrowing: entries that lost their string type in
-     * storage cannot satisfy the envelope contract and are dropped.
-     *
-     * @return array<string, string>
-     */
-    private function decodeHeaders(string $payload): array
-    {
-        $decoded = $this->decodePayload($payload);
-        $headers = [];
-        foreach (is_array($decoded) ? $decoded : [] as $name => $value) {
-            if (is_string($name) && is_string($value)) {
-                $headers[$name] = $value;
-            }
-        }
-
-        return $headers;
     }
 }

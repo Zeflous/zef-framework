@@ -40,39 +40,22 @@ final class PrometheusRenderer
         $emittedTypes = [];
         $seriesCount = 0;
         foreach ($meter->snapshot() as $rawKey => $series) {
-            if (++$seriesCount > self::MAX_SERIES) {
+            ++$seriesCount;
+            if ($seriesCount > self::MAX_SERIES) {
                 break;
             }
-            // CounterMeter snapshot keys are composites: "<metric>|<json attrs>".
-            $rawKey = is_string($rawKey) ? $rawKey : '';
-            $pipe = strpos($rawKey, '|');
-            if ($pipe !== false) {
-                $metricName = $this->sanitizeName(substr($rawKey, 0, $pipe));
-                $decoded = json_decode(substr($rawKey, $pipe + 1), true);
-                $attributes = is_array($decoded) ? $decoded : [];
-            } else {
-                $metricName = $this->sanitizeName($rawKey);
-                $attributes = is_array($series['attributes'] ?? null) ? $series['attributes'] : [];
-            }
-            $labelBlock = $this->labelBlock($attributes, $staticLabels);
-
-            if (!isset($emittedTypes[$metricName])) {
-                $emittedTypes[$metricName] = true;
-                $lines[] = "# TYPE {$metricName} counter";
-            }
+            $identity = $this->seriesIdentity($rawKey, $series);
+            $labelBlock = $this->labelBlock($identity['attributes'], $staticLabels);
             $count = is_numeric($series['count'] ?? null) ? (float) $series['count'] : 0.0;
             $sum = is_numeric($series['sum'] ?? null) ? (float) $series['sum'] : 0.0;
-            $lines[] = sprintf('%s%s %s', $metricName, $labelBlock, $this->number($count));
-            if (abs($sum - $count) > PHP_FLOAT_EPSILON) {
-                // Observation series (count != sum): expose classic histogram members.
-                if (!isset($emittedTypes[$metricName . '_sum'])) {
-                    $emittedTypes[$metricName . '_sum'] = true;
-                    $lines[] = "# TYPE {$metricName}_sum counter";
-                    $lines[] = "# TYPE {$metricName}_count counter";
-                }
-                $lines[] = sprintf('%s_sum%s %s', $metricName, $labelBlock, $this->number($sum));
-                $lines[] = sprintf('%s_count%s %s', $metricName, $labelBlock, $this->number($count));
-            }
+            $this->appendSeriesLines(
+                $lines,
+                $emittedTypes,
+                $identity['metric'],
+                $labelBlock,
+                $count,
+                $sum,
+            );
         }
         if ($lines === []) {
             return '';
@@ -81,15 +64,75 @@ final class PrometheusRenderer
         return implode("\n", $lines) . "\n";
     }
 
+    /**
+     * CounterMeter snapshot keys are composites: "<metric>|<json attrs>";
+     * histogram-style series keep their attributes on the series itself.
+     *
+     * @param array{count?:float|int,sum?:float,attributes?:array<string,mixed>} $series
+     *
+     * @return array{metric:string,attributes:array<mixed,mixed>}
+     */
+    private function seriesIdentity(mixed $rawKey, array $series): array
+    {
+        $rawKey = is_string($rawKey) ? $rawKey : '';
+        $pipe = strpos($rawKey, '|');
+        if ($pipe !== false) {
+            $decoded = json_decode(substr($rawKey, $pipe + 1), true);
+
+            return [
+                'metric' => $this->sanitizeName(substr($rawKey, 0, $pipe)),
+                'attributes' => is_array($decoded) ? $decoded : [],
+            ];
+        }
+
+        return [
+            'metric' => $this->sanitizeName($rawKey),
+            'attributes' => is_array($series['attributes'] ?? null) ? $series['attributes'] : [],
+        ];
+    }
+
+    /**
+     * Appends one series (and its classic histogram members when the
+     * observations diverge: count != sum) to the output lines.
+     *
+     * @param list<string>        $lines        output buffer
+     * @param array<string, true> $emittedTypes TYPE header lines already emitted
+     */
+    private function appendSeriesLines(
+        array &$lines,
+        array &$emittedTypes,
+        string $metricName,
+        string $labelBlock,
+        float $count,
+        float $sum,
+    ): void {
+        if (!isset($emittedTypes[$metricName])) {
+            $emittedTypes[$metricName] = true;
+            $lines[] = "# TYPE {$metricName} counter";
+        }
+        $lines[] = sprintf('%s%s %s', $metricName, $labelBlock, $this->number($count));
+        if (abs($sum - $count) <= PHP_FLOAT_EPSILON) {
+            return;
+        }
+        // Observation series (count != sum): expose classic histogram members.
+        if (!isset($emittedTypes[$metricName . '_sum'])) {
+            $emittedTypes[$metricName . '_sum'] = true;
+            $lines[] = "# TYPE {$metricName}_sum counter";
+            $lines[] = "# TYPE {$metricName}_count counter";
+        }
+        $lines[] = sprintf('%s_sum%s %s', $metricName, $labelBlock, $this->number($sum));
+        $lines[] = sprintf('%s_count%s %s', $metricName, $labelBlock, $this->number($count));
+    }
+
     private function sanitizeName(string $name): string
     {
         $name = trim($name);
         if ($name === '') {
             return self::METRIC_NAME_DEFAULT;
         }
-        $clean = preg_replace('/[^a-zA-Z0-9_:]/', '_', $name);
+        $clean = preg_replace('/[^\w:]/', '_', $name);
         $clean = is_string($clean) ? $clean : self::METRIC_NAME_DEFAULT;
-        if (preg_match('/^[a-zA-Z_:]/', $clean) !== 1) {
+        if (preg_match('/^[[:alpha:]_:]/', $clean) !== 1) {
             return 'zef_' . $clean;
         }
 
@@ -131,9 +174,9 @@ final class PrometheusRenderer
 
     private function sanitizeLabelName(string $name): string
     {
-        $clean = preg_replace('/[^a-zA-Z0-9_]/', '_', $name);
+        $clean = preg_replace('/\W/', '_', $name);
         $clean = is_string($clean) ? $clean : self::LABEL_NAME_DEFAULT;
-        if ($clean === '' || preg_match('/^[a-zA-Z_]/', $clean) !== 1) {
+        if ($clean === '' || preg_match('/^[[:alpha:]_]/', $clean) !== 1) {
             return 'lbl_' . $clean;
         }
 
@@ -148,7 +191,11 @@ final class PrometheusRenderer
     private function number(float $value): string
     {
         if (!is_finite($value)) {
-            return $value > 0 ? '+Inf' : (is_nan($value) ? 'NaN' : '-Inf');
+            if (is_nan($value)) {
+                return 'NaN';
+            }
+
+            return $value > 0 ? '+Inf' : '-Inf';
         }
         $formatted = json_encode($value, JSON_PRESERVE_ZERO_FRACTION);
 

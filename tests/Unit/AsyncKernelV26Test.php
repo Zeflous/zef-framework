@@ -1037,7 +1037,7 @@ final class AsyncKernelV26Test extends TestCase
         self::assertNull($task->fiber());
         self::assertFalse($task->isObserved());
         self::assertFalse($task->isCancelRequested());
-        self::assertNull($task->armedHandle());
+        self::assertNull($task->suspension()->handle());
         self::assertTrue($task->isOwnedBy($this->scheduler));
         self::assertFalse($task->isOwnedBy(new FiberScheduler()));
 

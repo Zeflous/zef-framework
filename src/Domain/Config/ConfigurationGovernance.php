@@ -23,7 +23,7 @@ final class ConfigurationGovernance
         if ($this->snapshot instanceof ConfigurationSnapshot) {
             throw new \LogicException('Validators cannot change after publication.');
         }
-        if (preg_match('/^[A-Za-z_][A-Za-z0-9_.-]{0,127}$/', $name) !== 1) {
+        if (preg_match('/^[[:alpha:]_][\w.\-]{0,127}$/', $name) !== 1) {
             throw new \InvalidArgumentException('Invalid validator name.');
         }
         $this->validators[$name] = $validator;
@@ -40,7 +40,10 @@ final class ConfigurationGovernance
             }
         }
 
-        return $this->snapshot = new ConfigurationSnapshot($values, $version);
+        $snapshot = new ConfigurationSnapshot($values, $version);
+        $this->snapshot = $snapshot;
+
+        return $snapshot;
     }
 
     public function current(): ?ConfigurationSnapshot

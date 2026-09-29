@@ -6,7 +6,6 @@ declare(strict_types=1);
 
 namespace Zef\Framework\OpenApi;
 
-use Zef\Framework\Validation\FieldRules;
 use Zef\Framework\Validation\Validator;
 
 /**
@@ -17,6 +16,10 @@ use Zef\Framework\Validation\Validator;
  * Circular references (a DTO referencing itself transitively) resolve to
  * $ref placeholders under #/components/schemas/<name>, so recursive tree
  * structures document cleanly instead of recursing forever.
+ *
+ * Since the sonar-zero campaign the reflection/type mapping lives in
+ * TypeSchemaMapper, class/enum/attribute assembly in ClassSchemaBuilder,
+ * and the validator-derived constraints in FieldRulesSchemaMapper.
  */
 final class SchemaGenerator
 {
@@ -26,6 +29,12 @@ final class SchemaGenerator
     /** @var array<string, true> class-strings currently being expanded */
     private array $inProgress = [];
 
+    private ?TypeSchemaMapper $typeMapper = null;
+
+    private ?ClassSchemaBuilder $builder = null;
+
+    private ?FieldRulesSchemaMapper $fieldRulesMapper = null;
+
     /**
      * Generate the schema for a DTO class. Consults
      * SchemaDefinitionInterface first, then backed/unit enums, then
@@ -34,21 +43,27 @@ final class SchemaGenerator
     public function generateFromClass(string $className): Schema
     {
         if (!class_exists($className) && !enum_exists($className)) {
-            throw new SchemaDefinitionException("Schema generation target '{$className}' is not an existing class or enum.");
+            throw new SchemaDefinitionException(
+                "Schema generation target '{$className}' is not an existing class or enum.",
+            );
         }
+
         if (isset($this->cache[$className])) {
             return $this->cache[$className];
         }
+
         if (isset($this->inProgress[$className])) {
-            return new Schema(ref: $this->refFor($className));
+            return new Schema(ref: $this->schemaRef($className));
         }
+
         $this->inProgress[$className] = true;
 
         try {
-            $schema = $this->buildClassSchema($className);
+            $schema = $this->builder()->build($className);
         } finally {
             unset($this->inProgress[$className]);
         }
+
         $this->cache[$className] = $schema;
 
         return $schema;
@@ -62,32 +77,7 @@ final class SchemaGenerator
      */
     public function generateFromType(\ReflectionType $type): Schema
     {
-        if ($type instanceof \ReflectionNamedType) {
-            $schema = $this->mapNamedType($type);
-            if ($type->allowsNull()) {
-                return $schema->asNullable();
-            }
-
-            return $schema;
-        }
-        if ($type instanceof \ReflectionUnionType) {
-            return $this->mapUnionType($type);
-        }
-        if ($type instanceof \ReflectionIntersectionType) {
-            $schemas = [];
-            foreach ($type->getTypes() as $member) {
-                if ($member instanceof \ReflectionNamedType) {
-                    $schemas[] = $this->mapNamedType($member, allowClass: true);
-                }
-            }
-            if ($schemas === []) {
-                return new Schema(type: SchemaType::String);
-            }
-
-            return new Schema(allOf: $schemas);
-        }
-
-        return new Schema(type: SchemaType::String);
+        return $this->typeMapper()->map($type);
     }
 
     /**
@@ -97,21 +87,7 @@ final class SchemaGenerator
      */
     public function generateFromValidator(Validator $validator): Schema
     {
-        $properties = [];
-        $required = [];
-        foreach ($validator->fieldNames() as $fieldName) {
-            $schema = $this->schemaFromFieldRules($validator->field($fieldName));
-            $properties[$fieldName] = $schema;
-            if ($this->fieldIsRequired($validator->field($fieldName))) {
-                $required[] = $fieldName;
-            }
-        }
-
-        return new Schema(
-            type: SchemaType::Object,
-            required: $required,
-            properties: $properties,
-        );
+        return $this->fieldRulesMapper()->mapValidator($validator);
     }
 
     /**
@@ -124,9 +100,11 @@ final class SchemaGenerator
     public function registeredSchemas(): array
     {
         $out = [];
+
         foreach ($this->cache as $className => $schema) {
             $out[$this->schemaNameFor($className)] = $schema;
         }
+
         ksort($out, SORT_STRING);
 
         return $out;
@@ -136,375 +114,55 @@ final class SchemaGenerator
     public function schemaNameFor(string $className): string
     {
         if (class_exists($className) || enum_exists($className)) {
-            $reflection = new \ReflectionClass($className);
-            $attribute = $reflection->getAttributes(Attribute\Schema::class, \ReflectionAttribute::IS_INSTANCEOF)[0] ?? null;
-            $declared = $attribute !== null ? $attribute->newInstance()->name : null;
-            if (is_string($declared) && trim($declared) !== '') {
-                return $declared;
-            }
-            if (is_a($className, SchemaDefinitionInterface::class, true)) {
-                // @var string $declared
-                return $className::openApiSchemaName();
-            }
-
-            return $reflection->getShortName();
+            return $this->declaredSchemaName($className);
         }
 
         return $className;
     }
 
-    private function buildClassSchema(string $className): Schema
-    {
-        // @phpstan-ignore argument.type (guarded by class_exists || enum_exists upstream)
-        $reflection = new \ReflectionClass($className);
-
-        if (is_a($className, SchemaDefinitionInterface::class, true)) {
-            return $className::openApiSchema();
-        }
-
-        if ($reflection->isEnum()) {
-            return $this->buildEnumSchema($reflection);
-        }
-
-        $classAttribute = $reflection->getAttributes(Attribute\Schema::class, \ReflectionAttribute::IS_INSTANCEOF)[0] ?? null;
-        $classMeta = $classAttribute !== null ? $classAttribute->newInstance() : null;
-
-        $properties = [];
-        $required = [];
-        foreach ($reflection->getProperties(\ReflectionProperty::IS_PUBLIC) as $property) {
-            if ($property->isStatic()) {
-                continue;
-            }
-            $propertyAttribute = $property->getAttributes(Attribute\Property::class, \ReflectionAttribute::IS_INSTANCEOF)[0] ?? null;
-            $meta = $propertyAttribute !== null ? $propertyAttribute->newInstance() : null;
-            $type = $property->getType();
-
-            if ($meta !== null && $meta->ref !== null) {
-                $schema = $this->resolveRef($meta->ref);
-            } elseif ($type !== null) {
-                $schema = $this->generateFromType($type);
-            } elseif ($meta !== null) {
-                $schema = new Schema(type: $meta->type);
-            } else {
-                $schema = new Schema(type: SchemaType::String);
-            }
-
-            if ($meta !== null) {
-                $schema = $this->applyPropertyMeta($schema, $meta);
-            }
-
-            $allowsNull = $type !== null && $type->allowsNull();
-            $isRequired = ($meta !== null && $meta->required === true)
-                || (!$allowsNull && !$property->hasDefaultValue() && ($meta === null || !$meta->nullable));
-            if ($isRequired) {
-                $required[] = $property->getName();
-            }
-
-            $properties[$property->getName()] = $schema;
-        }
-
-        return new Schema(
-            type: SchemaType::Object,
-            description: $classMeta !== null ? $classMeta->description : '',
-            title: $classMeta !== null && $classMeta->name !== null ? $classMeta->name : $reflection->getShortName(),
-            deprecated: $classMeta !== null && $classMeta->deprecated ? true : null,
-            required: $required,
-            properties: $properties,
-        );
-    }
-
-    /** @param \ReflectionClass<object> $reflection */
-    private function buildEnumSchema(\ReflectionClass $reflection): Schema
-    {
-        $shortName = $reflection->getShortName();
-        $values = [];
-        $isIntBacked = false;
-        foreach ($reflection->getConstants() as $constant) {
-            if ($constant instanceof \BackedEnum) {
-                $values[] = $constant->value;
-                if (is_int($constant->value)) {
-                    $isIntBacked = true;
-                }
-            } elseif ($constant instanceof \UnitEnum) {
-                $values[] = $constant->name;
-            }
-        }
-
-        return new Schema(
-            type: $isIntBacked ? SchemaType::Integer : SchemaType::String,
-            title: $shortName,
-            enum: $values !== [] ? $values : null,
-        );
-    }
-
-    private function mapNamedType(\ReflectionNamedType $type, bool $allowClass = true): Schema
-    {
-        $name = $type->getName();
-        if (!$type->isBuiltin()) {
-            if (!$allowClass) {
-                return new Schema(type: SchemaType::String);
-            }
-
-            // class-typed properties reference the component schema; the
-            // class itself is generated (and cached) so registeredSchemas()
-            // can emit it under components/schemas.
-            $this->generateFromClass($name);
-
-            return new Schema(ref: $this->refFor($name));
-        }
-
-        return match ($name) {
-            'int' => new Schema(type: SchemaType::Integer),
-            'float' => new Schema(type: SchemaType::Number, format: 'float'),
-            'string' => new Schema(type: SchemaType::String),
-            'bool' => new Schema(type: SchemaType::Boolean),
-            'array' => new Schema(type: SchemaType::Array, items: new Schema(type: SchemaType::Object, additionalPropertiesAllowed: true)),
-            // mixed/object/callable/iterable and any exotic builtin carry no
-            // useful OpenAPI primitive; document them as opaque strings.
-            default => new Schema(type: SchemaType::String),
-        };
-    }
-
-    private function mapUnionType(\ReflectionUnionType $type): Schema
-    {
-        $members = $type->getTypes();
-        $nullable = false;
-        $schemas = [];
-        foreach ($members as $member) {
-            if (!$member instanceof \ReflectionNamedType) {
-                continue;
-            }
-            if ($member->getName() === 'null') {
-                $nullable = true;
-
-                continue;
-            }
-            $mapped = $this->mapNamedType($member);
-            $schemas[] = $mapped;
-        }
-
-        $schemas = $this->dedupeSchemas($schemas);
-        if ($schemas === []) {
-            return new Schema(type: SchemaType::String);
-        }
-        if (count($schemas) === 1) {
-            $base = $schemas[0];
-            if ($nullable) {
-                return new Schema(
-                    type: $base->ref === null ? $base->type : SchemaType::Object,
-                    format: $base->format,
-                    ref: $base->ref,
-                    nullable: true,
-                );
-            }
-
-            return $base;
-        }
-
-        return new Schema(nullable: $nullable ? true : null, oneOf: $schemas);
-    }
-
     /**
-     * @param list<Schema> $schemas
-     *
-     * @return list<Schema>
+     * @internal component $ref for a generated class schema; used by the
+     * mapping collaborators that resolve class references
      */
-    private function dedupeSchemas(array $schemas): array
-    {
-        $seen = [];
-        $out = [];
-        foreach ($schemas as $schema) {
-            $key = json_encode($schema->toArray(), JSON_THROW_ON_ERROR);
-            if (isset($seen[$key])) {
-                continue;
-            }
-            $seen[$key] = true;
-            $out[] = $schema;
-        }
-
-        return $out;
-    }
-
-    private function applyPropertyMeta(Schema $schema, Attribute\Property $meta): Schema
-    {
-        if ($schema->ref !== null) {
-            return $schema;
-        }
-
-        return new Schema(
-            type: $meta->type !== SchemaType::String ? $meta->type : $schema->type,
-            format: $meta->format ?? $schema->format,
-            description: $meta->description !== '' ? $meta->description : $schema->description,
-            nullable: $meta->nullable ? true : $schema->nullable,
-            readOnly: $meta->readOnly || $schema->readOnly,
-            writeOnly: $meta->writeOnly || $schema->writeOnly,
-            deprecated: $meta->deprecated ?? $schema->deprecated,
-            minLength: $meta->minLength ?? $schema->minLength,
-            maxLength: $meta->maxLength ?? $schema->maxLength,
-            pattern: $meta->pattern ?? $schema->pattern,
-            minimum: $meta->minimum ?? $schema->minimum,
-            maximum: $meta->maximum ?? $schema->maximum,
-            minItems: $meta->minItems ?? $schema->minItems,
-            maxItems: $meta->maxItems ?? $schema->maxItems,
-            uniqueItems: $meta->uniqueItems ?? $schema->uniqueItems,
-            items: $this->itemsFromMeta($meta) ?? $schema->items,
-            additionalProperties: $schema->additionalProperties,
-            additionalPropertiesAllowed: $schema->additionalPropertiesAllowed,
-            default: $meta->default ?? $schema->default,
-            example: $meta->example ?? $schema->example,
-            enum: $meta->enum ?? $schema->enum,
-        );
-    }
-
-    private function itemsFromMeta(Attribute\Property $meta): ?Schema
-    {
-        if ($meta->itemsRef !== null) {
-            return $this->resolveRef($meta->itemsRef);
-        }
-        if ($meta->itemsType instanceof SchemaType) {
-            return new Schema(type: $meta->itemsType);
-        }
-
-        return null;
-    }
-
-    /** "User" -> #/components/schemas/User; class-string -> generated ref. */
-    private function resolveRef(string $ref): Schema
-    {
-        if (class_exists($ref) || enum_exists($ref)) {
-            $this->generateFromClass($ref);
-
-            return new Schema(ref: $this->refFor($ref));
-        }
-
-        return new Schema(ref: '#/components/schemas/' . $ref);
-    }
-
-    private function refFor(string $className): string
+    public function schemaRef(string $className): string
     {
         return '#/components/schemas/' . $this->schemaNameFor($className);
     }
 
-    private function schemaFromFieldRules(FieldRules $rules): Schema
+    private function declaredSchemaName(string $className): string
     {
-        $definitions = $rules->definitions();
-        $kind = null;
-        $format = null;
-        $minLength = null;
-        $maxLength = null;
-        $minimum = null;
-        $maximum = null;
-        $pattern = null;
-        $enum = null;
-        $nullable = false;
-        foreach ($definitions as $definition) {
-            $nullable = $nullable || $definition['nullable'];
-            $params = $definition['params'];
+        // @phpstan-ignore argument.type (guarded by class_exists || enum_exists in schemaNameFor)
+        $reflection = new \ReflectionClass($className);
+        $attribute = $reflection->getAttributes(
+            Attribute\Schema::class,
+            \ReflectionAttribute::IS_INSTANCEOF,
+        )[0] ?? null;
+        $declared = $attribute !== null ? $attribute->newInstance()->name : null;
 
-            switch ($definition['rule']) {
-                case 'type':
-                    $kind = is_string($params['kind'] ?? null) ? $params['kind'] : $kind;
-
-                    break;
-
-                case 'min_length':
-                    $minLength = is_int($params['min'] ?? null) ? $params['min'] : $minLength;
-
-                    break;
-
-                case 'max_length':
-                    $maxLength = is_int($params['max'] ?? null) ? $params['max'] : $maxLength;
-
-                    break;
-
-                case 'min':
-                    $minimum = $this->asIntLike($params['bound'] ?? null) ?? $minimum;
-
-                    break;
-
-                case 'max':
-                    $maximum = $this->asIntLike($params['bound'] ?? null) ?? $maximum;
-
-                    break;
-
-                case 'email':
-                case 'uuid':
-                    $format = is_string($params['format'] ?? null) ? $params['format'] : $format;
-
-                    break;
-
-                case 'in':
-                    $allowed = $params['allowed'] ?? null;
-                    if (is_array($allowed)) {
-                        $filtered = array_filter($allowed, static fn (mixed $v): bool => is_string($v) || is_int($v));
-                        $enum = $filtered !== [] ? $filtered : null;
-                    }
-
-                    break;
-
-                case 'pattern':
-                    $pattern = is_string($params['regex'] ?? null) ? $this->stripPatternDelimiters($params['regex']) : $pattern;
-
-                    break;
-            }
+        if (is_string($declared) && trim($declared) !== '') {
+            return $declared;
         }
 
-        return new Schema(
-            type: match ($kind) {
-                'integer' => SchemaType::Integer,
-                'numeric' => SchemaType::Number,
-                default => SchemaType::String,
-            },
-            format: $format,
-            nullable: $nullable ? true : null,
-            minLength: $minLength,
-            maxLength: $maxLength,
-            pattern: $pattern,
-            minimum: $minimum,
-            maximum: $maximum,
-            enum: $enum !== null ? array_values($enum) : null,
-        );
+        if (is_a($className, SchemaDefinitionInterface::class, true)) {
+            // @var string $declared
+            return $className::openApiSchemaName();
+        }
+
+        return $reflection->getShortName();
     }
 
-    private function fieldIsRequired(FieldRules $rules): bool
+    private function typeMapper(): TypeSchemaMapper
     {
-        return array_any($rules->definitions(), fn (array $definition): bool => $definition['rule'] === 'required');
+        return $this->typeMapper ??= new TypeSchemaMapper($this);
     }
 
-    private function asIntLike(mixed $value): ?int
+    private function builder(): ClassSchemaBuilder
     {
-        if (is_int($value)) {
-            return $value;
-        }
-        if (is_float($value) && floor($value) === $value) {
-            return (int) $value;
-        }
-
-        return null;
+        return $this->builder ??= new ClassSchemaBuilder($this);
     }
 
-    /**
-     * OpenAPI patterns are undelimited ECMA regexes while the validation
-     * engine stores delimited PHP regexes ("/^...$/i"). Strip the outer
-     * delimiter and trailing flags with a conservative heuristic; input
-     * that cannot be parsed is emitted verbatim.
-     */
-    private function stripPatternDelimiters(string $regex): string
+    private function fieldRulesMapper(): FieldRulesSchemaMapper
     {
-        if (strlen($regex) < 3) {
-            return $regex;
-        }
-        $delimiter = $regex[0];
-        if (preg_match('/^[A-Za-z0-9\\\]$/', $delimiter) === 1) {
-            return $regex;
-        }
-        $last = strrpos($regex, $delimiter);
-        // $last === 0 means no pattern body; $last === false means no
-        // closing delimiter at all. Both fall through verbatim.
-        if ($last === false || $last === 0) {
-            return $regex;
-        }
-
-        return substr($regex, 1, $last - 1);
+        return $this->fieldRulesMapper ??= new FieldRulesSchemaMapper();
     }
 }
