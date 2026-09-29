@@ -23,7 +23,18 @@ use Zef\Framework\Validation\RouteConstraintValidator;
  * RouteMatcher + RouteRadixIndex (matching); this class is the stable
  * public facade with the unchanged v2.7.0 surface.
  *
- * @phpstan-import-type RouteRecord from RouteCollection
+ * @phpstan-type RouteRecord array{
+ *     method: string, pattern: string, handler: string, module: ?string, priority: int, sequence: int,
+ *     segments: list<array{dynamic:true,name:string,constraint?:string|null}|array{dynamic:false,value:string}>,
+ *     signature: string, staticCount: int, constrainedCount: int,
+ *     name: ?string, middleware: list<string>,
+ * }
+ *
+ * NOTE: this alias is declared LOCALLY (a verbatim copy of the RouteCollection
+ * declaration) instead of `@phpstan-import-type` — deptrac's docblock analyser
+ * resolves cross-file alias imports as pseudo class-refs that surface as
+ * "uncovered" (see the pre-campaign SpecArray precedent: declare-and-use
+ * locally). Keep the copy in sync with RouteCollection's declaration.
  */
 final class Router
 {
@@ -257,6 +268,11 @@ final class Router
         /** @var array<string,mixed> $payload */
         $payload = $data;
         $router->collection->hydrateFromCompiled($payload);
+        // The fallback handler is Router-level state (not part of the
+        // collection export): restore it explicitly — an empty string
+        // sanitizes to null, matching the historical compiled-cache contract.
+        $fallback = $data['fallback'] ?? null;
+        $router->fallbackHandler = (\is_string($fallback) && $fallback !== '') ? $fallback : null;
         foreach (($data['constraints'] ?? []) as $name => $regex) {
             if (is_string($name) && is_string($regex)) {
                 $router->constraints->addCustom($name, $regex);

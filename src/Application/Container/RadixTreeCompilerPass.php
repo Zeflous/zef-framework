@@ -94,9 +94,9 @@ final readonly class RadixTreeCompilerPass
         }
         if ($targetScope['scope'] === NamespaceRadixTree::SCOPE_INTERNAL) {
             throw new ModuleDependencyViolationException(
-                'Namespace scope violation: service ' . $consumerId
-                . ' references internal service ' . $dep
-                . ' from outside the guarded namespace ' . $scopePrefix . '.'
+                "Namespace scope violation: service '" . $consumerId
+                . "' references internal service '" . $dep
+                . "' from outside the guarded namespace '" . $scopePrefix . "'."
             );
         }
         $this->enforceModuleBudget($consumerId, $dep, $scopePrefix, $tree, $ledger);
@@ -119,9 +119,9 @@ final readonly class RadixTreeCompilerPass
         $budget = $this->policy->maxCrossScopeRefs;
         if ($budget <= 0) {
             throw new ModuleDependencyViolationException(
-                'Namespace scope violation: service ' . $consumerId
-                . ' references module-scoped service ' . $dep
-                . ' while maxCrossScopeRefs is 0.'
+                "Namespace scope violation: service '" . $consumerId
+                . "' references module-scoped service '" . $dep
+                . "' while maxCrossScopeRefs is 0."
             );
         }
         $consumerScope = $tree->scopeOf($consumerId);
@@ -139,8 +139,8 @@ final readonly class RadixTreeCompilerPass
         }
         if ($ledger->exceedsWith($pair, $budget)) {
             throw new ModuleDependencyViolationException(
-                'Namespace scope violation: cross-scope references into ' . $pair
-                . ' exceed the limit (' . $budget . ').'
+                "Namespace scope violation: cross-scope references into '" . $pair
+                . "' exceed the limit (" . $budget . ').'
             );
         }
     }

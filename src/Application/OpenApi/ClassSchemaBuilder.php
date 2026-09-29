@@ -18,10 +18,10 @@ use Zef\Framework\OpenApi\Attribute\Property;
  * generator so recursive DTO graphs collapse into #/components/schemas
  * references instead of recursing forever.
  */
-final class ClassSchemaBuilder
+final readonly class ClassSchemaBuilder
 {
     public function __construct(
-        private readonly SchemaGenerator $generator,
+        private SchemaGenerator $generator,
     ) {}
 
     /**

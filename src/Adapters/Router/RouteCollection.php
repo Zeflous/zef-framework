@@ -17,8 +17,11 @@ use Zef\Framework\Exception\InvalidConfigurationException;
  * signature collisions, name bindings), lazy priority sorting, compiled
  * cache export/hydration and reverse-routing lookups.
  *
- * @phpstan-import-type Segment from RoutePatternParser
+ * @phpstan-type Segment array{dynamic:true,name:string,constraint?:string|null}|array{dynamic:false,value:string}
  *
+ * NOTE: local verbatim copy of the RoutePatternParser declaration (no
+ * cross-file import — see the RouteRecord note above for the deptrac
+ * rationale). Keep in sync with RoutePatternParser.
  * @phpstan-type RouteRecord array{
  *     method: string, pattern: string, handler: string, module: ?string, priority: int, sequence: int,
  *     segments: list<Segment>, signature: string, staticCount: int, constrainedCount: int,

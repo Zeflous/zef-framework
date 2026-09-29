@@ -20,14 +20,25 @@ use Zef\Framework\Validation\RouteConstraintValidator;
  * the constraint-aware fast path, then the structural slow path that
  * preserves 405/400 semantics before falling back to 404.
  *
- * @phpstan-import-type RouteRecord from RouteCollection
+ * @phpstan-type RouteRecord array{
+ *     method: string, pattern: string, handler: string, module: ?string, priority: int, sequence: int,
+ *     segments: list<array{dynamic:true,name:string,constraint?:string|null}|array{dynamic:false,value:string}>,
+ *     signature: string, staticCount: int, constrainedCount: int,
+ *     name: ?string, middleware: list<string>,
+ * }
+ *
+ * NOTE: this alias is declared LOCALLY (a verbatim copy of the RouteCollection
+ * declaration) instead of `@phpstan-import-type` — deptrac's docblock analyser
+ * resolves cross-file alias imports as pseudo class-refs that surface as
+ * "uncovered" (see the pre-campaign SpecArray precedent: declare-and-use
+ * locally). Keep the copy in sync with RouteCollection's declaration.
  */
-final class RouteMatcher
+final readonly class RouteMatcher
 {
     public function __construct(
-        private readonly RouteCollection $collection,
-        private readonly RouteConstraintValidator $constraints,
-        private readonly RouteRadixIndex $radix,
+        private RouteCollection $collection,
+        private RouteConstraintValidator $constraints,
+        private RouteRadixIndex $radix,
     ) {}
 
     /**

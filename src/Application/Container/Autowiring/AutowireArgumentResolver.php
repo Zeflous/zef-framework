@@ -19,12 +19,12 @@ use Zef\Framework\Autowiring\AutowireParameterSpec;
 use Zef\Framework\Container\Container;
 use Zef\Framework\Exception\InvalidConfigurationException;
 
-final class AutowireArgumentResolver
+final readonly class AutowireArgumentResolver
 {
     public function __construct(
-        private readonly AutowireCompilerPass $pass,
-        private readonly AutowireValueServices $valueServices,
-        private readonly AutowireCompilationState $state,
+        private AutowireCompilerPass $pass,
+        private AutowireValueServices $valueServices,
+        private AutowireCompilationState $state,
     ) {}
 
     /** Per-run accumulator the pass records generated/reused services into. */

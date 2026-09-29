@@ -21,12 +21,12 @@ use Zef\Framework\Exception\ServiceResolutionException;
  * canonical id) stays on the caller's ResolutionContext so circular
  * dependency detection keeps working across nested resolutions.
  */
-final class ServiceInstantiator
+final readonly class ServiceInstantiator
 {
     public function __construct(
-        private readonly ServiceRegistry $registry,
-        private readonly RequestScopeStore $scopes,
-        private readonly InitializationGuard $initializationGuard,
+        private ServiceRegistry $registry,
+        private RequestScopeStore $scopes,
+        private InitializationGuard $initializationGuard,
     ) {}
 
     /**

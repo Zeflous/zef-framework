@@ -15,10 +15,10 @@ namespace Zef\Framework\OpenApi;
  * as items. Class-typed members are routed back through the owning
  * generator so referenced DTOs land in components/schemas.
  */
-final class TypeSchemaMapper
+final readonly class TypeSchemaMapper
 {
     public function __construct(
-        private readonly SchemaGenerator $generator,
+        private SchemaGenerator $generator,
     ) {}
 
     public function map(\ReflectionType $type): Schema

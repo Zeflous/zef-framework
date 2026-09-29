@@ -21,16 +21,16 @@ use Zef\Framework\Container\ServiceDefinition;
 use Zef\Framework\Container\ServiceLifetime;
 use Zef\Framework\Exception\InvalidConfigurationException;
 
-final class AutowireValueServices
+final readonly class AutowireValueServices
 {
     /**
      * @param array<string,mixed> $configValues source for #[Value('key')] lookups
      * @param null|string         $module       module attributed to generated definitions
      */
     public function __construct(
-        private readonly AutowireCompilationState $state,
-        private readonly array $configValues,
-        private readonly ?string $module,
+        private AutowireCompilationState $state,
+        private array $configValues,
+        private ?string $module,
     ) {}
 
     /**

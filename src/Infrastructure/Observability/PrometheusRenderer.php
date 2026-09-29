@@ -111,17 +111,20 @@ final class PrometheusRenderer
             $lines[] = "# TYPE {$metricName} counter";
         }
         $lines[] = sprintf('%s%s %s', $metricName, $labelBlock, $this->number($count));
-        if (abs($sum - $count) <= PHP_FLOAT_EPSILON) {
-            return;
-        }
         // Observation series (count != sum): expose classic histogram members.
-        if (!isset($emittedTypes[$metricName . '_sum'])) {
-            $emittedTypes[$metricName . '_sum'] = true;
-            $lines[] = "# TYPE {$metricName}_sum counter";
-            $lines[] = "# TYPE {$metricName}_count counter";
+        // The comparison deliberately stays in POSITIVE form: with $sum = NAN
+        // every float comparison is false, so a NaN series renders count-only
+        // (the historical NaN contract). An inverted `if (<= eps) return;`
+        // guard is NOT equivalent — it would flip NaN to emit _sum = NaN.
+        if (abs($sum - $count) > PHP_FLOAT_EPSILON) {
+            if (!isset($emittedTypes[$metricName . '_sum'])) {
+                $emittedTypes[$metricName . '_sum'] = true;
+                $lines[] = "# TYPE {$metricName}_sum counter";
+                $lines[] = "# TYPE {$metricName}_count counter";
+            }
+            $lines[] = sprintf('%s_sum%s %s', $metricName, $labelBlock, $this->number($sum));
+            $lines[] = sprintf('%s_count%s %s', $metricName, $labelBlock, $this->number($count));
         }
-        $lines[] = sprintf('%s_sum%s %s', $metricName, $labelBlock, $this->number($sum));
-        $lines[] = sprintf('%s_count%s %s', $metricName, $labelBlock, $this->number($count));
     }
 
     private function sanitizeName(string $name): string

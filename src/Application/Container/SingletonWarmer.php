@@ -11,9 +11,9 @@ declare(strict_types=1);
 
 namespace Zef\Framework\Container;
 
-final class SingletonWarmer
+final readonly class SingletonWarmer
 {
-    public function __construct(private readonly Container $container) {}
+    public function __construct(private Container $container) {}
 
     public function warm(ServiceRegistry $registry): void
     {

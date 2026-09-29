@@ -35,13 +35,13 @@ use Zef\Framework\Observability\Telemetry;
  * {@see runFromGlobals()} so the historical execution order (globals are
  * read before any boot decision) is preserved exactly.
  */
-final class HttpRequestRunner
+final readonly class HttpRequestRunner
 {
     public function __construct(
-        private readonly Container $container,
-        private readonly ?MiddlewarePipeline $pipeline,
-        private readonly RequestBodyPolicy $bodyPolicy,
-        private readonly bool $debug = false,
+        private Container $container,
+        private ?MiddlewarePipeline $pipeline,
+        private RequestBodyPolicy $bodyPolicy,
+        private bool $debug = false,
     ) {}
 
     /**
@@ -197,24 +197,35 @@ final class HttpRequestRunner
 
     /**
      * HEAD view of a response: same object semantics as the historical
-     * withBody()+withoutHeader() pair, but keeps the static analyser's view
-     * pinned to ResponseInterface (the PSR-7 interface signatures declare
-     * the with*() fluent returns as MessageInterface; every concrete
-     * implementation — including this framework's — returns `static`).
+     * withBody()+withoutHeader() pair. The explicit instanceof hops keep the
+     * static analyser's view pinned to ResponseInterface (the PSR-7 interface
+     * signatures declare the with*() fluent returns as MessageInterface;
+     * every concrete implementation — including this framework's — returns
+     * `static`). Same narrowing pattern as RuntimeResponder::withoutContentLength().
      */
     private function headView(ResponseInterface $response): ResponseInterface
     {
-        /** @var ResponseInterface $bodyless */
         $bodyless = $response->withBody(Stream::fromString(''));
+        if (!$bodyless instanceof ResponseInterface) {
+            throw new \LogicException('withBody must preserve the response type.');
+        }
 
-        /** @var ResponseInterface $headerless */
-        return $bodyless->withoutHeader('Content-Length');
+        $headerless = $bodyless->withoutHeader('Content-Length');
+        if (!$headerless instanceof ResponseInterface) {
+            throw new \LogicException('withoutHeader must preserve the response type.');
+        }
+
+        return $headerless;
     }
 
     /** Same rationale as {@see headView()}: one withHeader() hop. */
     private function withTraceparent(ResponseInterface $response, string $traceparent): ResponseInterface
     {
-        /** @var ResponseInterface $decorated */
-        return $response->withHeader('traceparent', $traceparent);
+        $decorated = $response->withHeader('traceparent', $traceparent);
+        if (!$decorated instanceof ResponseInterface) {
+            throw new \LogicException('withHeader must preserve the response type.');
+        }
+
+        return $decorated;
     }
 }
