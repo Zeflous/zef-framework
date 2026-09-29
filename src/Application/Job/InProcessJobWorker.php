@@ -59,7 +59,8 @@ final class InProcessJobWorker
             throw new \LogicException("Job handler already registered for '{$jobType}'.");
         }
         if ($handler instanceof JobInterface) {
-            $this->handlers[$jobType] = static fn (JobEnvelope $_job, JobContext $context): mixed => $handler->handle($context);
+            $this->handlers[$jobType]
+                = static fn (JobEnvelope $_job, JobContext $context): mixed => $handler->handle($context);
         } elseif ($handler instanceof JobHandlerInterface) {
             $this->handlers[$jobType] = $handler(...);
         } else {
@@ -165,45 +166,15 @@ final class InProcessJobWorker
             // exception escape would lose the job AND abort the whole run
             // loop. An unknown job type is a permanent failure: route it
             // to the DLQ and report a failed result instead.
-            $deadLettered = false;
-            if ($this->deadLetterQueue instanceof JobQueueInterface) {
-                // DLQ enqueue is best-effort: a full/broken DLQ must not
-                // abort the worker loop or escape from execute(). The
-                // flag only reports TRUE when the job was really stored,
-                // otherwise observability would lie about a lost job.
-                try {
-                    $this->deadLetterQueue->enqueue($job);
-                    $deadLettered = true;
-                } catch (\Throwable) {
-                }
-            }
-
             return new JobResult(
                 $job->jobId,
                 false,
                 new JobExecutionException("No handler registered for '{$job->jobType}'."),
                 $job->attempt,
-                $deadLettered,
+                $this->deadLetter($job),
             );
         }
-        $context = new JobContext($job->jobId, $job->attempt, $job->correlationId, $job->traceParent, $job->headers);
-        if ($this->jobTimeoutMs !== null) {
-            // N-17 (issue #176): without a deadline the JobTimeoutException
-            // branch of JobContext::throwIfCancelled() was unreachable from
-            // the built-in worker — the context it hands to handlers never
-            // carried one. null keeps the legacy no-timeout behaviour.
-            $context = $context->withDeadlineMs($this->jobTimeoutMs);
-        }
-        $run = function () use ($handler, $job, $context): mixed {
-            $next = \Closure::fromCallable($handler);
-            for ($i = count($this->middleware) - 1; $i >= 0; --$i) {
-                $middleware = $this->middleware[$i];
-                $next = static fn (JobEnvelope $message, JobContext $ctx): mixed => $middleware->process($message, $ctx, $next);
-            }
-            $context->throwIfCancelled();
-
-            return $next($job, $context);
-        };
+        $run = $this->buildRunner($handler, $job, $this->contextFor($job));
 
         try {
             $result = $this->idempotency instanceof JobIdempotencyStoreInterface
@@ -215,40 +186,78 @@ final class InProcessJobWorker
 
             return new JobResult($job->jobId, true, $result, $job->attempt);
         } catch (\Throwable $e) {
-            if (!$this->retryPolicy->shouldRetry($job->attempt)) {
-                $deadLettered = false;
-                if ($this->deadLetterQueue instanceof JobQueueInterface) {
-                    try {
-                        $this->deadLetterQueue->enqueue($job);
-                        $deadLettered = true;
-                    } catch (\Throwable) {
-                    }
-                }
-
-                return new JobResult($job->jobId, false, $e, $job->attempt, $deadLettered);
-            }
-
-            try {
-                $this->queue->enqueue($job->nextAttempt($this->retryPolicy->delayMs($job->attempt)));
-            } catch (\Throwable) {
-                // Retry enqueue failed (queue full): the destructively
-                // dequeued job would VANISH and the exception would abort
-                // the whole run(). Dead-letter if possible and report a
-                // terminal failure so execute() always yields a JobResult.
-                $deadLettered = false;
-                if ($this->deadLetterQueue instanceof JobQueueInterface) {
-                    try {
-                        $this->deadLetterQueue->enqueue($job);
-                        $deadLettered = true;
-                    } catch (\Throwable) {
-                    }
-                }
-
-                return new JobResult($job->jobId, false, $e, $job->attempt, $deadLettered);
-            }
-
-            return new JobResult($job->jobId, false, $e, $job->attempt, false, true);
+            return $this->resultForFailure($job, $e);
         }
+    }
+
+    /**
+     * Context handed to handlers, carrying the optional deadline
+     * (N-17, issue #176): null keeps the legacy no-timeout behaviour.
+     */
+    private function contextFor(JobEnvelope $job): JobContext
+    {
+        $context = new JobContext($job->jobId, $job->attempt, $job->correlationId, $job->traceParent, $job->headers);
+        if ($this->jobTimeoutMs !== null) {
+            return $context->withDeadlineMs($this->jobTimeoutMs);
+        }
+
+        return $context;
+    }
+
+    private function buildRunner(callable $handler, JobEnvelope $job, JobContext $context): \Closure
+    {
+        return function () use ($handler, $job, $context): mixed {
+            $next = \Closure::fromCallable($handler);
+            for ($i = count($this->middleware) - 1; $i >= 0; --$i) {
+                $layer = $this->middleware[$i];
+                $next = static fn (JobEnvelope $msg, JobContext $ctx): mixed => $layer->process($msg, $ctx, $next);
+            }
+            $context->throwIfCancelled();
+
+            return $next($job, $context);
+        };
+    }
+
+    private function resultForFailure(JobEnvelope $job, \Throwable $e): JobResult
+    {
+        if (!$this->retryPolicy->shouldRetry($job->attempt)) {
+            return new JobResult($job->jobId, false, $e, $job->attempt, $this->deadLetter($job));
+        }
+
+        try {
+            $this->queue->enqueue($job->nextAttempt($this->retryPolicy->delayMs($job->attempt)));
+        } catch (\Throwable) {
+            // Retry enqueue failed (queue full): the destructively
+            // dequeued job would VANISH and the exception would abort
+            // the whole run(). Dead-letter if possible and report a
+            // terminal failure so execute() always yields a JobResult.
+            return new JobResult($job->jobId, false, $e, $job->attempt, $this->deadLetter($job));
+        }
+
+        return new JobResult($job->jobId, false, $e, $job->attempt, false, true);
+    }
+
+    /**
+     * Best-effort dead-lettering of a destructively dequeued envelope.
+     * DLQ enqueue must never abort the worker loop: a full/broken DLQ
+     * only flips the reported flag to FALSE, otherwise observability
+     * would lie about a job that was actually stored.
+     */
+    private function deadLetter(JobEnvelope $job): bool
+    {
+        if (!$this->deadLetterQueue instanceof JobQueueInterface) {
+            return false;
+        }
+
+        try {
+            $this->deadLetterQueue->enqueue($job);
+        } catch (\Throwable) {
+            // Best-effort by contract: a full or broken DLQ is reported as
+            // "not stored" instead of escaping the worker loop.
+            return false;
+        }
+
+        return true;
     }
 
     private function assertMutable(): void

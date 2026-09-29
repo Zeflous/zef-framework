@@ -73,7 +73,13 @@ final readonly class ModuleGenerator implements GeneratorInterface
                                 ],
                             ],
                             'routes' => [
-                                ['method' => 'GET', 'path' => '/{$module}', 'handler' => '{$module}.handler.home', 'priority' => 100, 'name' => '{$module}.home'],
+                                [
+                                    'method' => 'GET',
+                                    'path' => '/{$module}',
+                                    'handler' => '{$module}.handler.home',
+                                    'priority' => 100,
+                                    'name' => '{$module}.home',
+                                ],
                             ],
                         ];
                     }

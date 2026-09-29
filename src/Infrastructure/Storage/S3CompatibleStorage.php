@@ -38,7 +38,7 @@ final readonly class S3CompatibleStorage implements ObjectStorageInterface
         if (preg_match(self::BUCKET_PATTERN, $bucket) !== 1) {
             throw new \InvalidArgumentException('Bucket name must be a valid S3 bucket (3..63 lowercase chars).');
         }
-        if ($region === '' || strlen($region) > 64 || preg_match('/\s/', $region) === 1) {
+        if ($region === '' || strlen($region) > 64 || preg_match('/\s/u', $region) === 1) {
             throw new \InvalidArgumentException('Region must be 1..64 characters without whitespace.');
         }
         if ($accessKeyId === '' || strlen($accessKeyId) > 256) {
@@ -213,12 +213,31 @@ final readonly class S3CompatibleStorage implements ObjectStorageInterface
         if ($response->status >= 200 && $response->status < 300) {
             return;
         }
-        $snippet = trim((string) preg_replace('/\s+/', ' ', substr($response->body, 0, 256)));
+        $collapsed = preg_replace('/\s+/u', ' ', substr($response->body, 0, 256));
+        $snippet = trim($collapsed ?? '');
 
         throw new StorageException(
             $operation . ' failed with HTTP status ' . $response->status
             . ($snippet === '' ? '.' : ': ' . $snippet),
         );
+    }
+
+    /**
+     * Parses the listing XML with libxml diagnostics routed into libxml's
+     * own error buffer instead of the engine warning channel (php:S2002 —
+     * no '@' suppression); the previous internal-errors state is restored.
+     */
+    private function parseListingXml(string $body): false|\SimpleXMLElement
+    {
+        $previous = libxml_use_internal_errors(true);
+
+        try {
+            $xml = simplexml_load_string($body);
+        } finally {
+            libxml_use_internal_errors($previous);
+        }
+
+        return $xml;
     }
 
     /**
@@ -234,7 +253,7 @@ final readonly class S3CompatibleStorage implements ObjectStorageInterface
         if (!\function_exists('simplexml_load_string')) {
             throw new StorageException('The SimpleXML extension is required to parse S3 listing responses.');
         }
-        $xml = @simplexml_load_string($response->body);
+        $xml = $this->parseListingXml($response->body);
         if ($xml === false) {
             throw new StorageException('S3 listing response is not valid XML.');
         }
