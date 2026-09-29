@@ -43,7 +43,7 @@ final readonly class ConfigRadixTree
      */
     public function __construct(array $values)
     {
-        $this->root = self::buildRoot($values);
+        $this->root = $this->buildRoot($values);
     }
 
     /**
@@ -128,7 +128,7 @@ final readonly class ConfigRadixTree
      *
      * @param array<array-key,mixed> $values
      */
-    private static function buildRoot(array $values): ConfigRadixNode
+    private function buildRoot(array $values): ConfigRadixNode
     {
         $children = [];
         foreach ($values as $key => $value) {

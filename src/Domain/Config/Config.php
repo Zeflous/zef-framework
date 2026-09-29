@@ -52,7 +52,7 @@ final readonly class Config
     {
         // php:S2830: the eager fallback goes through the named factory so the
         // constructor only picks between injected and derived state.
-        $this->index = $cachedIndex ?? self::buildIndex($values);
+        $this->index = $cachedIndex ?? $this->buildIndex($values);
     }
 
     /**
@@ -191,7 +191,7 @@ final readonly class Config
     /**
      * @param array<array-key,mixed> $values
      */
-    private static function buildIndex(array $values): ConfigRadixTree
+    private function buildIndex(array $values): ConfigRadixTree
     {
         return new ConfigRadixTree($values);
     }

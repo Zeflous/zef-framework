@@ -38,10 +38,10 @@ final class SecurityRuntimeMiddleware implements MiddlewareInterface
      * identical whether it was an attack or a limiter storage bug.
      */
     public function __construct(
-        private SecurityPolicy $policy,
-        private RateLimiterInterface $rateLimiter,
-        private array $trustedProxies = [],
-        private ?LoggerInterface $logger = null,
+        private readonly SecurityPolicy $policy,
+        private readonly RateLimiterInterface $rateLimiter,
+        private readonly array $trustedProxies = [],
+        private readonly ?LoggerInterface $logger = null,
     ) {}
 
     #[\Override]
@@ -114,11 +114,11 @@ final class SecurityRuntimeMiddleware implements MiddlewareInterface
         string $requestId,
     ): array {
         [$rateDecision, $rateResponse] = $this->enforceRateLimit($context, $requestId);
-        if ($rateResponse !== null) {
+        if ($rateResponse instanceof ResponseInterface) {
             return ['shortCircuit' => $rateResponse, 'rateDecision' => $rateDecision, 'csrfCookie' => null];
         }
         $originResponse = $this->originDeniedResponse($context, $requestId);
-        if ($originResponse !== null) {
+        if ($originResponse instanceof ResponseInterface) {
             return ['shortCircuit' => $originResponse, 'rateDecision' => $rateDecision, 'csrfCookie' => null];
         }
         [$csrfCookie, $csrfResponse] = $this->enforceCsrf($method, $request, $requestId);
@@ -253,7 +253,7 @@ final class SecurityRuntimeMiddleware implements MiddlewareInterface
         MessageInterface $response,
         ?RateLimitDecision $decision,
     ): MessageInterface {
-        if ($decision === null) {
+        if (!$decision instanceof RateLimitDecision) {
             return $response;
         }
 
@@ -289,7 +289,8 @@ final class SecurityRuntimeMiddleware implements MiddlewareInterface
 
     private function csrf(): ?CsrfTokenManager
     {
-        if ($this->csrf === null && $this->policy->csrfEnabled && $this->policy->csrfSecret !== '') {
+        $csrfNotBuilt = !$this->csrf instanceof CsrfTokenManager;
+        if ($csrfNotBuilt && $this->policy->csrfEnabled && $this->policy->csrfSecret !== '') {
             $this->csrf = new CsrfTokenManager(
                 $this->policy->csrfSecret,
                 $this->policy->csrfTokenBytes,

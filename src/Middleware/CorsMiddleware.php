@@ -58,7 +58,7 @@ final readonly class CorsMiddleware implements MiddlewareInterface
     public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
         $preflight = $this->preflightResponse($request);
-        if ($preflight !== null) {
+        if ($preflight instanceof ResponseInterface) {
             return $preflight;
         }
 
