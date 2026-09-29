@@ -14,7 +14,6 @@ use Zef\Framework\Console\ConsoleIO;
 use Zef\Framework\Console\GeneratorInterface;
 use Zef\Framework\Console\NamingRules;
 use Zef\Framework\Console\ScaffoldWriter;
-use Zef\Framework\Console\TemplateLoader;
 
 final readonly class PluginGenerator implements GeneratorInterface
 {
@@ -22,7 +21,6 @@ final readonly class PluginGenerator implements GeneratorInterface
         private string $root,
         private ConsoleIO $io,
         private ScaffoldWriter $writer,
-        private TemplateLoader $templates = new TemplateLoader(),
     ) {}
 
     public function generate(?string $rawName, array $argv = []): int
@@ -39,7 +37,7 @@ final readonly class PluginGenerator implements GeneratorInterface
         $module = NamingRules::kebab($name);
         $ns = "Zef\\Plugin\\{$name}";
         $snake = NamingRules::snake($name);
-        $this->writer->writeFile("{$dir}/ConfigProvider.php", $this->templates->render(<<<PHP
+        $this->writer->writeFile("{$dir}/ConfigProvider.php", <<<PHP
             <?php
 
             declare(strict_types=1);
@@ -88,8 +86,8 @@ final readonly class PluginGenerator implements GeneratorInterface
                 }
             }
 
-            PHP));
-        $this->writer->writeFile("{$dir}/{$name}Service.php", $this->templates->render(<<<PHP
+            PHP);
+        $this->writer->writeFile("{$dir}/{$name}Service.php", <<<PHP
             <?php
 
             declare(strict_types=1);
@@ -108,8 +106,8 @@ final readonly class PluginGenerator implements GeneratorInterface
                 }
             }
 
-            PHP));
-        $this->writer->writeFile("{$dir}/{$name}Handler.php", $this->templates->render(<<<PHP
+            PHP);
+        $this->writer->writeFile("{$dir}/{$name}Handler.php", <<<PHP
             <?php
 
             declare(strict_types=1);
@@ -143,7 +141,7 @@ final readonly class PluginGenerator implements GeneratorInterface
                 }
             }
 
-            PHP));
+            PHP);
         $this->io->out(<<<TXT
 
             Next steps:

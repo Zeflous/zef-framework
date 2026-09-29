@@ -37,7 +37,6 @@ use Zef\Framework\Console\GeneratorInterface;
 use Zef\Framework\Console\InvalidNameException;
 use Zef\Framework\Console\NamingRules;
 use Zef\Framework\Console\ScaffoldWriter;
-use Zef\Framework\Console\TemplateLoader;
 use Zef\Framework\Foundation\ZefVersion;
 
 final readonly class AppGenerator implements GeneratorInterface
@@ -46,7 +45,6 @@ final readonly class AppGenerator implements GeneratorInterface
         private string $root,
         private ConsoleIO $io,
         private ScaffoldWriter $writer,
-        private TemplateLoader $templates = new TemplateLoader(),
     ) {}
 
     public function generate(?string $rawName, array $argv = []): int
@@ -347,7 +345,7 @@ final readonly class AppGenerator implements GeneratorInterface
 
     private function rrYaml(string $address): string
     {
-        return $this->templates->render(<<<YAML
+        return <<<YAML
             # RoadRunner v2025.1 configuration (scaffolded by bin/zef make:app).
             # Run: vendor/bin/rr serve -c .rr.yaml
 
@@ -371,7 +369,7 @@ final readonly class AppGenerator implements GeneratorInterface
               level: info
               encoding: console
 
-            YAML);
+            YAML;
     }
 
     private function readme(string $kebab, string $address): string
@@ -541,7 +539,7 @@ final readonly class AppGenerator implements GeneratorInterface
     {
         $module = "Zef\\Module\\{$pascal}\\ConfigProvider";
 
-        return $this->templates->render(<<<PHP
+        return <<<PHP
             <?php
 
             /**
@@ -572,12 +570,12 @@ final readonly class AppGenerator implements GeneratorInterface
                 }
             }
 
-            PHP);
+            PHP;
     }
 
     private function homeConfigProvider(string $moduleNamespace, string $kebab): string
     {
-        return $this->templates->render(<<<PHP
+        return <<<PHP
             <?php
 
             declare(strict_types=1);
@@ -615,12 +613,12 @@ final readonly class AppGenerator implements GeneratorInterface
                 }
             }
 
-            PHP);
+            PHP;
     }
 
     private function homeHandler(string $moduleNamespace, string $kebab): string
     {
-        return $this->templates->render(<<<PHP
+        return <<<PHP
             <?php
 
             declare(strict_types=1);
@@ -649,7 +647,7 @@ final readonly class AppGenerator implements GeneratorInterface
                 }
             }
 
-            PHP);
+            PHP;
     }
 
     /** Extract the value of `--key=value` style options from argv. */

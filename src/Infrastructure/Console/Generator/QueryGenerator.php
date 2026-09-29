@@ -14,7 +14,6 @@ use Zef\Framework\Console\ConsoleIO;
 use Zef\Framework\Console\GeneratorInterface;
 use Zef\Framework\Console\NamingRules;
 use Zef\Framework\Console\ScaffoldWriter;
-use Zef\Framework\Console\TemplateLoader;
 
 final readonly class QueryGenerator implements GeneratorInterface
 {
@@ -22,7 +21,6 @@ final readonly class QueryGenerator implements GeneratorInterface
         private string $root,
         private ConsoleIO $io,
         private ScaffoldWriter $writer,
-        private TemplateLoader $templates = new TemplateLoader(),
     ) {}
 
     public function generate(?string $rawName, array $argv = []): int
@@ -46,7 +44,7 @@ final readonly class QueryGenerator implements GeneratorInterface
         $ns = "Zef\\Module\\{$modulePascal}\\Query";
         $snake = NamingRules::snake($name);
         $this->writer->writeFiles([
-            "{$moduleDir}/Query/{$name}Query.php" => $this->templates->render(<<<PHP
+            "{$moduleDir}/Query/{$name}Query.php" => <<<PHP
                 <?php
 
                 declare(strict_types=1);
@@ -69,8 +67,8 @@ final readonly class QueryGenerator implements GeneratorInterface
                     }
                 }
 
-                PHP),
-            "{$moduleDir}/Query/{$name}QueryHandler.php" => $this->templates->render(<<<PHP
+                PHP,
+            "{$moduleDir}/Query/{$name}QueryHandler.php" => <<<PHP
                 <?php
 
                 declare(strict_types=1);
@@ -99,7 +97,7 @@ final readonly class QueryGenerator implements GeneratorInterface
                     }
                 }
 
-                PHP),
+                PHP,
         ]);
         $this->io->out(<<<TXT
 
