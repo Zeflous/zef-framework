@@ -37,3 +37,7 @@ composer.phar
 # target below must never be committed; keep its file permissions restricted
 # to the runtime user instead (the compiler already writes chmod 0600).
 /var/cache/config.php
+
+# Python bytecode
+__pycache__/
+*.pyc

@@ -14,7 +14,17 @@ final readonly class TrustedHostValidator
 {
     public function __construct(private array $trustedHosts = []) {}
 
-    public function assert(string $host): void
+    /**
+     * Reject a host that is not in the trusted allow-list.
+     *
+     * Named `assertTrusted()` rather than `assert()` on purpose: a bare
+     * `assert()` call reads as the PHP built-in assertion function, which
+     * static analysers (Snyk Code, and any rule keyed on the `assert`
+     * symbol) treat as code execution. This method never executes code —
+     * it only compares strings and throws — so the misleading name was
+     * both a readability hazard and a false-positive generator.
+     */
+    public function assertTrusted(string $host): void
     {
         if ($host === '' || $this->trustedHosts === []) {
             return;

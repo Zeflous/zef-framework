@@ -12,11 +12,17 @@ declare(strict_types=1);
 
 namespace Zef\Framework\Console\Generator;
 
-final class AppCodeTemplates
+use Zef\Framework\Console\TemplateLoader;
+
+final readonly class AppCodeTemplates
 {
+    public function __construct(
+        private TemplateLoader $templates = new TemplateLoader(),
+    ) {}
+
     public function worker(): string
     {
-        return <<<'PHP_WRAP'
+        return $this->templates->render(<<<'PHP_WRAP'
             <?php
 
             /**
@@ -59,12 +65,12 @@ final class AppCodeTemplates
 
             exit($runtime->run());
 
-            PHP_WRAP;
+            PHP_WRAP);
     }
 
     public function appZef(): string
     {
-        return <<<'PHP_WRAP'
+        return $this->templates->render(<<<'PHP_WRAP'
             #!/usr/bin/env php
             <?php
 
@@ -96,14 +102,14 @@ final class AppCodeTemplates
                 . " the maker commands only: run `php bin/zef list`.\n");
             exit(1);
 
-            PHP_WRAP;
+            PHP_WRAP);
     }
 
     public function appBootstrap(string $pascal): string
     {
         $module = "Zef\\Module\\{$pascal}\\ConfigProvider";
 
-        return <<<PHP
+        return $this->templates->render(<<<PHP
             <?php
 
             /**
@@ -134,12 +140,12 @@ final class AppCodeTemplates
                 }
             }
 
-            PHP;
+            PHP);
     }
 
     public function homeConfigProvider(string $moduleNamespace, string $kebab): string
     {
-        return <<<PHP
+        return $this->templates->render(<<<PHP
             <?php
 
             declare(strict_types=1);
@@ -183,12 +189,12 @@ final class AppCodeTemplates
                 }
             }
 
-            PHP;
+            PHP);
     }
 
     public function homeHandler(string $moduleNamespace, string $kebab): string
     {
-        return <<<PHP
+        return $this->templates->render(<<<PHP
             <?php
 
             declare(strict_types=1);
@@ -217,6 +223,6 @@ final class AppCodeTemplates
                 }
             }
 
-            PHP;
+            PHP);
     }
 }

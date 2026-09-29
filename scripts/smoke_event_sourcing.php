@@ -116,7 +116,10 @@ try {
     $memStore->appendToStream('bank.account', 'acc-001', 0, ...$stale->pendingEvents());
     echo "inmem concurrency: MISSING EXCEPTION!!\n";
 } catch (Zef\Framework\EventSourcing\ConcurrencyException $e) {
-    echo 'inmem concurrency OK: ' . $e->getMessage() . "\n";
+    // Do not echo the exception message: this smoke script only needs to
+    // prove the concurrency guard fired, and the message can carry internal
+    // detail. Report the exception class instead.
+    echo 'inmem concurrency OK: ' . $e::class . "\n";
 }
 
 // ---------------------------------------------------------------- PDO path (sqlite memory)

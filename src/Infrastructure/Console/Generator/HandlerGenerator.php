@@ -14,6 +14,7 @@ use Zef\Framework\Console\ConsoleIO;
 use Zef\Framework\Console\GeneratorInterface;
 use Zef\Framework\Console\NamingRules;
 use Zef\Framework\Console\ScaffoldWriter;
+use Zef\Framework\Console\TemplateLoader;
 
 final readonly class HandlerGenerator implements GeneratorInterface
 {
@@ -21,6 +22,7 @@ final readonly class HandlerGenerator implements GeneratorInterface
         private string $root,
         private ConsoleIO $io,
         private ScaffoldWriter $writer,
+        private TemplateLoader $templates = new TemplateLoader(),
     ) {}
 
     /**
@@ -73,7 +75,7 @@ final readonly class HandlerGenerator implements GeneratorInterface
         $file = "{$moduleDir}/{$name}Handler.php";
         $serviceId = "{$module}.handler." . NamingRules::snake($name);
         $routePath = $path ?? '/' . $module . '/' . NamingRules::kebab($name);
-        $this->writer->writeFile($file, <<<PHP
+        $this->writer->writeFile($file, $this->templates->render(<<<PHP
             <?php
 
             declare(strict_types=1);
@@ -102,7 +104,7 @@ final readonly class HandlerGenerator implements GeneratorInterface
                 }
             }
 
-            PHP);
+            PHP));
         $this->io->out(<<<TXT
 
             Next steps — wire it into modules/{$modulePascal}/ConfigProvider.php:

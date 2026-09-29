@@ -228,6 +228,6 @@ final class Uri implements UriInterface
 
     private function assertTrustedHost(string $host): void
     {
-        new TrustedHostValidator($this->trustedHosts)->assert($host);
+        new TrustedHostValidator($this->trustedHosts)->assertTrusted($host);
     }
 }
