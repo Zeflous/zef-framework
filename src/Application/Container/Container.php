@@ -77,8 +77,9 @@ final class Container implements ContainerInterface, ServiceRegistrarInterface
     {
         $this->assertWritable();
         $this->assertRegistrationBudget();
-        if ($this->registry->hasFactory($definition->id) || $this->registry->hasAlias($definition->id)) {
-            throw new InvalidFactoryException("Factory for '{$definition->id}' is invalid: service ID already registered.");
+        $id = $definition->id;
+        if ($this->registry->hasFactory($id) || $this->registry->hasAlias($id)) {
+            throw new InvalidFactoryException("Factory for '{$id}' is invalid: service ID already registered.");
         }
         $this->registry->addDefinition($definition);
     }

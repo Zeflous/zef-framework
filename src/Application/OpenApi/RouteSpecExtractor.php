@@ -185,7 +185,7 @@ final readonly class RouteSpecExtractor
     private function toOpenApiPath(string $pattern): string
     {
         $converted = preg_replace(
-            '/\{([A-Za-z_][A-Za-z0-9_]*)(?::[A-Za-z_][A-Za-z0-9_]*)?\}/',
+            '/\{([A-Za-z_]\w*)(?::[A-Za-z_]\w*)?\}/',
             '{$1}',
             $pattern,
         );

@@ -350,12 +350,10 @@ final class QueryBuilder
                     throw new QueryException("insertRows() row {$i} column names must be strings.");
                 }
             }
-            if ($expected === null) {
-                $expected = array_keys($row);
-            } elseif (array_keys($row) !== $expected) {
+            if ($expected !== null && array_keys($row) !== $expected) {
                 throw new QueryException("insertRows() row {$i} column set differs from the first row.");
             }
-            // Same column set as the first row: nothing to normalise.
+            $expected ??= array_keys($row);
 
             foreach ($row as $column => $value) {
                 $this->quoteIdentifier($column, 'column');

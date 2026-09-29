@@ -23,10 +23,7 @@ final class CorrelationPropagator
         array $attributes = [],
     ): ?CorrelationContext {
         $value = self::normalizedTraceParent($traceParent, $traceState);
-        if ($value === null) {
-            return null;
-        }
-        if (preg_match('/^00-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})$/i', $value, $m) !== 1) {
+        if ($value === null || preg_match('/^00-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})$/i', $value, $m) !== 1) {
             return null;
         }
 
