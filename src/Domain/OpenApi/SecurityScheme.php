@@ -29,16 +29,27 @@ final readonly class SecurityScheme
         public string $description = '',
         public array $flows = [],
     ) {
+        $this->assertRequiredTypeFields();
+        $this->assertTypeExclusiveFields();
+    }
+
+    private function assertRequiredTypeFields(): void
+    {
         if ($this->type === SecuritySchemeType::Http && ($this->scheme === null || trim($this->scheme) === '')) {
             throw new SchemaDefinitionException('Http security scheme requires a non-empty scheme (e.g. "bearer").');
         }
         if ($this->type === SecuritySchemeType::ApiKey && !$this->in instanceof ParameterLocation) {
             throw new SchemaDefinitionException('ApiKey security scheme requires a parameter location (in).');
         }
-        if ($this->type === SecuritySchemeType::OpenIdConnect
-            && ($this->openIdConnectUrl === null || filter_var($this->openIdConnectUrl, FILTER_VALIDATE_URL) === false)) {
+        $connectUrlMissing = $this->openIdConnectUrl === null
+            || filter_var($this->openIdConnectUrl, FILTER_VALIDATE_URL) === false;
+        if ($this->type === SecuritySchemeType::OpenIdConnect && $connectUrlMissing) {
             throw new SchemaDefinitionException('OpenIdConnect security scheme requires a valid openIdConnectUrl.');
         }
+    }
+
+    private function assertTypeExclusiveFields(): void
+    {
         if ($this->scheme !== null && $this->type !== SecuritySchemeType::Http) {
             throw new SchemaDefinitionException('Security scheme `scheme` is only valid for the http type.');
         }
@@ -46,7 +57,9 @@ final readonly class SecurityScheme
             throw new SchemaDefinitionException('Security scheme `in` is only valid for the apiKey type.');
         }
         if ($this->openIdConnectUrl !== null && $this->type !== SecuritySchemeType::OpenIdConnect) {
-            throw new SchemaDefinitionException('Security scheme `openIdConnectUrl` is only valid for the openIdConnect type.');
+            throw new SchemaDefinitionException(
+                'Security scheme `openIdConnectUrl` is only valid for the openIdConnect type.',
+            );
         }
         if ($this->bearerFormat !== null && ($this->scheme !== 'bearer')) {
             throw new SchemaDefinitionException('Security scheme `bearerFormat` requires scheme "bearer".');
@@ -54,7 +67,15 @@ final readonly class SecurityScheme
     }
 
     /**
-     * @return array{type: string, description?: string, scheme?: string, bearerFormat?: string, in?: string, openIdConnectUrl?: string, flows?: array<string, mixed>}
+     * @return array{
+     *     type: string,
+     *     description?: string,
+     *     scheme?: string,
+     *     bearerFormat?: string,
+     *     in?: string,
+     *     openIdConnectUrl?: string,
+     *     flows?: array<string, mixed>,
+     * }
      */
     public function toArray(): array
     {
