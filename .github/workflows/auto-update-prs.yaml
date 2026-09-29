@@ -31,6 +31,12 @@ on:
     # ARM-ON-OPEN (2026-09-28): PR baru (opened/reopened/ready_for_review)
     # langsung diproses detik itu juga -> auto-merge aktif sejak awal usia
     # PR, tidak menunggu slot cron. Alasan: scheduler cron GitHub terbukti
+    #
+    # ⚠️ DIBATASI 2026-09-29 (insiden PR #252): "arm-on-open" kini TIDAK lagi
+    # berarti "auto-merge langsung aktif". Peng-arman auto-merge digerbangi
+    # opt-in fail-closed: repo variable ZEF_AUTOMERGE_OPT_IN harus "true" DAN
+    # PR harus berlabel "automerge". Tanpa keduanya, PR hanya di-update
+    # branch-nya; merge tetap manual oleh owner. Lihat langkah 3 di bawah.
     # tidak stabil untuk repo ini - sepanjang 2026-09-27 hanya 4 run schedule
     # yang lahir (01:40, 09:23, 14:44, 20:08 UTC; gap antar run 7j43m,
     # 5j21m, 5j24m). Setelah cron 13,43 live di main (16:45 UTC): slot
@@ -88,13 +94,19 @@ jobs:
           # Rekomendasi lanjutan: ganti isinya dengan fine-grained PAT scope
           # sempit (Contents/Pull requests/Actions: write) begitu tersedia.
           GH_TOKEN: ${{ secrets.ZEF_CI_PAT || secrets.GITHUB_TOKEN }}
+          # OPT-IN GATE (fail-closed, 2026-09-29): auto-merge HANYA di-arm bila
+          # variable ini bernilai "true" DAN PR membawa label "automerge".
+          # Default (variable tidak diset / kosong) = OFF -> tidak ada PR yang
+          # di-merge otomatis. Lihat insiden PR #252 (ter-merge otomatis
+          # 2026-09-29T05:29:02Z padahal guardrail owner = auto-merge OFF).
+          ZEF_AUTOMERGE_OPT_IN: ${{ vars.ZEF_AUTOMERGE_OPT_IN }}
         run: |
           echo "Mengambil daftar PR open (non-draft), diurutkan dari yang paling lama..."
 
           # `gh pr list` TIDAK punya flag --sort (error lama:
           #   "unknown flag: --sort" -> step langsung mati, job selalu gagal).
           # Daftar raw diambil dulu dan dicek supaya kegagalan API tidak diam-diam lolos.
-          if ! raw=$(gh pr list --state open --limit 100 --json number,isDraft,createdAt); then
+          if ! raw=$(gh pr list --state open --limit 100 --json number,isDraft,createdAt,labels); then
             echo "Gagal mengambil daftar PR dari gh."
             exit 1
           fi
@@ -228,8 +240,23 @@ jobs:
             #    up-to-date, agar status auto-merge selalu aktif kembali).
             #    Auto-merge tunduk pada branch rules / required checks:
             #    begitu seluruh gate hijau pada head terkini, merge terjadi otomatis.
-            if err=$(gh pr merge "$pr" --auto --merge 2>&1); then
-              echo "🚀 Fitur Auto-Merge berhasil diaktifkan untuk PR #$pr!"
+            #
+            #    OPT-IN GATE (fail-closed, 2026-09-29): auto-merge TIDAK LAGI
+            #    di-arm secara default. Dua syarat harus terpenuhi:
+            #      (a) repo variable ZEF_AUTOMERGE_OPT_IN == "true", DAN
+            #      (b) PR membawa label "automerge".
+            #    Bila salah satu tidak terpenuhi -> auto-merge DILEWATI.
+            #    Alasan: insiden PR #252 (2026-09-29T05:29:02Z) ter-merge
+            #    otomatis padahal guardrail owner = "auto-merge WAJIB OFF".
+            #    Sebelumnya langkah ini meng-arm SEMUA PR open non-draft tanpa
+            #    syarat apa pun -> setiap PR baru otomatis ter-merge begitu
+            #    required checks hijau.
+            if [ "${ZEF_AUTOMERGE_OPT_IN:-}" != "true" ]; then
+              echo "⏸️ Auto-merge DILEWATI untuk PR #$pr: ZEF_AUTOMERGE_OPT_IN != 'true' (fail-closed default)."
+            elif ! printf '%s' "$raw" | jq -e --argjson n "$pr" '.[] | select(.number == $n) | any(.labels[]?; .name == "automerge")' >/dev/null 2>&1; then
+              echo "⏸️ Auto-merge DILEWATI untuk PR #$pr: label 'automerge' tidak ada (opt-in per-PR)."
+            elif err=$(gh pr merge "$pr" --auto --merge 2>&1); then
+              echo "🚀 Fitur Auto-Merge berhasil diaktifkan untuk PR #$pr (opt-in aktif + label 'automerge')."
             else
               echo "⚠️ Gagal mengaktifkan Auto-Merge untuk PR #$pr: $err"
             fi
