@@ -60,7 +60,7 @@ final class DefaultSecurityBoundary implements SecurityBoundaryInterface
         ReplayProtectorInterface $replayProtector,
         int $nowMs,
     ): SecurityFailure {
-        if ($context === null) {
+        if (!$context instanceof SecurityContext) {
             return SecurityFailure::MALFORMED_METADATA;
         }
         if ($authorization->authorize($context, $request)->verdict !== SecurityVerdict::ALLOW) {

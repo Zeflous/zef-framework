@@ -52,7 +52,7 @@ final readonly class ConfigShower
     public function __construct(
         private ConfigAggregator $aggregator,
         private ConsoleIO $io,
-        private readonly ?EnvInterface $env = null,
+        private ?EnvInterface $env = null,
     ) {}
 
     public function run(?string $key, bool $reveal = false): int

@@ -15,7 +15,7 @@ final class InMemoryJobQueue implements JobQueueInterface
     private int $sequence = 0;
 
     /**
-     * @var \SplPriorityQueue<mixed,mixed>|null
+     * @var null|\SplPriorityQueue<mixed,mixed>
      */
     private ?\SplPriorityQueue $queue = null;
 
@@ -75,7 +75,7 @@ final class InMemoryJobQueue implements JobQueueInterface
      */
     private function queue(): \SplPriorityQueue
     {
-        if ($this->queue === null) {
+        if (!$this->queue instanceof \SplPriorityQueue) {
             $this->queue = new class extends \SplPriorityQueue {
                 #[\Override]
                 public function compare(mixed $priority1, mixed $priority2): int

@@ -63,7 +63,7 @@ trait RequestTrait
         $n->uri = $uri;
         $existingHost = $this->getHeaderLine('Host');
         if ((!$preserveHost || $existingHost === '') && $uri->getHost() !== '') {
-            $n = $n->withHeader('Host', $this->hostHeaderFromUri($uri));
+            return $n->withHeader('Host', $this->hostHeaderFromUri($uri));
         }
 
         return $n;

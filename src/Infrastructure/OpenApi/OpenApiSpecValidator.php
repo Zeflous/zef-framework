@@ -69,7 +69,7 @@ final class OpenApiSpecValidator
     /**
      * @param array<string, mixed> $spec
      *
-     * @return array<string, mixed>
+     * @return array<mixed, mixed> the raw "components" object, unfiltered
      */
     private function components(array $spec): array
     {
@@ -77,7 +77,7 @@ final class OpenApiSpecValidator
     }
 
     /**
-     * @param array<string, mixed> $components
+     * @param array<mixed, mixed> $components
      *
      * @return array<string, true>
      */
@@ -112,8 +112,6 @@ final class OpenApiSpecValidator
     }
 
     /**
-     * @param mixed $path
-     * @param mixed $operations
      * @param array<string, string> $operationIds
      * @param list<string> $errors
      */
@@ -135,8 +133,6 @@ final class OpenApiSpecValidator
     }
 
     /**
-     * @param mixed $method
-     * @param mixed $operation
      * @param array<string, string> $operationIds
      * @param list<string> $errors
      */
@@ -165,7 +161,7 @@ final class OpenApiSpecValidator
     }
 
     /**
-     * @param array<string, mixed> $operation
+     * @param array<mixed, mixed> $operation
      * @param array<string, string> $operationIds
      * @param list<string> $errors
      */
@@ -182,7 +178,7 @@ final class OpenApiSpecValidator
     }
 
     /**
-     * @param array<string, mixed> $operation
+     * @param array<mixed, mixed> $operation
      * @param list<string> $errors
      */
     private function validateResponses(string $where, array $operation, array &$errors): void
@@ -203,7 +199,7 @@ final class OpenApiSpecValidator
     }
 
     /**
-     * @param array<string, mixed> $operation
+     * @param array<mixed, mixed> $operation
      * @param list<string> $errors
      */
     private function validateParameters(string $where, array $operation, string $path, array &$errors): void
@@ -218,20 +214,22 @@ final class OpenApiSpecValidator
             $in = is_string($parameter['in'] ?? null) ? $parameter['in'] : '';
             if (!in_array($in, ['query', 'header', 'path', 'cookie'], true)) {
                 $errors[] = "Operation {$where} parameter '{$parameter['name']}' has invalid location '{$in}'.";
-            } elseif (
+
+                continue;
+            }
+            if (
                 $in === 'path'
                 && ($parameter['required'] ?? false) !== true
                 && str_contains($path, '{' . $parameter['name'] . '}')
             ) {
                 $errors[] = "Operation {$where} path parameter '{$parameter['name']}' must set required: true.";
-            } else {
-                // Recognised location with a consistent required flag.
             }
+            // Recognised location with a consistent required flag.
         }
     }
 
     /**
-     * @param array<string, mixed> $operation
+     * @param array<mixed, mixed> $operation
      * @param list<string> $errors
      */
     private function validateOperationSecurity(string $where, array $operation, array &$errors): void
@@ -245,7 +243,7 @@ final class OpenApiSpecValidator
     }
 
     /**
-     * @param array<string, mixed> $components
+     * @param array<mixed, mixed> $components
      * @param list<string> $errors
      */
     private function validateComponentSchemas(array $components, array &$errors): void
@@ -264,7 +262,7 @@ final class OpenApiSpecValidator
     }
 
     /**
-     * @param array<string, mixed> $components
+     * @param array<mixed, mixed> $components
      * @param list<string> $errors
      */
     private function validateSecuritySchemes(array $components, array &$errors): void
@@ -276,8 +274,6 @@ final class OpenApiSpecValidator
     }
 
     /**
-     * @param mixed $name
-     * @param mixed $scheme
      * @param list<string> $errors
      */
     private function validateSecurityScheme(mixed $name, mixed $scheme, array &$errors): void

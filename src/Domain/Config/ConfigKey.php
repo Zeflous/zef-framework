@@ -143,9 +143,8 @@ final readonly class ConfigKey
      */
     private function isCompilingPattern(string $pattern): bool
     {
-        set_error_handler(static function (): bool {
-            return true;
-        });
+        set_error_handler(static fn (): bool => true);
+
         try {
             $compiles = preg_match($pattern, '') !== false;
         } finally {

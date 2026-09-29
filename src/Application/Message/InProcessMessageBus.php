@@ -10,7 +10,6 @@ declare(strict_types=1);
 
 namespace Zef\Framework\Message;
 
-use Zef\Framework\Message\MessageDispatchException;
 use Zef\Framework\Validation\Identifier;
 
 final class InProcessMessageBus implements MessageBusInterface
@@ -98,7 +97,11 @@ final class InProcessMessageBus implements MessageBusInterface
         for ($i = count($this->middleware) - 1; $i >= 0; --$i) {
             $layer = $this->middleware[$i];
             $next = $terminal;
-            $terminal = fn (MessageEnvelope $current, MessageContext $ctx): MessageResult => $layer->process($current, $ctx, $next);
+            $terminal = fn (MessageEnvelope $current, MessageContext $ctx): MessageResult => $layer->process(
+                $current,
+                $ctx,
+                $next,
+            );
         }
 
         return $terminal($message, $context);

@@ -59,8 +59,8 @@ final class InProcessJobWorker
             throw new \LogicException("Job handler already registered for '{$jobType}'.");
         }
         if ($handler instanceof JobInterface) {
-            $this->handlers[$jobType] =
-                static fn (JobEnvelope $_job, JobContext $context): mixed => $handler->handle($context);
+            $this->handlers[$jobType]
+                = static fn (JobEnvelope $_job, JobContext $context): mixed => $handler->handle($context);
         } elseif ($handler instanceof JobHandlerInterface) {
             $this->handlers[$jobType] = $handler(...);
         } else {
@@ -198,7 +198,7 @@ final class InProcessJobWorker
     {
         $context = new JobContext($job->jobId, $job->attempt, $job->correlationId, $job->traceParent, $job->headers);
         if ($this->jobTimeoutMs !== null) {
-            $context = $context->withDeadlineMs($this->jobTimeoutMs);
+            return $context->withDeadlineMs($this->jobTimeoutMs);
         }
 
         return $context;
@@ -248,6 +248,7 @@ final class InProcessJobWorker
         if (!$this->deadLetterQueue instanceof JobQueueInterface) {
             return false;
         }
+
         try {
             $this->deadLetterQueue->enqueue($job);
         } catch (\Throwable) {

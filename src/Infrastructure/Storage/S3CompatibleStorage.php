@@ -38,7 +38,7 @@ final readonly class S3CompatibleStorage implements ObjectStorageInterface
         if (preg_match(self::BUCKET_PATTERN, $bucket) !== 1) {
             throw new \InvalidArgumentException('Bucket name must be a valid S3 bucket (3..63 lowercase chars).');
         }
-        if ($region === '' || strlen($region) > 64 || preg_match('/\s/', $region) === 1) {
+        if ($region === '' || strlen($region) > 64 || preg_match('/\s/u', $region) === 1) {
             throw new \InvalidArgumentException('Region must be 1..64 characters without whitespace.');
         }
         if ($accessKeyId === '' || strlen($accessKeyId) > 256) {
@@ -226,12 +226,11 @@ final readonly class S3CompatibleStorage implements ObjectStorageInterface
      * Parses the listing XML with libxml diagnostics routed into libxml's
      * own error buffer instead of the engine warning channel (php:S2002 —
      * no '@' suppression); the previous internal-errors state is restored.
-     *
-     * @return \SimpleXMLElement|false
      */
-    private function parseListingXml(string $body): \SimpleXMLElement|false
+    private function parseListingXml(string $body): false|\SimpleXMLElement
     {
         $previous = libxml_use_internal_errors(true);
+
         try {
             $xml = simplexml_load_string($body);
         } finally {
