@@ -233,21 +233,33 @@ reviewer will have to re-derive). Tooling that runs with CI credentials is
 exactly the code this gate exists to see.
 
 The 90 hand-written duplicated new lines inside the demo `app/` tree are a
-known structural debt, deliberately not deduplicated in this PR: the
-classmap resolves every `Zef\App\*` and `Zef\Middleware\*` symbol to `src/`
-(zero classmap entries point into `app/`; `public/index.php` and
-`bin/worker.php` boot through it), so `app/Bootstrap.php` and the
-`app/Middleware/` copies are never loaded at runtime — they are the
-monolith-extraction's shadow copies, and they already drift (src carries
-`trim(...)`, app still carries `'trim'`). Whether the demo tree should be
-deleted as dead code or made genuinely self-contained is a structural
-decision with its own blast radius, recorded here for a dedicated follow-up
-PR rather than smuggled into a triage round. The 42 lines across the three
-`assert-*.php` ratchet scripts are the shared fail-closed `$fail` closure —
-each script is standalone-invocable by design and must keep its own exit
-contract; the 66 lines across the three python tools are the replicated
-repo-containment validator, where the duplication IS the security control
-per standalone tool.
+known structural debt, deliberately not deduplicated in this PR. The context
+that makes sense of them: the demo application is a **`bin/zef` surface** —
+`bin/zef --serve` boots it (`php -S … public/index.php`), `route:list` and
+`module:list` boot it too, and `make:module` / `make:plugin` scaffold INTO
+`modules/` and `plugins/`, which are LIVE trees (every `Zef\Module\*` and
+`Zef\Plugin\*` classmap entry resolves there — exactly why scope v5 analyses
+them). The demo's composition root and middleware, however, live in `src/`
+under the `Zef\App` / `Zef\Middleware` namespaces the monolith extraction
+kept: the classmap resolves `Zef\App\Bootstrap` and every `Zef\Middleware\*`
+symbol to `src/` (zero classmap entries point into `app/`), and
+`public/index.php` and `bin/worker.php` boot through that. `app/Bootstrap.php`
+and the `app/Middleware/` files are therefore the parallel copies of those
+two src/-resident trees — same namespaces, never autoloaded, and already
+drifting apart (src/Bootstrap carries `trim(...)`, app still `'trim'`;
+src/Middleware has since been decomposed further than app's copies). The
+open structural question — whether the repo's own `app/` tree should become
+the real composition root, mirroring the standalone-app layout that
+`bin/zef make:app` scaffolds (where `app/Bootstrap.php` IS the composition
+root), or be retired — is a decision with its own blast radius, recorded
+here for a dedicated follow-up PR rather than smuggled into a triage round;
+it does NOT extend to `modules/` or `plugins/`, which are load-bearing demo
+code either way. The 42 lines across the three `assert-*.php` ratchet
+scripts are the shared fail-closed `$fail` closure — each script is
+standalone-invocable by design and must keep its own exit contract; the 66
+lines across the three python tools are the replicated repo-containment
+validator, where the duplication IS the security control per standalone
+tool.
 
 ## 5. What this gate explicitly is not
 
