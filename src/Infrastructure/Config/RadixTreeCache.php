@@ -103,40 +103,88 @@ final readonly class RadixTreeCache
      */
     public function read(string $cacheFile, array $values): ?ConfigRadixTree
     {
-        if (!is_file($cacheFile) || !is_readable($cacheFile)) {
+        $entry = $this->decodeCacheEntry($cacheFile);
+        if ($entry === null) {
             return null;
         }
-        $blob = @file_get_contents($cacheFile);
-        if ($blob === false) {
+        $tree = $entry['tree'] ?? null;
+        if (!$tree instanceof ConfigRadixTree || !$this->entryMatches($entry, $values)) {
             return null;
         }
 
+        return $tree;
+    }
+
+    /**
+     * Decode the serialized cache envelope, or null on a soft miss: file
+     * absent, unreadable, or a corrupt payload.
+     *
+     * @return null|array<string, mixed>
+     */
+    private function decodeCacheEntry(string $cacheFile): ?array
+    {
+        if (!is_file($cacheFile) || !is_readable($cacheFile)) {
+            return null;
+        }
+
+        // file_get_contents() is guarded by the is_file()/is_readable()
+        // checks above; a false return can only stem from a microsecond
+        // TOCTOU race with a concurrent writer's atomic rename — a soft
+        // miss either way.
+        $blob = file_get_contents($cacheFile);
+        $entry = $blob === false ? null : $this->unserializeEntry($blob);
+
+        return is_array($entry) ? $entry : null;
+    }
+
+    /**
+     * Unserialize the cache payload, or null when it is corrupt or not an
+     * envelope array. Corruption never throws out of the read path: a cache
+     * that cannot be trusted is a cache that is not used.
+     *
+     * @return null|array<string, mixed>
+     */
+    private function unserializeEntry(string $blob): ?array
+    {
+        // Scoped error handler: a corrupt payload warns (and/or throws) —
+        // both are a soft miss below, never a boot failure. The handler
+        // answers every diagnostic itself, so nothing leaks to the engine's
+        // default reporting.
+        set_error_handler(static fn (int $errno, string $message): bool => true);
+
         try {
-            // Silenced: a corrupt payload warns (and/or throws) — both are a
-            // soft miss below, never a boot failure. Provenance and blast
-            // radius, for the register (docs/security/php-sast.md §7, row 48):
-            // the blob is a cache file this class itself wrote via the atomic
-            // rename + 0600 contract, and the accepted-classes list is closed
-            // over two final readonly data classes with no magic methods —
-            // no object-injection gadget chain can start, and a tampered
+            // Provenance and blast radius, for the register
+            // (docs/security/php-sast.md §7, row 48): the blob is a cache
+            // file this class itself wrote via the atomic rename + 0600
+            // contract, and the accepted-classes list is closed over two
+            // final readonly data classes with no magic methods — no
+            // object-injection gadget chain can start, and a tampered
             // payload still has to survive the version stamp, the SHA-256
-            // fingerprint and the instanceof check below.
-            $entry = @unserialize($blob, ['allowed_classes' => [ // nosemgrep: php.lang.security.unserialize-use
+            // fingerprint and the instanceof check in read().
+            /** @var null|array<string, mixed> $entry */
+            $entry = unserialize($blob, ['allowed_classes' => [ // nosemgrep: php.lang.security.unserialize-use
                 ConfigRadixTree::class,
                 ConfigRadixNode::class,
             ]]);
         } catch (\Throwable) {
             return null; // corrupt payload — soft miss
-        }
-        if (!is_array($entry)
-            || ($entry['version'] ?? null) !== ZefVersion::VERSION
-            || ($entry['fingerprint'] ?? null) !== $this->fingerprint($values)
-            || !($entry['tree'] ?? null) instanceof ConfigRadixTree
-        ) {
-            return null;
+        } finally {
+            restore_error_handler();
         }
 
-        return $entry['tree'];
+        return is_array($entry) ? $entry : null;
+    }
+
+    /**
+     * Version-and-fingerprint half of the cache validity contract.
+     *
+     * @param array<string, mixed> $entry
+     * @param array<array-key, mixed> $values
+     */
+    private function entryMatches(array $entry, array $values): bool
+    {
+        return ($entry['version'] ?? null) === ZefVersion::VERSION
+            && ($entry['fingerprint'] ?? null) === $this->fingerprint($values);
     }
 
     /**
@@ -163,22 +211,30 @@ final readonly class RadixTreeCache
             'tree' => $tree,
         ]);
         $tmp = $directory . '/.' . $basename . '.' . bin2hex(random_bytes(6)) . '.tmp';
-        if (@file_put_contents($tmp, $entry) === false) {
+        // file_put_contents() is guarded by the is_dir()/is_writable()
+        // checks above; a false return can only stem from a microsecond
+        // TOCTOU race with a concurrent writer.
+        if (file_put_contents($tmp, $entry) === false) {
             throw new InvalidConfigurationException("Failed to write radix cache temp file '{$tmp}'.");
         }
         // POSIX-only mode contract — mirrors ConfigCompiler::export(): PHP's
         // Windows DACL emulation breaks the atomic rename publish for masks
         // without owner-write (issue #110).
         if (DIRECTORY_SEPARATOR === '/') {
-            @chmod($tmp, $this->fileMode);
+            // Best-effort restrictive mode before the rename; a chmod
+            // failure leaves the default mode in place, which the rename
+            // below then publishes — the historically tolerated behaviour.
+            chmod($tmp, $this->fileMode);
         }
-        if (!@rename($tmp, $cacheFile)) {
+        if (!rename($tmp, $cacheFile)) {
             // Cleanup of $tmp, a name this method generated itself
             // ('.' . $basename . '.' . bin2hex(random_bytes(6)) . '.tmp'). No
             // request input reaches the argument; this runs only when the
             // rename immediately above failed. Registered as an accepted
             // suppression: docs/security/php-sast.md §7, row 49.
-            @unlink($tmp); // nosemgrep: php.lang.security.unlink-use
+            if (is_file($tmp)) {
+                unlink($tmp); // nosemgrep: php.lang.security.unlink-use
+            }
 
             throw new InvalidConfigurationException("Failed to publish radix cache '{$cacheFile}'.");
         }

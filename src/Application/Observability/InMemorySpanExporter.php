@@ -26,7 +26,11 @@ final class InMemorySpanExporter implements SpanExporterInterface
     }
 
     #[\Override]
-    public function shutdown(): void {}
+    public function shutdown(): void
+    {
+        // intentionally empty: the in-memory exporter has nothing to flush
+        // or tear down — spans stay readable via spans() until reset().
+    }
 
     /** @return list<SpanData> */
     public function spans(): array

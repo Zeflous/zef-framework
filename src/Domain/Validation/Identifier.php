@@ -17,8 +17,11 @@ namespace Zef\Framework\Validation;
 final class Identifier
 {
     public const string OPAQUE_ID_PATTERN = '/^[A-Za-z0-9._:-]{8,128}$/';
-    public const string TRACEPARENT_PATTERN = '/^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}(?:-[^\s]{1,512})?$/i';
     public const string MODULE_NAME_PATTERN = '/^[A-Za-z_][A-Za-z0-9_.-]*$/';
+
+    /** W3C traceparent: 2-hex version, 32-hex trace id, 16-hex span id, 2-hex flags, optional tracestate. */
+    public const string TRACEPARENT_PATTERN
+        = '/^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}(?:-[^\s]{1,512})?$/i';
     public const string MESSAGE_TYPE_PATTERN = '/^[A-Za-z0-9._:\/-]{1,255}$/';
 
     public static function assertOpaqueId(string $value, string $field = 'ID'): void

@@ -44,7 +44,7 @@ final readonly class PhpFileConfigSource implements ConfigSourceInterface
         }
 
         try {
-            $values = require $this->path;
+            $values = require_once $this->path;
         } catch (\Throwable $e) {
             throw new InvalidConfigurationException(
                 "Config source file '{$this->path}' failed to load: {$e->getMessage()}",

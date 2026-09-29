@@ -116,6 +116,22 @@ final readonly class RateLimitMiddleware implements MiddlewareInterface
             return $handler->handle($request);
         }
 
+        return $this->enforce($matched, $request, $handler, $trustedProxies);
+    }
+
+    /**
+     * Enforces the matched rules against the resolved identity and applies
+     * the verdict to the response (headers / 429).
+     *
+     * @param list<RateLimitRule> $matched
+     * @param list<string>        $trustedProxies
+     */
+    private function enforce(
+        array $matched,
+        ServerRequestInterface $request,
+        RequestHandlerInterface $handler,
+        array $trustedProxies,
+    ): ResponseInterface {
         $identity = null;
 
         try {
@@ -124,31 +140,17 @@ final readonly class RateLimitMiddleware implements MiddlewareInterface
             // a storage failure, never surface as an unhandled 500.
             $identity = $this->resolveIdentity($request, $trustedProxies);
             $verdict = $this->tiered->evaluateAll($matched, $identity);
-        } catch (RateLimiterCapacityException $e) {
-            // ZEF-DEEP-02: the store is full of LIVE buckets — identities that
-            // already have a bucket are unaffected by this guard. Serving the
-            // (new) identity untracked is strictly safer than converting a
-            // full store into a global 503 for every client the attacker
-            // crowded out.
-            $this->logSwallowedFailure('capacity exhausted (untracked fail-open)', $matched, $identity, $e);
-
-            return $handler->handle($request);
         } catch (\Throwable $e) {
-            $this->logSwallowedFailure(
-                $this->failOpen ? 'storage failure (fail-open)' : 'storage failure (fail-closed 503)',
-                $matched,
-                $identity,
-                $e,
-            );
-            if ($this->failOpen) {
-                return $handler->handle($request);
-            }
-
-            return JsonResponse::error(503, 'Service Unavailable', [], ['Retry-After' => '1']);
+            return $this->failureResponse($e, $matched, $identity, $request, $handler);
         }
 
         if (!$verdict->allowed) {
-            return JsonResponse::error(429, 'Too Many Requests', [], $this->headers($verdict) + ['Retry-After' => (string) $verdict->retryAfter]);
+            return JsonResponse::error(
+                429,
+                'Too Many Requests',
+                [],
+                $this->headers($verdict) + ['Retry-After' => (string) $verdict->retryAfter],
+            );
         }
 
         $response = $handler->handle($request->withAttribute(self::REQUEST_ATTRIBUTE, $verdict));
@@ -160,6 +162,44 @@ final readonly class RateLimitMiddleware implements MiddlewareInterface
         }
 
         return $response;
+    }
+
+    /**
+     * Failure policy for swallowed limiter errors: capacity exhaustion
+     * serves the request untracked (ZEF-DEEP-02), storage failures follow
+     * the configured fail-open / fail-closed mode.
+     *
+     * @param list<RateLimitRule> $matched
+     */
+    private function failureResponse(
+        \Throwable $e,
+        array $matched,
+        ?string $identity,
+        ServerRequestInterface $request,
+        RequestHandlerInterface $handler,
+    ): ResponseInterface {
+        if ($e instanceof RateLimiterCapacityException) {
+            // ZEF-DEEP-02: the store is full of LIVE buckets — identities that
+            // already have a bucket are unaffected by this guard. Serving the
+            // (new) identity untracked is strictly safer than converting a
+            // full store into a global 503 for every client the attacker
+            // crowded out.
+            $this->logSwallowedFailure('capacity exhausted (untracked fail-open)', $matched, $identity, $e);
+
+            return $handler->handle($request);
+        }
+
+        $this->logSwallowedFailure(
+            $this->failOpen ? 'storage failure (fail-open)' : 'storage failure (fail-closed 503)',
+            $matched,
+            $identity,
+            $e,
+        );
+        if ($this->failOpen) {
+            return $handler->handle($request);
+        }
+
+        return JsonResponse::error(503, 'Service Unavailable', [], ['Retry-After' => '1']);
     }
 
     /**

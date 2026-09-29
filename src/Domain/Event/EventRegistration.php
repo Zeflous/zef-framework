@@ -26,25 +26,52 @@ final readonly class EventRegistration
         if (!is_callable($listener)) {
             throw new \InvalidArgumentException('Event listener must be callable.');
         }
+        $reflection = self::reflectListener($listener);
+        $this->acceptsContext = $reflection !== null && $reflection->getNumberOfParameters() >= 2;
+    }
+
+    /**
+     * Reflection for the listener's invocation signature, or null when the
+     * callable cannot be reflected (an object relying on __call() — the safe
+     * default is a single, context-less argument).
+     */
+    private static function reflectListener(mixed $listener): ?\ReflectionFunctionAbstract
+    {
         if (is_array($listener)) {
+            return self::reflectArrayListener($listener);
+        }
+        if (!is_callable($listener)) {
+            // Unreachable: the constructor already rejected non-callables.
+            return null;
+        }
+
+        // Closures pass through untouched; first-class callable strings
+        // ('func', 'Class::method') and invokable objects are normalized to
+        // Closures so reflection stays uniform.
+        return new \ReflectionFunction(\Closure::fromCallable($listener));
+    }
+
+    /**
+     * Reflection for an array-shaped callable [$objectOrClass, $method], or
+     * null when the pair cannot be reflected.
+     *
+     * @param array<mixed, mixed> $listener
+     */
+    private static function reflectArrayListener(array $listener): ?\ReflectionFunctionAbstract
+    {
+        $target = $listener[0] ?? null;
+        $method = $listener[1] ?? null;
+        if ((is_object($target) || is_string($target)) && is_string($method)) {
             try {
-                $reflection = new \ReflectionMethod($listener[0], (string) $listener[1]);
+                return new \ReflectionMethod($target, (string) $method);
             } catch (\ReflectionException) {
                 // Object relying on __call(): is_callable() passes but no
                 // real method exists. Invoke single-argument (context-less)
                 // — the safe default for magic callables.
-                $this->acceptsContext = false;
-
-                return;
             }
-        } elseif ($listener instanceof \Closure) {
-            $reflection = new \ReflectionFunction($listener);
-        } else {
-            // First-class callable strings ('func', 'Class::method') and
-            // invokable objects are accepted by is_callable(); normalize
-            // them to Closures so reflection stays uniform.
-            $reflection = new \ReflectionFunction(\Closure::fromCallable($listener));
         }
-        $this->acceptsContext = $reflection->getNumberOfParameters() >= 2;
+
+        // Unreachable after the constructor's is_callable() verification.
+        return null;
     }
 }

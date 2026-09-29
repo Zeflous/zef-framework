@@ -36,25 +36,75 @@ final readonly class AutowireMetadata
         public ?string $module = null,
         public string $lifetime = ServiceLifetime::SINGLETON,
     ) {
+        $this->assertDependenciesAreNonEmptyStrings($dependencies);
+        $this->assertArgumentPlanIsWellFormed($dependencies, $argumentPlan);
+    }
+
+    /**
+     * @param list<string> $dependencies
+     */
+    private function assertDependenciesAreNonEmptyStrings(array $dependencies): void
+    {
         foreach ($dependencies as $dep) {
             if (!is_string($dep) || $dep === '') {
-                throw new \InvalidArgumentException("Autowire metadata for '{$serviceId}': dependencies must be non-empty strings.");
+                throw new \InvalidArgumentException(
+                    "Autowire metadata for '{$this->serviceId}': dependencies must be non-empty strings."
+                );
             }
         }
+    }
+
+    /**
+     * @param list<string>                              $dependencies
+     * @param list<array{0:'dep'|'literal', 1:int|string}> $argumentPlan
+     */
+    private function assertArgumentPlanIsWellFormed(array $dependencies, array $argumentPlan): void
+    {
         foreach ($argumentPlan as $entry) {
-            if (
-                !is_array($entry)
-                || !isset($entry[0], $entry[1])
-                || ($entry[0] !== 'dep' && $entry[0] !== 'literal')
-            ) {
-                throw new \InvalidArgumentException("Autowire metadata for '{$serviceId}': malformed argument plan entry.");
+            $this->assertPlanEntryIsShaped($entry);
+            if ($entry[0] === 'dep') {
+                $this->assertPlanEntryDep($entry, $dependencies);
+            } else {
+                $this->assertPlanEntryLiteral($entry);
             }
-            if ($entry[0] === 'dep' && (!is_int($entry[1]) || $entry[1] < 0 || !isset($dependencies[$entry[1]]))) {
-                throw new \InvalidArgumentException("Autowire metadata for '{$serviceId}': argument plan references unknown dependency index.");
-            }
-            if ($entry[0] === 'literal' && !is_string($entry[1])) {
-                throw new \InvalidArgumentException("Autowire metadata for '{$serviceId}': literal argument must be PHP code.");
-            }
+        }
+    }
+
+    private function assertPlanEntryIsShaped(mixed $entry): void
+    {
+        if (
+            !is_array($entry)
+            || !isset($entry[0], $entry[1])
+            || ($entry[0] !== 'dep' && $entry[0] !== 'literal')
+        ) {
+            throw new \InvalidArgumentException(
+                "Autowire metadata for '{$this->serviceId}': malformed argument plan entry."
+            );
+        }
+    }
+
+    /**
+     * @param array{0:'dep'|'literal', 1:int|string} $entry
+     * @param list<string>                           $dependencies
+     */
+    private function assertPlanEntryDep(array $entry, array $dependencies): void
+    {
+        if (!is_int($entry[1]) || $entry[1] < 0 || !isset($dependencies[$entry[1]])) {
+            throw new \InvalidArgumentException(
+                "Autowire metadata for '{$this->serviceId}': argument plan references unknown dependency index."
+            );
+        }
+    }
+
+    /**
+     * @param array{0:'dep'|'literal', 1:int|string} $entry
+     */
+    private function assertPlanEntryLiteral(array $entry): void
+    {
+        if (!is_string($entry[1])) {
+            throw new \InvalidArgumentException(
+                "Autowire metadata for '{$this->serviceId}': literal argument must be PHP code."
+            );
         }
     }
 }

@@ -57,11 +57,7 @@ final class Env implements EnvInterface
         int $max,
         bool $strict = false,
     ): int {
-        @trigger_error(
-            'Env::int() is deprecated since v2.28.0 and will be removed in v3.0. '
-            . 'Inject EnvInterface and call readInt() instead.',
-            E_USER_DEPRECATED,
-        );
+        self::deprecateFacade('int', 'Inject EnvInterface and call readInt() instead.');
 
         return new self()->readInt($name, $default, $min, $max, $strict);
     }
@@ -72,11 +68,7 @@ final class Env implements EnvInterface
      */
     public static function bool(string $name, bool $default = false): bool
     {
-        @trigger_error(
-            'Env::bool() is deprecated since v2.28.0 and will be removed in v3.0. '
-            . 'Inject EnvInterface and call readBool() instead.',
-            E_USER_DEPRECATED,
-        );
+        self::deprecateFacade('bool', 'Inject EnvInterface and call readBool() instead.');
 
         return new self()->readBool($name, $default);
     }
@@ -87,11 +79,7 @@ final class Env implements EnvInterface
      */
     public static function string(string $name, string $default = ''): string
     {
-        @trigger_error(
-            'Env::string() is deprecated since v2.28.0 and will be removed in v3.0. '
-            . 'Inject EnvInterface and call readString() instead.',
-            E_USER_DEPRECATED,
-        );
+        self::deprecateFacade('string', 'Inject EnvInterface and call readString() instead.');
 
         return new self()->readString($name, $default);
     }
@@ -104,11 +92,7 @@ final class Env implements EnvInterface
      */
     public static function csv(string $name): array
     {
-        @trigger_error(
-            'Env::csv() is deprecated since v2.28.0 and will be removed in v3.0. '
-            . 'Inject EnvInterface and call readCsv() instead.',
-            E_USER_DEPRECATED,
-        );
+        self::deprecateFacade('csv', 'Inject EnvInterface and call readCsv() instead.');
 
         return new self()->readCsv($name);
     }
@@ -179,6 +163,26 @@ final class Env implements EnvInterface
                 array_map(trim(...), explode(',', $raw)),
                 static fn (string $v): bool => $v !== '',
             )
+        );
+    }
+
+    /**
+     * Emit the static facade's E_USER_DEPRECATED notice. Suppressed on
+     * purpose — the standard PHP deprecation contract, Symfony-style:
+     * custom error handlers still observe the notice (the guard test
+     * captures it) while PHPUnit/self-test runs stay quiet, because inside
+     * a suppressed call error_reporting() reads 0 and framework handlers
+     * that escalate diagnostics skip it.
+     */
+    private static function deprecateFacade(string $method, string $replacement): void
+    {
+        @trigger_error(
+            sprintf(
+                'Env::%s() is deprecated since v2.28.0 and will be removed in v3.0. %s',
+                $method,
+                $replacement
+            ),
+            E_USER_DEPRECATED,
         );
     }
 }
