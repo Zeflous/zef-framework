@@ -55,18 +55,18 @@ final class RoadRunnerRuntime implements RuntimeInterface
         }
         $this->started = true;
         $this->running = true;
-        $governor = $this->governor();
-        $governor->initialize();
+        $runtimeGovernor = $this->governor();
+        $runtimeGovernor->initialize();
         $this->signals()->install();
-        $governor->transition('starting');
-        $governor->recordEvent('worker.started');
+        $runtimeGovernor->transition('starting');
+        $runtimeGovernor->recordEvent('worker.started');
         $exitCode = 0;
 
         try {
             $exitCode = $this->serveLoop()->serve();
         } finally {
-            $governor->transition('stopped');
-            $governor->recordEvent($exitCode === 0 ? 'worker.terminated' : 'worker.recovery.detected');
+            $runtimeGovernor->transition('stopped');
+            $runtimeGovernor->recordEvent($exitCode === 0 ? 'worker.terminated' : 'worker.recovery.detected');
             $this->signals()->restore();
             $this->running = false;
             $this->application->shutdown();
@@ -114,34 +114,42 @@ final class RoadRunnerRuntime implements RuntimeInterface
     /** Collaborators are built lazily: php:S2830 forbids object creation in the constructor. */
     private function governor(): RuntimeGovernor
     {
-        return $this->governor ??= new RuntimeGovernor(
+        $this->governor ??= new RuntimeGovernor(
             $this->application,
             $this->runtimeConfig,
             $this->memoryLimitBytes,
         );
+
+        return $this->governor;
     }
 
     private function signals(): RuntimeSignalManager
     {
-        return $this->signalManager ??= new RuntimeSignalManager(
+        $this->signalManager ??= new RuntimeSignalManager(
             $this->installSignalHandlers,
             fn () => $this->stop(),
         );
+
+        return $this->signalManager;
     }
 
     private function responder(): RuntimeResponder
     {
-        return $this->responder ??= new RuntimeResponder($this->worker);
+        $this->responder ??= new RuntimeResponder($this->worker);
+
+        return $this->responder;
     }
 
     private function serveLoop(): RuntimeServeLoop
     {
-        return $this->serveLoop ??= new RuntimeServeLoop(
+        $this->serveLoop ??= new RuntimeServeLoop(
             $this->application,
             $this->worker,
             $this->governor(),
             $this->responder(),
             $this->maxJobs,
         );
+
+        return $this->serveLoop;
     }
 }

@@ -131,11 +131,8 @@ final class RuntimeServeLoop
 
             return self::CYCLE_FAILED;
         }
-        if (!$request instanceof ServerRequestInterface) {
-            return self::CYCLE_STOPPED;
-        }
 
-        return $request;
+        return $request instanceof ServerRequestInterface ? $request : self::CYCLE_STOPPED;
     }
 
     /** Post-dispatch gates: a memory breach upgrades the outcome; job exhaustion just drains. */

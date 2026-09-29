@@ -292,7 +292,9 @@ final class Application
     {
         // Lazily created (php:S2830): the state holder is a plain value
         // aggregator, nothing observes its construction timing.
-        return $this->configState ??= new ApplicationConfigState();
+        $this->configState ??= new ApplicationConfigState();
+
+        return $this->configState;
     }
 
     private function requestRunner(): HttpRequestRunner

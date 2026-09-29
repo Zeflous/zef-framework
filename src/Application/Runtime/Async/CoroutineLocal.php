@@ -61,7 +61,9 @@ final class CoroutineLocal
      */
     private function store(): \WeakMap
     {
-        return $this->store ??= new \WeakMap();
+        $this->store ??= new \WeakMap();
+
+        return $this->store;
     }
 
     /**

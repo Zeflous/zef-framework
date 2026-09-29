@@ -147,12 +147,14 @@ final class PdoConnection implements ConnectionInterface
      */
     private function transactions(): PdoTransactions
     {
-        return $this->transactions ??= new PdoTransactions(
+        $this->transactions ??= new PdoTransactions(
             $this,
             $this->pdo(...),
             $this->config,
             $this->invalidateHandle(...),
         );
+
+        return $this->transactions;
     }
 
     /**

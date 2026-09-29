@@ -150,7 +150,9 @@ final class InMemoryOutbox implements OutboxStoreInterface, OutboxClaimInterface
      */
     private function book(): OutboxEntryBook
     {
-        return $this->book ??= new OutboxEntryBook();
+        $this->book ??= new OutboxEntryBook();
+
+        return $this->book;
     }
 
     /**
@@ -159,7 +161,9 @@ final class InMemoryOutbox implements OutboxStoreInterface, OutboxClaimInterface
      */
     private function claims(): InMemoryOutboxClaims
     {
-        return $this->claims ??= new InMemoryOutboxClaims($this->book(), $this->clock);
+        $this->claims ??= new InMemoryOutboxClaims($this->book(), $this->clock);
+
+        return $this->claims;
     }
 
     private function requireEntry(string $id): OutboxEntry
