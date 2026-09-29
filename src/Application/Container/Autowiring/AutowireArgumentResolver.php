@@ -5,10 +5,11 @@ declare(strict_types=1);
 /*
  * ZEF Framework — Application layer (autowiring compile pass).
  *
- * Per-parameter planning collaborator of AutowireClassPlanner: resolves one
- * constructor parameter into dependency entries plus the generated argument
- * plan (variadic collections, #[Inject] / #[Target] references, layered
- * class bindings, and scalar #[Value] / default fallbacks). Extracted from
+ * Per-run planning collaborator of AutowireCompilerPass: resolves one
+ * constructor parameter at a time into dependency entries plus the generated
+ * argument plan (variadic collections, #[Inject] / #[Target] references,
+ * layered class bindings, and scalar #[Value] / default fallbacks), carrying
+ * the compilation state of the active process() run. Extracted from
  * AutowireCompilerPass in the sonar-zero campaign (behavior-preserving split).
  */
 
@@ -21,10 +22,16 @@ use Zef\Framework\Exception\InvalidConfigurationException;
 final class AutowireArgumentResolver
 {
     public function __construct(
-        private readonly AutowireClassPlanner $planner,
+        private readonly AutowireCompilerPass $pass,
         private readonly AutowireValueServices $valueServices,
-        private readonly AutowireImplementationCollector $implementations,
+        private readonly AutowireCompilationState $state,
     ) {}
+
+    /** Per-run accumulator the pass records generated/reused services into. */
+    public function state(): AutowireCompilationState
+    {
+        return $this->state;
+    }
 
     /**
      * Resolve one constructor parameter into dependency entries + argument plan.
@@ -47,11 +54,11 @@ final class AutowireArgumentResolver
             $this->planVariadic($container, $ownerClass, $p, $deps, $args);
         } elseif ($p->injectId !== null) {
             // ---- explicit service reference --------------------------------
-            $serviceId = $this->planner->ensureService($container, $p->injectId, $classStack);
+            $serviceId = $this->pass->ensureService($container, $p->injectId, $classStack, $this);
             $args[] = ['dep', $this->appendDependency($deps, $serviceId)];
         } elseif ($p->targetClass !== null) {
             // ---- explicit concrete target for interface/abstract types -----
-            $serviceId = $this->autowireTarget($container, $ownerClass, $p, $p->targetClass, $classStack);
+            $serviceId = $this->pass->autowireTarget($container, $ownerClass, $p, $p->targetClass, $classStack, $this);
             $args[] = ['dep', $this->appendDependency($deps, $serviceId)];
         } elseif ($p->className !== null) {
             // ---- class/interface/enum type: layered binding resolution -----
@@ -87,7 +94,7 @@ final class AutowireArgumentResolver
     ): void {
         // ---- variadic service collection ------------------------------------
         if ($p->className !== null) {
-            foreach ($this->implementations->collect($container, $p->className) as $serviceId) {
+            foreach ($this->pass->collectImplementations($container, $p->className) as $serviceId) {
                 $args[] = ['dep', $this->appendDependency($deps, $serviceId)];
             }
 
@@ -121,27 +128,10 @@ final class AutowireArgumentResolver
         }
     }
 
-    /** Resolves a #[Target]-pinned concrete class into its service ID. */
-    private function autowireTarget(
-        Container $container,
-        string $ownerClass,
-        AutowireParameterSpec $p,
-        string $targetClass,
-        array $classStack,
-    ): string {
-        if (!new \ReflectionClass($targetClass)->isInstantiable()) {
-            $message = "Cannot autowire {$ownerClass}::\${$p->name}: #[Target({$targetClass}::class)] ";
-            $message .= 'is not an instantiable class.';
-
-            throw new InvalidConfigurationException($message);
-        }
-
-        return $this->planner->autowireClass($container, $targetClass, $classStack);
-    }
-
     /**
      * Layered binding resolution for a class/interface/enum-typed parameter.
      *
+     * @param list<string> $classStack
      * @param list<string> $deps
      *
      * @return array{0:'dep'|'literal',1:int|string}
@@ -160,7 +150,7 @@ final class AutowireArgumentResolver
         }
         if (class_exists($type) && new \ReflectionClass($type)->isInstantiable()) {
             // Concrete class: autowire it under its own FQCN id.
-            $serviceId = $this->planner->autowireClass($container, $type, $classStack);
+            $serviceId = $this->pass->autowireClass($container, $type, $classStack, $this);
 
             return ['dep', $this->appendDependency($deps, $serviceId)];
         }

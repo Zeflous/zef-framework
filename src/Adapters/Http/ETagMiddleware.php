@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace Zef\Framework\Http;
 
+use Psr\Http\Message\MessageInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -89,7 +90,7 @@ final class ETagMiddleware implements MiddlewareInterface
     private function applyConditionalGet(
         ServerRequestInterface $request,
         ResponseInterface $response,
-    ): ResponseInterface {
+    ): MessageInterface {
         $method = strtoupper($request->getMethod());
         if (!in_array($method, ['GET', 'HEAD'], true) || $response->getStatusCode() !== 200) {
             return $response;
@@ -106,7 +107,7 @@ final class ETagMiddleware implements MiddlewareInterface
         ServerRequestInterface $request,
         ResponseInterface $response,
         string $body,
-    ): ResponseInterface {
+    ): MessageInterface {
         $etag = $body !== '' ? '"' . bin2hex(hash('sha256', $body, true)) . '"' : '';
         $lastModified = $response->getHeaderLine('Last-Modified');
 

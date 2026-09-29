@@ -23,6 +23,10 @@ use Zef\Framework\Exception\InvalidConfigurationException;
 
 final class AutowireValueServices
 {
+    /**
+     * @param array<string,mixed> $configValues source for #[Value('key')] lookups
+     * @param null|string         $module       module attributed to generated definitions
+     */
     public function __construct(
         private readonly AutowireCompilationState $state,
         private readonly array $configValues,
