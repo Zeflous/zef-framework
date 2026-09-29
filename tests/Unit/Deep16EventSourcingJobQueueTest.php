@@ -555,9 +555,10 @@ final class SeqCollisionConnection implements ConnectionInterface
         }
 
         throw new QueryException(
-            'Execution failed: UNIQUE constraint failed: ' . $this->queueTable . '.seq (sql: ' . $query->sql . ')',
+            'Execution failed: UNIQUE constraint failed: ' . $this->queueTable . '.seq',
             0,
             new \PDOException('UNIQUE constraint failed: ' . $this->queueTable . '.seq'),
+            $query->sql,
         );
     }
 

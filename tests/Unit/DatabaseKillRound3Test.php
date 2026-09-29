@@ -59,7 +59,9 @@ final class DatabaseKillRound3Test extends TestCase
             $conn->fetchAll(SqlQuery::raw('SELECT * FROM missing'));
             self::fail('fetchAll on bad SQL must throw');
         } catch (QueryException $e) {
-            self::assertMatchesRegularExpression('/^Preparation failed: .+ \(sql: SELECT \* FROM missing\)$/', $e->getMessage());
+            self::assertMatchesRegularExpression('/^Preparation failed: .+$/', $e->getMessage());
+            self::assertSame('SELECT * FROM missing', $e->getSql());
+            self::assertStringNotContainsString('sql:', $e->getMessage());
         }
 
         $this->expectException(QueryException::class);
