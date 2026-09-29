@@ -27,7 +27,8 @@ use Zef\Framework\Observability\MeterInterface;
  *
  * Label hygiene (issue #60: "label the key name, never the resolved value"):
  * only the dotted key NAME and the provider NAME are ever used as label
- * values, each bounded to 96 characters of `[A-Za-z0-9._:-]` — beyond that
+ * values, each bounded to 96 characters of word characters plus `._:-` —
+ * beyond that
  * the dimension collapses to `[other]`, mirroring the container service-id
  * bounding already used by {@see CounterMeter}. Cardinality stays bounded
  * by the schema-declared key set, and {@see CounterMeter}'s MAX_SERIES
@@ -75,6 +76,6 @@ final readonly class MeterConfigMetrics implements ConfigMetricsInterface
      */
     private function bounded(string $value): string
     {
-        return preg_match('/^[a-z0-9._:-]{1,96}$/i', $value) === 1 ? $value : '[other]';
+        return preg_match('/^[\w.:-]{1,96}$/u', $value) === 1 ? $value : '[other]';
     }
 }

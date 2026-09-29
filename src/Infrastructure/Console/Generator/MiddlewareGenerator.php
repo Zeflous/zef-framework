@@ -49,7 +49,10 @@ final readonly class MiddlewareGenerator implements GeneratorInterface
             final class {$name}Middleware implements MiddlewareInterface
             {
                 #[\\Override]
-                public function process(ServerRequestInterface \$request, RequestHandlerInterface \$handler): ResponseInterface
+                public function process(
+                    ServerRequestInterface \$request,
+                    RequestHandlerInterface \$handler,
+                ): ResponseInterface
                 {
                     // Before: inspect or enrich the request.
                     \$response = \$handler->handle(\$request);

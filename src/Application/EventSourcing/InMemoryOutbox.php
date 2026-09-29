@@ -19,11 +19,14 @@ namespace Zef\Framework\EventSourcing;
  */
 final class InMemoryOutbox implements OutboxStoreInterface, OutboxClaimInterface
 {
-    /** @var array<string, OutboxEntry> keyed by entry id, insertion-ordered */
-    private array $entries = [];
-
     /** @var (\Closure(): int) */
     private readonly \Closure $clock;
+
+    /** Lazily-created lease-claiming collaborator ({@see claims()}). */
+    private ?InMemoryOutboxClaims $claims = null;
+
+    /** Lazily-created insertion-ordered entry storage ({@see book()}). */
+    private ?OutboxEntryBook $book = null;
 
     /**
      * @param null|(\Closure(): int) $clock now source — injected or the realtime default,
@@ -49,7 +52,7 @@ final class InMemoryOutbox implements OutboxStoreInterface, OutboxClaimInterface
             lastError: null,
             createdAtUnixNano: $now,
         );
-        $this->entries[$entry->id] = $entry;
+        $this->book()->add($entry);
 
         return $entry;
     }
@@ -61,13 +64,9 @@ final class InMemoryOutbox implements OutboxStoreInterface, OutboxClaimInterface
             throw new EventSourcingException("due() limit must be >= 1 (got {$limit}).");
         }
         $now = $nowUnixNano ?? ($this->clock)();
-        $eligible = [];
-        foreach ($this->entries as $entry) {
-            if ($entry->isPending() && $entry->nextAttemptAtUnixNano <= $now) {
-                $eligible[] = $entry;
-            }
-        }
-        usort($eligible, static fn (OutboxEntry $a, OutboxEntry $b): int => [$a->createdAtUnixNano, $a->id] <=> [$b->createdAtUnixNano, $b->id]);
+        $eligible = $this->book()->matching(
+            static fn (OutboxEntry $entry): bool => $entry->isPending() && $entry->nextAttemptAtUnixNano <= $now,
+        );
 
         return \array_slice($eligible, 0, $limit);
     }
@@ -75,50 +74,24 @@ final class InMemoryOutbox implements OutboxStoreInterface, OutboxClaimInterface
     #[\Override]
     public function markProcessed(string $id): void
     {
-        $this->entries[$id] = $this->mutate($id, static fn (OutboxEntry $entry): OutboxEntry => new OutboxEntry(
-            id: $entry->id,
-            messageType: $entry->messageType,
-            payload: $entry->payload,
-            metadata: $entry->metadata,
-            attempts: $entry->attempts,
-            status: OutboxEntry::STATUS_PROCESSED,
-            nextAttemptAtUnixNano: $entry->nextAttemptAtUnixNano,
-            lastError: $entry->lastError,
-            createdAtUnixNano: $entry->createdAtUnixNano,
-        ));
+        $this->book()->replace(OutboxEntryTransitions::processed($this->requireEntry($id)));
     }
 
     #[\Override]
     public function markFailed(string $id, string $error, int $retryAtUnixNano): void
     {
         EventGrammar::assertUnixNano($retryAtUnixNano, 'retryAtUnixNano');
-        $this->entries[$id] = $this->mutate($id, static fn (OutboxEntry $entry): OutboxEntry => new OutboxEntry(
-            id: $entry->id,
-            messageType: $entry->messageType,
-            payload: $entry->payload,
-            metadata: $entry->metadata,
-            attempts: $entry->attempts + 1,
-            status: OutboxEntry::STATUS_PENDING,
-            nextAttemptAtUnixNano: $retryAtUnixNano,
-            lastError: $error,
-            createdAtUnixNano: $entry->createdAtUnixNano,
+        $this->book()->replace(OutboxEntryTransitions::retryScheduled(
+            $this->requireEntry($id),
+            $error,
+            $retryAtUnixNano,
         ));
     }
 
     #[\Override]
     public function markDead(string $id, string $error): void
     {
-        $this->entries[$id] = $this->mutate($id, static fn (OutboxEntry $entry): OutboxEntry => new OutboxEntry(
-            id: $entry->id,
-            messageType: $entry->messageType,
-            payload: $entry->payload,
-            metadata: $entry->metadata,
-            attempts: $entry->attempts + 1,
-            status: OutboxEntry::STATUS_FAILED,
-            nextAttemptAtUnixNano: $entry->nextAttemptAtUnixNano,
-            lastError: $error,
-            createdAtUnixNano: $entry->createdAtUnixNano,
-        ));
+        $this->book()->replace(OutboxEntryTransitions::dead($this->requireEntry($id), $error));
     }
 
     #[\Override]
@@ -127,13 +100,7 @@ final class InMemoryOutbox implements OutboxStoreInterface, OutboxClaimInterface
         if ($limit < 1) {
             throw new EventSourcingException("failed() limit must be >= 1 (got {$limit}).");
         }
-        $dead = [];
-        foreach ($this->entries as $entry) {
-            if ($entry->isFailed()) {
-                $dead[] = $entry;
-            }
-        }
-        usort($dead, static fn (OutboxEntry $a, OutboxEntry $b): int => [$a->createdAtUnixNano, $a->id] <=> [$b->createdAtUnixNano, $b->id]);
+        $dead = $this->book()->matching(static fn (OutboxEntry $entry): bool => $entry->isFailed());
 
         return \array_slice($dead, 0, $limit);
     }
@@ -141,14 +108,7 @@ final class InMemoryOutbox implements OutboxStoreInterface, OutboxClaimInterface
     #[\Override]
     public function countPending(): int
     {
-        $pending = 0;
-        foreach ($this->entries as $entry) {
-            if ($entry->isPending()) {
-                ++$pending;
-            }
-        }
-
-        return $pending;
+        return $this->book()->countMatching(static fn (OutboxEntry $entry): bool => $entry->isPending());
     }
 
     #[\Override]
@@ -156,22 +116,8 @@ final class InMemoryOutbox implements OutboxStoreInterface, OutboxClaimInterface
     {
         $now = $nextAttemptAtUnixNano ?? ($this->clock)();
         EventGrammar::assertUnixNano($now, 'nextAttemptAtUnixNano');
-        $updated = $this->mutate($id, static fn (OutboxEntry $entry): OutboxEntry => $entry->isFailed()
-            ? new OutboxEntry(
-                id: $entry->id,
-                messageType: $entry->messageType,
-                payload: $entry->payload,
-                metadata: $entry->metadata,
-                attempts: 0,
-                status: OutboxEntry::STATUS_PENDING,
-                nextAttemptAtUnixNano: $now,
-                lastError: $entry->lastError,
-                createdAtUnixNano: $entry->createdAtUnixNano,
-            )
-            : throw new EventSourcingException(
-                "Only failed entries can be requeued (entry '{$entry->id}' is '{$entry->status}').",
-            ));
-        $this->entries[$id] = $updated;
+        $updated = $this->requeuedOrFail($id, $now);
+        $this->book()->replace($updated);
 
         return $updated;
     }
@@ -181,7 +127,7 @@ final class InMemoryOutbox implements OutboxStoreInterface, OutboxClaimInterface
      */
     public function count(): int
     {
-        return \count($this->entries);
+        return $this->book()->count();
     }
 
     // -------------------------------------------------- lease claiming (v2.31.0)
@@ -189,84 +135,56 @@ final class InMemoryOutbox implements OutboxStoreInterface, OutboxClaimInterface
     #[\Override]
     public function claimBatch(string $owner, int $limit, int $leaseSeconds, ?int $nowUnixNano = null): array
     {
-        if ($owner === '' || \strlen($owner) > 64) {
-            throw new EventSourcingException('claimBatch() owner must be 1..64 chars.');
-        }
-        if ($limit < 1) {
-            throw new EventSourcingException("claimBatch() limit must be >= 1 (got {$limit}).");
-        }
-        if ($leaseSeconds < 1) {
-            throw new EventSourcingException("claimBatch() leaseSeconds must be >= 1 (got {$leaseSeconds}).");
-        }
-        $now = $nowUnixNano ?? ($this->clock)();
-        $leaseUntil = $now + $leaseSeconds * 1_000_000_000;
-        EventGrammar::assertUnixNano($leaseUntil, 'lease deadline');
-
-        $claimable = [];
-        foreach ($this->entries as $entry) {
-            if ($entry->isPending() && $entry->nextAttemptAtUnixNano <= $now && !$entry->hasActiveLease($now)) {
-                $claimable[] = $entry;
-            }
-        }
-        usort($claimable, static fn (OutboxEntry $a, OutboxEntry $b): int => [$a->createdAtUnixNano, $a->id] <=> [$b->createdAtUnixNano, $b->id]);
-
-        $claimed = [];
-        foreach (\array_slice($claimable, 0, $limit) as $entry) {
-            $leased = new OutboxEntry(
-                id: $entry->id,
-                messageType: $entry->messageType,
-                payload: $entry->payload,
-                metadata: $entry->metadata,
-                attempts: $entry->attempts,
-                status: $entry->status,
-                nextAttemptAtUnixNano: $entry->nextAttemptAtUnixNano,
-                lastError: $entry->lastError,
-                createdAtUnixNano: $entry->createdAtUnixNano,
-                leaseOwner: $owner,
-                leaseUntilUnixNano: $leaseUntil,
-            );
-            $this->entries[$leased->id] = $leased;
-            $claimed[] = $leased;
-        }
-
-        return $claimed;
+        return $this->claims()->claimBatch($owner, $limit, $leaseSeconds, $nowUnixNano);
     }
 
     #[\Override]
     public function releaseLease(string $owner): int
     {
-        if ($owner === '') {
-            throw new EventSourcingException('releaseLease() owner must be non-empty.');
-        }
-        $released = 0;
-        foreach ($this->entries as $id => $entry) {
-            if ($entry->leaseOwner === $owner) {
-                $this->entries[$id] = new OutboxEntry(
-                    id: $entry->id,
-                    messageType: $entry->messageType,
-                    payload: $entry->payload,
-                    metadata: $entry->metadata,
-                    attempts: $entry->attempts,
-                    status: $entry->status,
-                    nextAttemptAtUnixNano: $entry->nextAttemptAtUnixNano,
-                    lastError: $entry->lastError,
-                    createdAtUnixNano: $entry->createdAtUnixNano,
-                );
-                ++$released;
-            }
-        }
-
-        return $released;
+        return $this->claims()->releaseLease($owner);
     }
 
-    /** @param \Closure(OutboxEntry): OutboxEntry $fn */
-    private function mutate(string $id, \Closure $fn): OutboxEntry
+    /**
+     * The insertion-ordered entry storage: created on first use so the
+     * constructor stays work-free (clock wiring only).
+     */
+    private function book(): OutboxEntryBook
     {
-        $entry = $this->entries[$id] ?? null;
+        $this->book ??= new OutboxEntryBook();
+
+        return $this->book;
+    }
+
+    /**
+     * The lease-claiming collaborator: created on first use, sharing the
+     * entry storage and the store's clock.
+     */
+    private function claims(): InMemoryOutboxClaims
+    {
+        $this->claims ??= new InMemoryOutboxClaims($this->book(), $this->clock);
+
+        return $this->claims;
+    }
+
+    private function requireEntry(string $id): OutboxEntry
+    {
+        $entry = $this->book()->find($id);
         if (!$entry instanceof OutboxEntry) {
             throw new EventSourcingException("Unknown outbox entry '{$id}'.");
         }
 
-        return $fn($entry);
+        return $entry;
+    }
+
+    private function requeuedOrFail(string $id, int $now): OutboxEntry
+    {
+        $entry = $this->requireEntry($id);
+        if (!$entry->isFailed()) {
+            throw new EventSourcingException(
+                "Only failed entries can be requeued (entry '{$entry->id}' is '{$entry->status}').",
+            );
+        }
+
+        return OutboxEntryTransitions::requeued($entry, $now);
     }
 }

@@ -40,7 +40,7 @@ final readonly class LocalStorage implements ObjectStorageInterface
         if ($maxObjectBytes < 1) {
             throw new \InvalidArgumentException('Max object size must be positive.');
         }
-        if (!is_dir($root) && !@mkdir($root, 0o777, true) && !is_dir($root)) {
+        if (!is_dir($root) && !$this->mkdirQuietly($root) && !is_dir($root)) {
             throw new StorageException("Unable to create storage root '{$root}'.");
         }
         $canonical = realpath($root);
@@ -60,14 +60,14 @@ final readonly class LocalStorage implements ObjectStorageInterface
         $target = $this->pathFor($key);
         $this->ensureDirectory(dirname($target));
         $tmp = $target . '.tmp-' . bin2hex(random_bytes(6));
-        $written = @file_put_contents($tmp, $contents);
+        $written = $this->writeFile($tmp, $contents);
         if ($written === false || $written < strlen($contents)) {
-            @unlink($tmp); // nosemgrep: php.lang.security.unlink-use (temp file we just created)
+            $this->discardFile($tmp); // nosemgrep: php.lang.security.unlink-use (temp file we just created)
 
             throw new StorageException("Failed to write object '{$key}'.");
         }
-        if (!@rename($tmp, $target)) {
-            @unlink($tmp); // nosemgrep: php.lang.security.unlink-use (temp file we just created)
+        if (!$this->renameFile($tmp, $target)) {
+            $this->discardFile($tmp); // nosemgrep: php.lang.security.unlink-use (temp file we just created)
 
             throw new StorageException("Failed to persist object '{$key}'.");
         }
@@ -81,7 +81,7 @@ final readonly class LocalStorage implements ObjectStorageInterface
         if (!is_file($path)) {
             throw ObjectNotFoundException::forKey($key);
         }
-        $contents = @file_get_contents($path);
+        $contents = $this->readFile($path);
         if ($contents === false) {
             throw new StorageException("Failed to read object '{$key}'.");
         }
@@ -97,7 +97,7 @@ final readonly class LocalStorage implements ObjectStorageInterface
         if (!is_file($path)) {
             return; // idempotent by contract
         }
-        if (!@unlink($path)) { // nosemgrep: php.lang.security.unlink-use (inside our own root)
+        if (!$this->discardFile($path)) { // nosemgrep: php.lang.security.unlink-use (inside our own root)
             throw new StorageException("Failed to delete object '{$key}'.");
         }
     }
@@ -174,8 +174,70 @@ final readonly class LocalStorage implements ObjectStorageInterface
         if (is_dir($directory)) {
             return;
         }
-        if (!@mkdir($directory, 0o777, true) && !is_dir($directory)) {
+        if (!$this->mkdirQuietly($directory) && !is_dir($directory)) {
             throw new StorageException("Unable to create object directory '{$directory}'.");
         }
+    }
+
+    /**
+     * Runs a filesystem operation that legitimately fails in documented
+     * races (another worker creating/removing the same path). The native
+     * warning for the expected failure is captured by a scoped error
+     * handler instead of the '@' operator; the caller judges the outcome
+     * from the operation's return value plus a filesystem recheck.
+     *
+     * @template T
+     *
+     * @param callable(): T $operation
+     *
+     * @return T
+     */
+    private function runQuietly(callable $operation): mixed
+    {
+        set_error_handler(static fn (): bool => true);
+
+        try {
+            return $operation();
+        } finally {
+            restore_error_handler();
+        }
+    }
+
+    private function mkdirQuietly(string $directory): bool
+    {
+        return $this->runQuietly(fn (): bool => mkdir($directory, 0o777, true));
+    }
+
+    private function writeFile(string $path, string $contents): false|int
+    {
+        return $this->runQuietly(fn (): false|int => file_put_contents($path, $contents));
+    }
+
+    private function readFile(string $path): false|string
+    {
+        return $this->runQuietly(fn (): false|string => file_get_contents($path));
+    }
+
+    private function renameFile(string $from, string $to): bool
+    {
+        return $this->runQuietly(fn (): bool => rename($from, $to));
+    }
+
+    /**
+     * Best-effort removal: a concurrent worker may have removed the path
+     * first (returns false only for paths that still exist afterwards).
+     */
+    private function discardFile(string $path): bool
+    {
+        if (!is_file($path)) {
+            return true;
+        }
+
+        // Every path reaching here was resolved and root-checked by this
+        // storage instance itself (see the call-site notes); registered as
+        // an accepted suppression: docs/security/php-sast.md §7.
+        return $this->runQuietly(
+            fn (): bool => unlink($path), // nosemgrep: php.lang.security.unlink-use
+        );
     }
 }

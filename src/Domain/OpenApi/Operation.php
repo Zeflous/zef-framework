@@ -38,43 +38,27 @@ final readonly class Operation
         public bool $deprecated = false,
         public array $security = [],
     ) {
-        $upperMethod = strtoupper($method);
-        if (!in_array($upperMethod, self::METHODS, true)) {
-            throw new SchemaDefinitionException("Operation method '{$method}' is not a documentable HTTP method.");
-        }
-        if ($path === '' || $path[0] !== '/') {
-            throw new SchemaDefinitionException("Operation path '{$path}' must begin with '/'.");
-        }
-        if (preg_match('/^[A-Za-z0-9._-]{1,128}$/', $operationId) !== 1) {
-            throw new SchemaDefinitionException("Operation id '{$operationId}' must match [A-Za-z0-9._-]{1,128}.");
-        }
-        if ($responses === []) {
-            throw new SchemaDefinitionException("Operation '{$operationId}' must define at least one response.");
-        }
-        foreach ($responses as $status => $response) {
-            if (!$response instanceof Response || trim((string) $status) === '') {
-                throw new SchemaDefinitionException("Operation '{$operationId}' response keys must be non-empty status keys mapping to Response instances.");
-            }
-        }
-        foreach ($tags as $tag) {
-            if (!is_string($tag) || trim($tag) === '') {
-                throw new SchemaDefinitionException("Operation '{$operationId}' tags must be non-empty strings.");
-            }
-        }
-        foreach ($parameters as $parameter) {
-            if (!$parameter instanceof Parameter) {
-                throw new SchemaDefinitionException("Operation '{$operationId}' parameters must be Parameter instances.");
-            }
-        }
-        foreach ($security as $requirement) {
-            if (!$requirement instanceof SecurityRequirement) {
-                throw new SchemaDefinitionException("Operation '{$operationId}' security entries must be SecurityRequirement instances.");
-            }
-        }
+        $this->assertMethod($method);
+        $this->assertPath($path);
+        $this->assertOperationId($operationId);
+        $this->assertResponses($operationId, $responses);
+        $this->assertTags($operationId, $tags);
+        $this->assertParameters($operationId, $parameters);
+        $this->assertSecurity($operationId, $security);
     }
 
     /**
-     * @return array{operationId: string, summary?: string, description?: string, tags?: list<string>, parameters?: list<array<string, mixed>>, requestBody?: array<string, mixed>, responses: array<int|string, array<string, mixed>>, deprecated?: true, security?: list<array<string, list<string>>>}
+     * @return array{
+     *     operationId: string,
+     *     summary?: string,
+     *     description?: string,
+     *     tags?: list<string>,
+     *     parameters?: list<array<string, mixed>>,
+     *     requestBody?: array<string, mixed>,
+     *     responses: array<int|string, array<string, mixed>>,
+     *     deprecated?: true,
+     *     security?: list<array<string, list<string>>>,
+     * }
      */
     public function toArray(): array
     {
@@ -113,5 +97,85 @@ final readonly class Operation
         }
 
         return $out;
+    }
+
+    private function assertMethod(string $method): void
+    {
+        if (!in_array(strtoupper($method), self::METHODS, true)) {
+            throw new SchemaDefinitionException("Operation method '{$method}' is not a documentable HTTP method.");
+        }
+    }
+
+    private function assertPath(string $path): void
+    {
+        if ($path === '' || $path[0] !== '/') {
+            throw new SchemaDefinitionException("Operation path '{$path}' must begin with '/'.");
+        }
+    }
+
+    private function assertOperationId(string $operationId): void
+    {
+        if (preg_match('/^[A-Za-z0-9._-]{1,128}$/', $operationId) !== 1) {
+            throw new SchemaDefinitionException("Operation id '{$operationId}' must match [A-Za-z0-9._-]{1,128}.");
+        }
+    }
+
+    /**
+     * @param array<int|string, Response> $responses
+     */
+    private function assertResponses(string $operationId, array $responses): void
+    {
+        if ($responses === []) {
+            throw new SchemaDefinitionException("Operation '{$operationId}' must define at least one response.");
+        }
+        foreach ($responses as $status => $response) {
+            if ($response instanceof Response && trim((string) $status) !== '') {
+                continue;
+            }
+
+            throw new SchemaDefinitionException(
+                "Operation '{$operationId}' response keys must be non-empty status keys mapping to Response instances.",
+            );
+        }
+    }
+
+    /**
+     * @param list<string> $tags
+     */
+    private function assertTags(string $operationId, array $tags): void
+    {
+        foreach ($tags as $tag) {
+            if (!is_string($tag) || trim($tag) === '') {
+                throw new SchemaDefinitionException("Operation '{$operationId}' tags must be non-empty strings.");
+            }
+        }
+    }
+
+    /**
+     * @param list<Parameter> $parameters
+     */
+    private function assertParameters(string $operationId, array $parameters): void
+    {
+        foreach ($parameters as $parameter) {
+            if (!$parameter instanceof Parameter) {
+                throw new SchemaDefinitionException(
+                    "Operation '{$operationId}' parameters must be Parameter instances.",
+                );
+            }
+        }
+    }
+
+    /**
+     * @param list<SecurityRequirement> $security
+     */
+    private function assertSecurity(string $operationId, array $security): void
+    {
+        foreach ($security as $requirement) {
+            if (!$requirement instanceof SecurityRequirement) {
+                throw new SchemaDefinitionException(
+                    "Operation '{$operationId}' security entries must be SecurityRequirement instances.",
+                );
+            }
+        }
     }
 }

@@ -29,14 +29,8 @@ final readonly class ScaffoldWriter
     public function overwriteFile(string $path, string $contents): void
     {
         $existed = is_file($path);
-        $dir = dirname($path);
-        // Race-safe mkdir guard; mirrors writeFiles(). @infection-ignore-all
-        if (!is_dir($dir) && !@mkdir($dir, 0o777, true) && !is_dir($dir)) {
-            throw new ScaffoldWriteException("Cannot create directory: {$dir}");
-        }
-        if (@file_put_contents($path, $contents) === false) {
-            throw new ScaffoldWriteException("Cannot write file: {$path}");
-        }
+        $this->ensureDirectory(dirname($path));
+        $this->putContents($path, $contents);
         $this->io->out($existed ? "Overwrote {$path}" : "Created {$path}");
     }
 
@@ -63,16 +57,52 @@ final readonly class ScaffoldWriter
         }
 
         foreach ($files as $path => $contents) {
-            $dir = dirname($path);
-            // Race-safe mkdir guard; the `||`-variant is behaviourally identical
-            // here (dir either exists or the throw fires). @infection-ignore-all
-            if (!is_dir($dir) && !@mkdir($dir, 0o777, true) && !is_dir($dir)) {
-                throw new ScaffoldWriteException("Cannot create directory: {$dir}");
-            }
-            if (@file_put_contents($path, $contents) === false) {
-                throw new ScaffoldWriteException("Cannot write file: {$path}");
-            }
+            $this->ensureDirectory(dirname($path));
+            $this->putContents($path, $contents);
             $this->io->out("Created {$path}");
+        }
+    }
+
+    /**
+     * Race-safe mkdir guard (same is_dir/mkdir/is_dir triple the inline
+     * code used): a concurrent worker winning the mkdir race is tolerated,
+     * a genuinely failed creation throws. PHP diagnostics raised by a failed
+     * mkdir are swallowed by a scoped handler instead of `@` suppression.
+     */
+    private function ensureDirectory(string $dir): void
+    {
+        if (is_dir($dir)) {
+            return;
+        }
+        $created = false;
+        set_error_handler(static fn (): bool => true);
+
+        try {
+            $created = mkdir($dir, 0o777, true);
+        } finally {
+            restore_error_handler();
+        }
+        if (!$created && !is_dir($dir)) {
+            throw new ScaffoldWriteException("Cannot create directory: {$dir}");
+        }
+    }
+
+    /**
+     * Write a file, converting a failed write (PHP diagnostic + false
+     * return) into ScaffoldWriteException instead of `@` suppression.
+     */
+    private function putContents(string $path, string $contents): void
+    {
+        $written = false;
+        set_error_handler(static fn (): bool => true);
+
+        try {
+            $written = file_put_contents($path, $contents);
+        } finally {
+            restore_error_handler();
+        }
+        if ($written === false) {
+            throw new ScaffoldWriteException("Cannot write file: {$path}");
         }
     }
 }

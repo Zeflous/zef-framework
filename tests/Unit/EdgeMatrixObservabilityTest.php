@@ -41,6 +41,7 @@ use Zef\Framework\Observability\SpanData;
 use Zef\Framework\Observability\SpanExporterInterface;
 use Zef\Framework\Observability\Telemetry;
 use Zef\Framework\Observability\TelemetryClock;
+use Zef\Framework\Observability\TelemetryFactory;
 use Zef\Framework\Observability\TelemetryLogger;
 use Zef\Framework\Observability\TelemetrySanitizer;
 use Zef\Framework\Observability\TraceContextPropagator;
@@ -421,7 +422,7 @@ final class EdgeMatrixObservabilityTest extends TestCase
 
     public function testValidateEndpointRejectsBadSchemeAndCredentials(): void
     {
-        $m = new \ReflectionMethod(Telemetry::class, 'validateEndpoint');
+        $m = new \ReflectionMethod(TelemetryFactory::class, 'validateEndpoint');
         $m->invoke(null, 'https://collector.internal:4318/v1/logs'); // tidak throw
         foreach (['javascript:alert(1)', 'ftp://x', 'collector:4318', 'http://u:p@h', 'http://u@h', 'http://:p@h'] as $bad) {
             try {

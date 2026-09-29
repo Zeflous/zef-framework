@@ -85,12 +85,37 @@ final class ConfigSchemaValidator
             );
         }
         $coerced = $key->type->coerce($raw, $key->enumClass);
+
+        return $this->checkConstraints($raw, $coerced, $key);
+    }
+
+    private function checkConstraints(mixed $raw, mixed $coerced, ConfigKey $key): ?ConfigViolation
+    {
+        return $this->checkMin($coerced, $key)
+            ?? $this->checkMax($coerced, $key)
+            ?? $this->checkPattern($raw, $key);
+    }
+
+    private function checkMin(mixed $coerced, ConfigKey $key): ?ConfigViolation
+    {
         if ($key->min !== null && (is_int($coerced) || is_float($coerced)) && $coerced < $key->min) {
             return new ConfigViolation($key->key, 'must be >= ' . $this->renderBound($key->min));
         }
+
+        return null;
+    }
+
+    private function checkMax(mixed $coerced, ConfigKey $key): ?ConfigViolation
+    {
         if ($key->max !== null && (is_int($coerced) || is_float($coerced)) && $coerced > $key->max) {
             return new ConfigViolation($key->key, 'must be <= ' . $this->renderBound($key->max));
         }
+
+        return null;
+    }
+
+    private function checkPattern(mixed $raw, ConfigKey $key): ?ConfigViolation
+    {
         if ($key->pattern !== null && is_string($raw) && preg_match($key->pattern, $raw) !== 1) {
             return new ConfigViolation($key->key, 'does not match pattern');
         }

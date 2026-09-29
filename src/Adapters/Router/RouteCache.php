@@ -42,29 +42,34 @@ final class RouteCache
     public static function write(Router $router, string $path): void
     {
         $data = self::export($router);
-        $payload = "<?php\n\n// Compiled ZEF route cache — do not edit by hand.\n// Regenerate with RouteCache::write() after every route change.\n\nreturn "
-            . var_export([
-                'version' => ZefVersion::VERSION,
-                'fingerprint' => self::fingerprint($data),
-                'routes' => $data,
-            ], true)
-            . ";\n";
+        $exported = var_export([
+            'version' => ZefVersion::VERSION,
+            'fingerprint' => self::fingerprint($data),
+            'routes' => $data,
+        ], true);
+        $payload = sprintf(
+            "<?php\n\n%s\n// Regenerate with RouteCache::write() after every route change.\n\nreturn %s;\n",
+            '// Compiled ZEF route cache — do not edit by hand.',
+            $exported,
+        );
         $directory = dirname($path);
         if (!is_dir($directory) && !mkdir($directory, 0o777, true)) {
-            throw new \RuntimeException("Cannot create route-cache directory '{$directory}'.");
+            throw new RouteCacheException("Cannot create route-cache directory '{$directory}'.");
         }
         $tmp = $path . '.' . bin2hex(random_bytes(6)) . '.tmp';
         if (file_put_contents($tmp, $payload, LOCK_EX) === false) {
-            throw new \RuntimeException("Cannot write route cache '{$tmp}'.");
+            throw new RouteCacheException("Cannot write route cache '{$tmp}'.");
         }
         if (!rename($tmp, $path)) {
             // Cleanup of $tmp, a name this method generated itself
-            // ($path . '.' . bin2hex(random_bytes(6)) . '.tmp', line 39). No request input
+            // ($path . '.' . bin2hex(random_bytes(6)) . '.tmp'). No request input
             // reaches the argument; this runs only when the rename immediately above failed.
             // Registered as an accepted suppression: docs/security/php-sast.md §7.
-            @unlink($tmp); // nosemgrep: php.lang.security.unlink-use
+            if (is_file($tmp)) {
+                unlink($tmp); // nosemgrep: php.lang.security.unlink-use
+            }
 
-            throw new \RuntimeException("Cannot finalize route cache '{$path}'.");
+            throw new RouteCacheException("Cannot finalize route cache '{$path}'.");
         }
     }
 

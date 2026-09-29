@@ -19,7 +19,7 @@ final class InMemoryIdempotencyStore implements IdempotencyStoreInterface
     /** @var array<string, true> */
     private array $inFlight = [];
 
-    public function __construct(private readonly int $maxEntries = 10000)
+    public function __construct(int $maxEntries = 10000)
     {
         if ($maxEntries < 1) {
             throw new \InvalidArgumentException('Idempotency store capacity must be positive.');

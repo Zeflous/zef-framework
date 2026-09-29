@@ -33,6 +33,12 @@ final readonly class Doctor
      */
     private const string RR_WORKER_CLASS = 'Spiral\RoadRunner\Http\PSR7Worker';
 
+    /** RoadRunner configuration file checked by roadRunnerChecks(). */
+    private const string RR_CONFIG_FILE = '.rr.yaml';
+
+    /** Label of the app-boot smoke check row. */
+    private const string APP_BOOT_LABEL = 'app boot';
+
     /**
      * Boot probe injected by the bin/zef composition root; returns a detail
      * string or throws on failure.
@@ -106,13 +112,17 @@ final readonly class Doctor
     /** @return list<array{string,string,string}> */
     private function filesystemChecks(): array
     {
-        $autoload = array_find(self::AUTOLOAD_CANDIDATES, fn ($candidate): bool => is_file("{$this->root}/{$candidate}"));
+        $autoload = array_find(
+            self::AUTOLOAD_CANDIDATES,
+            fn ($candidate): bool => is_file("{$this->root}/{$candidate}"),
+        );
         $checks = [];
         $checks[] = $autoload !== null
             ? ['OK', 'autoloader', $autoload]
             : ['FAIL', 'autoloader', 'neither vendor/autoload.php nor autoload/zef_autoload.php found'];
 
-        foreach (['bin/worker.php' => 'RR worker entrypoint', 'public/index.php' => 'web entrypoint'] as $file => $label) {
+        $entrypoints = ['bin/worker.php' => 'RR worker entrypoint', 'public/index.php' => 'web entrypoint'];
+        foreach ($entrypoints as $file => $label) {
             $checks[] = is_file("{$this->root}/{$file}")
                 ? ['OK', $label, $file]
                 : ['WARN', $label, "{$file} not found — RR/dev-server entry limited"];
@@ -140,14 +150,16 @@ final readonly class Doctor
             ? ['OK', 'RR binary', $rrBinary]
             : ['WARN', 'RR binary', 'not found — download from https://docs.roadrunner.dev (docs/general/install)'];
 
-        $rrYaml = "{$this->root}/.rr.yaml";
+        $rrYaml = $this->root . '/' . self::RR_CONFIG_FILE;
         if (!is_file($rrYaml)) {
-            $checks[] = ['WARN', '.rr.yaml', 'missing — run bin/zef rr:init to generate one'];
+            $checks[] = ['WARN', self::RR_CONFIG_FILE, 'missing — run bin/zef rr:init to generate one'];
         } else {
             $contents = (string) file_get_contents($rrYaml);
-            $checks[] = str_contains($contents, 'version:') && str_contains($contents, 'server:')
-                ? ['OK', '.rr.yaml', 'present with version + server sections']
-                : ['WARN', '.rr.yaml', 'present but missing version/server sections — re-run bin/zef rr:init --force'];
+            $hasSections = str_contains($contents, 'version:') && str_contains($contents, 'server:');
+            $invalidDetail = 'present but missing version/server sections — re-run bin/zef rr:init --force';
+            $checks[] = $hasSections
+                ? ['OK', self::RR_CONFIG_FILE, 'present with version + server sections']
+                : ['WARN', self::RR_CONFIG_FILE, $invalidDetail];
         }
 
         return $checks;
@@ -184,17 +196,24 @@ final readonly class Doctor
      */
     private function bootCheck(): array
     {
-        $hasAutoload = array_any(self::AUTOLOAD_CANDIDATES, fn (string $candidate): bool => is_file("{$this->root}/{$candidate}"));
+        $hasAutoload = array_any(
+            self::AUTOLOAD_CANDIDATES,
+            fn (string $candidate): bool => is_file("{$this->root}/{$candidate}"),
+        );
         if (!$hasAutoload || $this->bootSmoke === null) {
-            return [['OK', 'app boot', 'skipped (no autoloader in inspected root or no boot probe)']];
+            return [['OK', self::APP_BOOT_LABEL, 'skipped (no autoloader in inspected root or no boot probe)']];
         }
 
         try {
             $detail = ($this->bootSmoke)();
 
-            return [['OK', 'app boot', is_string($detail) ? $detail : 'boot probe completed']];
+            return [[
+                'OK',
+                self::APP_BOOT_LABEL,
+                is_string($detail) ? $detail : 'boot probe completed',
+            ]];
         } catch (\Throwable $e) {
-            return [['FAIL', 'app boot', sprintf('%s: %s', $e::class, $e->getMessage())]];
+            return [['FAIL', self::APP_BOOT_LABEL, sprintf('%s: %s', $e::class, $e->getMessage())]];
         }
     }
 }

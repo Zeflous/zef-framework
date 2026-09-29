@@ -23,12 +23,30 @@ final readonly class PluginLister
     public function run(): int
     {
         $base = "{$this->root}/plugins";
+        $plugins = $this->scanPlugins($base);
+        if ($plugins === []) {
+            $this->io->out("No plugins found ({$base}).");
+
+            return 0;
+        }
+        $this->renderPlugins($plugins);
+
+        return 0;
+    }
+
+    /**
+     * Scans plugins/ for plugin directories and their PHP files.
+     *
+     * @param string $base absolute plugins directory path
+     *
+     * @return array<string, list<string>> plugin name => contained .php files
+     */
+    private function scanPlugins(string $base): array
+    {
         $entries = [];
         if (is_dir($base)) {
             $scanned = scandir($base);
-            if ($scanned !== false) {
-                $entries = $scanned;
-            }
+            $entries = $scanned !== false ? $scanned : [];
         }
 
         $plugins = [];
@@ -40,32 +58,39 @@ final readonly class PluginLister
             if (!is_dir($dir)) {
                 continue;
             }
-            $files = [];
-            $scannedFiles = scandir($dir);
-            if ($scannedFiles !== false) {
-                foreach ($scannedFiles as $file) {
-                    if (str_ends_with($file, '.php')) {
-                        $files[] = $file;
-                    }
-                }
-            }
             // scandir() already returns entries sorted ascending (SCANDIR_SORT_ASCENDING).
-            $plugins[$entry] = $files;
+            $plugins[$entry] = $this->phpFilesIn($dir);
         }
 
-        if ($plugins === []) {
-            $this->io->out("No plugins found ({$base}).");
+        return $plugins;
+    }
 
-            return 0;
+    /** @return list<string> the .php files directly inside $dir */
+    private function phpFilesIn(string $dir): array
+    {
+        $scanned = scandir($dir);
+        if ($scanned === false) {
+            return [];
+        }
+        $files = [];
+        foreach ($scanned as $file) {
+            if (str_ends_with($file, '.php')) {
+                $files[] = $file;
+            }
         }
 
+        return $files;
+    }
+
+    /** @param array<string, list<string>> $plugins */
+    private function renderPlugins(array $plugins): void
+    {
         $this->io->out(sprintf('%-16s %s', 'PLUGIN', 'FILES'));
         foreach ($plugins as $name => $files) {
-            $this->io->out(sprintf('%-16s %s', $name, $files === [] ? '-' : implode(', ', $files)));
+            $listing = $files === [] ? '-' : implode(', ', $files);
+            $this->io->out(sprintf('%-16s %s', $name, $listing));
         }
         $this->io->out('');
         $this->io->out(sprintf('%d plugin(s)', count($plugins)));
-
-        return 0;
     }
 }

@@ -16,7 +16,7 @@ final class InMemoryJobIdempotencyStore implements JobIdempotencyStoreInterface
 {
     use IdempotencyTrait;
 
-    public function __construct(private readonly int $maxEntries = 10_000)
+    public function __construct(int $maxEntries = 10_000)
     {
         if ($maxEntries < 1) {
             throw new \InvalidArgumentException('Job idempotency capacity must be positive.');

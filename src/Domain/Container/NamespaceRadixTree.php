@@ -22,6 +22,7 @@ namespace Zef\Framework\Container;
  * segment-wise traversal stays O(1) per node hop.
  *
  * @internal data structure; see RadixTreeCompilerPass for construction
+ * (edge-label descent lives in RadixTreeNavigator)
  */
 final class NamespaceRadixTree
 {
@@ -78,7 +79,10 @@ final class NamespaceRadixTree
             throw new \LogicException('NamespaceRadixTree is sealed; annotate() is not allowed.');
         }
         if (!in_array($scope, self::SCOPES, true)) {
-            throw new \InvalidArgumentException("Unknown namespace scope '{$scope}' (expected one of: " . implode(', ', self::SCOPES) . ').');
+            throw new \InvalidArgumentException(
+                "Unknown namespace scope '{$scope}' (expected one of: "
+                . implode(', ', self::SCOPES) . ').',
+            );
         }
         $this->annotations[$this->normalizePrefix($prefix)] = $scope;
     }
@@ -104,32 +108,10 @@ final class NamespaceRadixTree
         if ($id === '') {
             return false;
         }
-        $segments = explode('\\', $id);
-        $node = $this->root;
-        $remaining = $segments;
-        while ($remaining !== []) {
-            $head = $remaining[0];
-            if (!isset($node['children'][$head])) {
-                return false;
-            }
-            $child = $node['children'][$head];
-            $label = isset($child['label']) && $child['label'] !== ''
-                ? explode('\\', $child['label'])
-                : [$head];
-            $labelCount = count($label);
-            if (count($remaining) < $labelCount) {
-                return false; // query ends mid-edge
-            }
-            for ($i = 0; $i < $labelCount; ++$i) {
-                if ($remaining[$i] !== $label[$i]) {
-                    return false;
-                }
-            }
-            $node = $child;
-            $remaining = array_slice($remaining, $labelCount);
-        }
+        $result = RadixTreeNavigator::descendForLookup($this->root, explode('\\', $id));
+        $node = $result['node'];
 
-        return isset($node['ids'][$id]) && $node['ids'][$id];
+        return $result['descended'] && isset($node['ids'][$id]) && $node['ids'][$id];
     }
 
     /**
@@ -141,43 +123,15 @@ final class NamespaceRadixTree
     public function idsUnderPrefix(string $prefix): array
     {
         $normalized = $this->normalizePrefix($prefix);
-        $segments = explode('\\', rtrim($normalized, '\\'));
-        $node = $this->root;
-        $remaining = $segments;
-        while ($remaining !== []) {
-            $head = $remaining[0];
-            if (!isset($node['children'][$head])) {
-                return [];
-            }
-            $child = $node['children'][$head];
-            $label = isset($child['label']) && $child['label'] !== ''
-                ? explode('\\', $child['label'])
-                : [$head];
-            $labelCount = count($label);
-            if (count($remaining) < $labelCount) {
-                $counter = count($remaining);
-                // Prefix ends mid-edge: the whole edge subtree IS under the
-                // prefix, provided the query segments match the label so far.
-                for ($i = 0; $i < $counter; ++$i) {
-                    if ($remaining[$i] !== $label[$i]) {
-                        return [];
-                    }
-                }
-                $node = $child;
-                $remaining = [];
-
-                break;
-            }
-            for ($i = 0; $i < $labelCount; ++$i) {
-                if ($remaining[$i] !== $label[$i]) {
-                    return [];
-                }
-            }
-            $node = $child;
-            $remaining = array_slice($remaining, $labelCount);
+        $result = RadixTreeNavigator::descendToPrefix(
+            $this->root,
+            explode('\\', rtrim($normalized, '\\')),
+        );
+        if (!$result['found'] || $result['node'] === null) {
+            return [];
         }
         $out = [];
-        $this->collect($node, $out);
+        $this->collect($result['node'], $out);
         sort($out, SORT_STRING);
 
         return $out;
@@ -210,7 +164,10 @@ final class NamespaceRadixTree
     }
 
     /**
-     * @return array{serviceIds:int,nodes:int,edges:int,maxDepth:int,rawSegments:int,compressionRatio:float,annotations:int,sealed:bool}
+     * @return array{
+     *     serviceIds:int, nodes:int, edges:int, maxDepth:int,
+     *     rawSegments:int, compressionRatio:float, annotations:int, sealed:bool
+     * }
      */
     public function stats(): array
     {

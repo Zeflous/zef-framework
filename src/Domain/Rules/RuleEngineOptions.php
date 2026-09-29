@@ -35,11 +35,17 @@ final readonly class RuleEngineOptions
         private bool $failFast = false,
     ) {
         if ($concurrency !== null && $concurrency < 1) {
-            throw new \InvalidArgumentException(sprintf('rule engine concurrency must be >= 1 or null for unlimited, got %d.', $concurrency));
+            throw new \InvalidArgumentException(sprintf(
+                'rule engine concurrency must be >= 1 or null for unlimited, got %d.',
+                $concurrency,
+            ));
         }
 
         if ($perRuleTimeout !== null && $perRuleTimeout < 0.0) {
-            throw new \InvalidArgumentException(sprintf('rule engine per-rule timeout must be >= 0 seconds or null for none, got %F.', $perRuleTimeout));
+            throw new \InvalidArgumentException(sprintf(
+                'rule engine per-rule timeout must be >= 0 seconds or null for none, got %F.',
+                $perRuleTimeout,
+            ));
         }
     }
 

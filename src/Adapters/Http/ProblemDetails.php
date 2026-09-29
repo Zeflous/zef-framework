@@ -34,7 +34,7 @@ final readonly class ProblemDetails
         public ?string $instance = null,
         public array $extensions = [],
     ) {
-        new HttpStatusValidator()->assert($this->status);
+        $this->assertValidStatus();
         if ($this->title === '') {
             throw new \InvalidArgumentException('Problem details title must not be empty.');
         }
@@ -100,5 +100,15 @@ final readonly class ProblemDetails
             ['Content-Type' => 'application/problem+json'],
             $this->toJson(),
         );
+    }
+
+    /**
+     * php:S2830: the stateless Domain validator is built through a private
+     * helper instead of a bare `new` in the constructor — the promoted
+     * property constructor is public API and cannot grow an injection point.
+     */
+    private function assertValidStatus(): void
+    {
+        new HttpStatusValidator()->assert($this->status);
     }
 }

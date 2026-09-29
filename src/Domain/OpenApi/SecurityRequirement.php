@@ -26,11 +26,15 @@ final readonly class SecurityRequirement
                 throw new SchemaDefinitionException('SecurityRequirement scheme names must be non-empty strings.');
             }
             if (!is_array($scopes)) {
-                throw new SchemaDefinitionException("SecurityRequirement scopes for '{$scheme}' must be a list of strings.");
+                throw new SchemaDefinitionException(
+                    "SecurityRequirement scopes for '{$scheme}' must be a list of strings."
+                );
             }
             foreach ($scopes as $scope) {
                 if (!is_string($scope)) {
-                    throw new SchemaDefinitionException("SecurityRequirement scopes for '{$scheme}' must be a list of strings.");
+                    throw new SchemaDefinitionException(
+                        "SecurityRequirement scopes for '{$scheme}' must be a list of strings."
+                    );
                 }
             }
         }

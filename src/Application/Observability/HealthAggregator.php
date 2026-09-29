@@ -127,48 +127,90 @@ final readonly class HealthAggregator
         $started = hrtime(true);
         $deadline = $overallTimeoutMs !== null ? $started + $overallTimeoutMs * 1_000_000 : null;
         $checks = [];
-        $status = self::STATUS_OK;
+        $degraded = false;
         foreach ($this->indicatorsForGroup($group) as $indicator) {
-            $name = $indicator->name();
-            if (!is_string($name) || $name === '') {
-                $name = 'unnamed';
+            $check = $this->probeCheck($indicator, $deadline);
+            if ($check['status'] !== HealthCheckResult::UP) {
+                $degraded = true;
             }
-            $name = substr(preg_replace('/[^A-Za-z0-9._-]/', '_', $name) ?? 'unnamed', 0, 64);
-
-            if ($deadline !== null && hrtime(true) >= $deadline) {
-                $checks[] = [
-                    'name' => $name,
-                    'status' => HealthCheckResult::DOWN,
-                    'message' => 'skipped: overall health deadline exceeded',
-                ];
-                $status = self::STATUS_DEGRADED;
-
-                continue;
-            }
-
-            try {
-                $result = $indicator->check();
-                $healthy = $result instanceof HealthCheckResult && $result->healthy;
-                $message = $result instanceof HealthCheckResult ? $result->message : 'invalid check result';
-            } catch (\Throwable $e) {
-                $healthy = false;
-                $message = 'probe failure: ' . substr($e::class, 0, 128);
-            }
-            if (!$healthy) {
-                $status = self::STATUS_DEGRADED;
-            }
-            $checks[] = [
-                'name' => $name,
-                'status' => $healthy ? HealthCheckResult::UP : HealthCheckResult::DOWN,
-                'message' => substr($message, 0, 256),
-            ];
+            $checks[] = $check;
         }
 
         return [
-            'status' => $status,
+            'status' => $degraded ? self::STATUS_DEGRADED : self::STATUS_OK,
             'checks' => $checks,
             'tookMs' => round((hrtime(true) - $started) / 1_000_000, 3),
         ];
+    }
+
+    /**
+     * Runs one probe under the overall deadline and normalizes its outcome
+     * into a single check record (crashing probes degrade to "down").
+     *
+     * @param null|float|int $deadline wall-clock hrtime deadline of the whole scrape
+     *
+     * @return array{name:string,status:string,message:string}
+     */
+    private function probeCheck(HealthIndicatorInterface $indicator, float|int|null $deadline): array
+    {
+        $name = $this->sanitizedIndicatorName($indicator);
+        if ($deadline !== null && hrtime(true) >= $deadline) {
+            return [
+                'name' => $name,
+                'status' => HealthCheckResult::DOWN,
+                'message' => 'skipped: overall health deadline exceeded',
+            ];
+        }
+
+        try {
+            $outcome = $this->checkOutcome($indicator->check());
+        } catch (\Throwable $e) {
+            $outcome = ['healthy' => false, 'message' => 'probe failure: ' . substr($e::class, 0, 128)];
+        }
+
+        return [
+            'name' => $name,
+            'status' => $outcome['healthy'] ? HealthCheckResult::UP : HealthCheckResult::DOWN,
+            'message' => substr($outcome['message'], 0, 256),
+        ];
+    }
+
+    /**
+     * Normalizes one probe result: a conforming {@see HealthCheckResult} is
+     * honoured, anything else a non-conforming implementation returned
+     * degrades to the "invalid check result" record instead of failing the
+     * whole scrape.
+     *
+     * @param mixed $result raw value returned by the indicator
+     *
+     * @return array{healthy:bool,message:string}
+     */
+    private function checkOutcome(mixed $result): array
+    {
+        if (!$result instanceof HealthCheckResult) {
+            return ['healthy' => false, 'message' => 'invalid check result'];
+        }
+
+        return ['healthy' => $result->healthy, 'message' => $result->message];
+    }
+
+    /**
+     * Probe name normalized to the [A-Za-z0-9._-] exposition alphabet and
+     * capped at 64 characters ("unnamed" when the indicator reports junk).
+     */
+    private function sanitizedIndicatorName(HealthIndicatorInterface $indicator): string
+    {
+        return $this->sanitizeName($indicator->name());
+    }
+
+    /**
+     * @param mixed $name raw name reported by the indicator
+     */
+    private function sanitizeName(mixed $name): string
+    {
+        $name = is_string($name) && $name !== '' ? $name : 'unnamed';
+
+        return substr(preg_replace('/[^A-Za-z0-9._-]/', '_', $name) ?? 'unnamed', 0, 64);
     }
 
     /**

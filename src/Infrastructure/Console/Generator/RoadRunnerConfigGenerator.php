@@ -48,23 +48,9 @@ final readonly class RoadRunnerConfigGenerator implements GeneratorInterface
         $memory = $this->intOption($argv, 'memory', $this->envString('ZEF_WORKER_MEMORY_LIMIT')) ?? 512;
 
         $address ??= '0.0.0.0:8080';
-        if (preg_match(self::ADDRESS_PATTERN, $address) !== 1 && preg_match(self::ADDRESS_PATTERN_V6, $address) !== 1) {
-            $this->io->err("Invalid --address '{$address}'. Expected host:port (e.g. 0.0.0.0:8080).");
-
-            return 1;
-        }
-        if ($workers < 1 || $workers > 1024) {
-            $this->io->err("Invalid --workers '{$workers}'. Expected an integer between 1 and 1024.");
-
-            return 1;
-        }
-        if ($maxJobs < 0) {
-            $this->io->err("Invalid --max-jobs '{$maxJobs}'. Expected >= 0 (0 = unlimited).");
-
-            return 1;
-        }
-        if ($memory < 0) {
-            $this->io->err("Invalid --memory '{$memory}'. Expected >= 0 MB (0 = disabled).");
+        $error = $this->validationError($address, $workers, $maxJobs, $memory);
+        if ($error !== null) {
+            $this->io->err($error);
 
             return 1;
         }
@@ -131,6 +117,26 @@ final readonly class RoadRunnerConfigGenerator implements GeneratorInterface
             YAML;
     }
 
+    /**
+     * First validation error of the resolved CLI/env knobs, or null when
+     * every knob is usable. The match arms keep the historical error
+     * precedence (first match wins, top to bottom).
+     */
+    private function validationError(string $address, int $workers, int $maxJobs, int $memory): ?string
+    {
+        $addressInvalid = preg_match(self::ADDRESS_PATTERN, $address) !== 1
+            && preg_match(self::ADDRESS_PATTERN_V6, $address) !== 1;
+        $workersInvalid = $workers < 1 || $workers > 1024;
+
+        return match (true) {
+            $addressInvalid => "Invalid --address '{$address}'. Expected host:port (e.g. 0.0.0.0:8080).",
+            $workersInvalid => "Invalid --workers '{$workers}'. Expected an integer between 1 and 1024.",
+            $maxJobs < 0 => "Invalid --max-jobs '{$maxJobs}'. Expected >= 0 (0 = unlimited).",
+            $memory < 0 => "Invalid --memory '{$memory}'. Expected >= 0 MB (0 = disabled).",
+            default => null,
+        };
+    }
+
     /** Non-empty string value of an environment knob, or null. */
     private function envString(string $name): ?string
     {
@@ -165,7 +171,7 @@ final readonly class RoadRunnerConfigGenerator implements GeneratorInterface
     private function intOption(array $argv, string $key, ?string $envFallback): ?int
     {
         $raw = $this->option($argv, $key) ?? $envFallback;
-        if ($raw === null || trim($raw) === '' || preg_match('/^[0-9]+$/', $raw) !== 1) {
+        if ($raw === null || trim($raw) === '' || preg_match('/^\d+$/', $raw) !== 1) {
             return null;
         }
 

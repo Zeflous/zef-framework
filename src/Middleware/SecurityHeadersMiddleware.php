@@ -17,6 +17,8 @@ use Psr\Http\Server\RequestHandlerInterface;
 
 final readonly class SecurityHeadersMiddleware implements MiddlewareInterface
 {
+    private const string DEFAULT_CSP = "default-src 'self'; frame-ancestors 'none'; base-uri 'self'";
+
     /** @param array{hsts?:bool,csp?:bool,contentSecurityPolicy?:string,permissionsPolicy?:bool} $policy */
     public function __construct(private array $policy = []) {}
 
@@ -40,7 +42,7 @@ final readonly class SecurityHeadersMiddleware implements MiddlewareInterface
         if (($this->policy['csp'] ?? false) === true) {
             $response = $response->withHeader(
                 'Content-Security-Policy',
-                (string) ($this->policy['contentSecurityPolicy'] ?? "default-src 'self'; frame-ancestors 'none'; base-uri 'self'"),
+                (string) ($this->policy['contentSecurityPolicy'] ?? self::DEFAULT_CSP),
             );
         }
         if (

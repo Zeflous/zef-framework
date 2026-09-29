@@ -34,7 +34,11 @@ final class EventGrammar
     /** Hard upper bound for one read batch (projections page through the store). */
     public const int MAX_PAGE = 10_000;
 
-    private function __construct() {}
+    private function __construct()
+    {
+        // Intentionally empty: static-only validation helper — the private
+        // constructor exists solely to prevent instantiation of this class.
+    }
 
     public static function assertAggregateType(string $value, string $field = 'aggregate type'): void
     {

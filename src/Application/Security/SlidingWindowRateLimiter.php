@@ -121,10 +121,8 @@ final class SlidingWindowRateLimiter implements CostAwareRateLimiterInterface
         $remaining = $limit - ($used + $cost);
         $untilBoundary = (int) ceil(($windowNs - $elapsedNs) / 1_000_000_000);
 
-        if ($bucket === null) {
-            if (count($this->buckets) >= $this->maxKeys) {
-                throw new RateLimiterCapacityException('Rate limiter capacity exhausted.');
-            }
+        if ($bucket === null && count($this->buckets) >= $this->maxKeys) {
+            throw new RateLimiterCapacityException('Rate limiter capacity exhausted.');
         }
         $this->buckets[$key] = [
             'prev' => $prev,

@@ -115,10 +115,8 @@ final class TokenBucketRateLimiter implements CostAwareRateLimiterInterface
         $refillPerSec = $limit / $windowSeconds;
         $untilFull = (int) ceil(($limit - $remainingTokens) / $refillPerSec);
 
-        if ($bucket === null) {
-            if (count($this->buckets) >= $this->maxKeys) {
-                throw new RateLimiterCapacityException('Rate limiter capacity exhausted.');
-            }
+        if ($bucket === null && count($this->buckets) >= $this->maxKeys) {
+            throw new RateLimiterCapacityException('Rate limiter capacity exhausted.');
         }
         $this->buckets[$key] = [
             'tokens' => $remainingTokens,

@@ -61,10 +61,15 @@ final class SpecificationBuilder implements SpecificationBuilderInterface
         $path = $operation->path;
         $method = strtolower($operation->method);
         if (isset($this->operations[$path][$method])) {
-            throw new SpecificationException("Duplicate operation [{$method}] {$path}; a path+method pair may only be registered once.");
+            throw new SpecificationException(
+                "Duplicate operation [{$method}] {$path}; a path+method pair may only be registered once.",
+            );
         }
         if (isset($this->operationIds[$operation->operationId])) {
-            throw new SpecificationException("Duplicate operationId '{$operation->operationId}'; operation identifiers must be unique across the document.");
+            throw new SpecificationException(sprintf(
+                'Duplicate operationId \'%s\'; operation identifiers must be unique across the document.',
+                $operation->operationId,
+            ));
         }
         $this->operations[$path][$method] = $operation;
         $this->operationIds[$operation->operationId] = true;
@@ -132,9 +137,9 @@ final class SpecificationBuilder implements SpecificationBuilderInterface
         }
         $components = [];
         if ($this->schemas !== []) {
-            $schemas = $this->schemas;
-            ksort($schemas, SORT_STRING);
-            $components['schemas'] = array_map(static fn (Schema $s): array => $s->toArray(), $schemas);
+            $sortedSchemas = $this->schemas;
+            ksort($sortedSchemas, SORT_STRING);
+            $components['schemas'] = array_map(static fn (Schema $s): array => $s->toArray(), $sortedSchemas);
         }
         if ($this->securitySchemes !== []) {
             $schemes = $this->securitySchemes;

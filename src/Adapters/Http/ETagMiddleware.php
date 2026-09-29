@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace Zef\Framework\Http;
 
+use Psr\Http\Message\MessageInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -38,44 +39,8 @@ final class ETagMiddleware implements MiddlewareInterface
     public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
         $response = $handler->handle($request);
-        $method = strtoupper($request->getMethod());
-        if (!in_array($method, ['GET', 'HEAD'], true) || $response->getStatusCode() !== 200) {
-            return $response;
-        }
-        $body = (string) $response->getBody();
-        $lastModified = $response->getHeaderLine('Last-Modified');
-        if ($body === '' && $lastModified === '') {
-            return $response;
-        }
-        $etag = $body !== '' ? '"' . bin2hex(hash('sha256', $body, true)) . '"' : '';
 
-        $ifNoneMatch = trim($request->getHeaderLine('If-None-Match'));
-        if ($etag !== '' && $ifNoneMatch !== '' && self::ifNoneMatchMatches($ifNoneMatch, $etag)) {
-            return $this->notModified($response, $etag);
-        }
-
-        $ifModifiedSince = trim($request->getHeaderLine('If-Modified-Since'));
-        // Regresi P-13 (issue #171): RFC 9110 §13.1.3 — If-Modified-Since
-        // MUST be ignored whenever the request carries If-None-Match, even a
-        // non-matching one. The old `$etag === ''` requirement kept this path
-        // dead for body-carrying responses (an ETag is always computed for a
-        // non-empty body), so an IMS-only request always paid the full 200;
-        // any response carrying Last-Modified is now eligible, and the 304
-        // carries the validator that a 200 would have sent.
-        if (
-            $ifNoneMatch === ''
-            && $lastModified !== ''
-            && $ifModifiedSince !== ''
-            && self::notModifiedSince($ifModifiedSince, $lastModified)
-        ) {
-            return $this->notModified($response, $etag);
-        }
-
-        if ($etag !== '' && !$response->hasHeader('ETag')) {
-            return $response->withHeader('ETag', $etag);
-        }
-
-        return $response;
+        return $this->applyConditionalGet($request, $response);
     }
 
     /**
@@ -116,6 +81,67 @@ final class ETagMiddleware implements MiddlewareInterface
 
         // Truncate to whole seconds (HTTP dates carry no sub-second precision).
         return $server->getTimestamp() <= $client->getTimestamp();
+    }
+
+    /**
+     * Conditional-GET evaluation for an eligible response: 304 when a
+     * precondition matches, else the (possibly ETag-stamped) response.
+     */
+    private function applyConditionalGet(
+        ServerRequestInterface $request,
+        ResponseInterface $response,
+    ): MessageInterface {
+        $method = strtoupper($request->getMethod());
+        if (!in_array($method, ['GET', 'HEAD'], true) || $response->getStatusCode() !== 200) {
+            return $response;
+        }
+        $body = (string) $response->getBody();
+        if ($body === '' && $response->getHeaderLine('Last-Modified') === '') {
+            return $response;
+        }
+
+        return $this->resolvePreconditions($request, $response, $body);
+    }
+
+    private function resolvePreconditions(
+        ServerRequestInterface $request,
+        ResponseInterface $response,
+        string $body,
+    ): MessageInterface {
+        $etag = $body !== '' ? '"' . bin2hex(hash('sha256', $body, true)) . '"' : '';
+        $lastModified = $response->getHeaderLine('Last-Modified');
+
+        if ($this->matchesPrecondition($request, $etag, $lastModified)) {
+            return $this->notModified($response, $etag);
+        }
+
+        if ($etag !== '' && !$response->hasHeader('ETag')) {
+            return $response->withHeader('ETag', $etag);
+        }
+
+        return $response;
+    }
+
+    private function matchesPrecondition(ServerRequestInterface $request, string $etag, string $lastModified): bool
+    {
+        $ifNoneMatch = trim($request->getHeaderLine('If-None-Match'));
+        if ($etag !== '' && $ifNoneMatch !== '' && self::ifNoneMatchMatches($ifNoneMatch, $etag)) {
+            return true;
+        }
+
+        $ifModifiedSince = trim($request->getHeaderLine('If-Modified-Since'));
+
+        // Regresi P-13 (issue #171): RFC 9110 §13.1.3 — If-Modified-Since
+        // MUST be ignored whenever the request carries If-None-Match, even a
+        // non-matching one. The old `$etag === ''` requirement kept this path
+        // dead for body-carrying responses (an ETag is always computed for a
+        // non-empty body), so an IMS-only request always paid the full 200;
+        // any response carrying Last-Modified is now eligible, and the 304
+        // carries the validator that a 200 would have sent.
+        return $ifNoneMatch === ''
+            && $lastModified !== ''
+            && $ifModifiedSince !== ''
+            && self::notModifiedSince($ifModifiedSince, $lastModified);
     }
 
     private function notModified(ResponseInterface $response, string $etag): ResponseInterface
@@ -160,7 +186,10 @@ final class ETagMiddleware implements MiddlewareInterface
         foreach ($formats as $format) {
             $date = \DateTimeImmutable::createFromFormat($format, $value, new \DateTimeZone('GMT'));
             $errors = \DateTimeImmutable::getLastErrors();
-            if ($date !== false && ($errors === false || ($errors['warning_count'] === 0 && $errors['error_count'] === 0))) {
+            if (
+                $date !== false
+                && ($errors === false || ($errors['warning_count'] === 0 && $errors['error_count'] === 0))
+            ) {
                 return $date->setTimezone(new \DateTimeZone('GMT'));
             }
         }

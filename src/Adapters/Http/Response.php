@@ -29,7 +29,7 @@ final class Response extends MessageBase implements ResponseInterface
     ) {
         $bodyStream = is_string($body) ? Stream::fromString($body) : $body;
         parent::__construct($bodyStream, $headers, $protocolVersion);
-        new HttpStatusValidator()->assert($status);
+        $this->assertStatus($status);
         $this->assertReasonPhrase($reasonPhrase);
         $this->status = $status;
         $this->reasonPhrase = $reasonPhrase !== ''
@@ -46,7 +46,7 @@ final class Response extends MessageBase implements ResponseInterface
     #[\Override]
     public function withStatus(int $code, string $reasonPhrase = ''): ResponseInterface
     {
-        new HttpStatusValidator()->assert($code);
+        $this->assertStatus($code);
         $this->assertReasonPhrase($reasonPhrase);
         $n = clone $this;
         $n->status = $code;
@@ -61,6 +61,12 @@ final class Response extends MessageBase implements ResponseInterface
     public function getReasonPhrase(): string
     {
         return $this->reasonPhrase;
+    }
+
+    /** Validates $status against the shared RFC 9110 status grammar. */
+    private function assertStatus(int $status): void
+    {
+        new HttpStatusValidator()->assert($status);
     }
 
     /**

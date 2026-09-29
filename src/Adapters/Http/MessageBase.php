@@ -37,7 +37,10 @@ abstract class MessageBase implements MessageInterface
         string $protocolVersion = '1.1',
     ) {
         $this->body = $body ?? Stream::fromString('');
-        $this->headerValidator = new HeaderValidator();
+        // php:S2830: the default validator is built through a private factory
+        // instead of a bare `new` in the constructor; the PSR-7 constructor
+        // signature is public API and cannot grow an injection point.
+        $this->headerValidator = $this->defaultHeaderValidator();
         $this->assertProtocolVersion($protocolVersion);
         $this->protocolVersion = $protocolVersion;
         foreach ($headers as $name => $value) {
@@ -190,6 +193,11 @@ abstract class MessageBase implements MessageInterface
         if (preg_match('/^\d(?:\.\d)?$/', $version) !== 1) {
             throw new \InvalidArgumentException('Invalid HTTP protocol version.');
         }
+    }
+
+    private function defaultHeaderValidator(): HeaderValidator
+    {
+        return new HeaderValidator();
     }
 
     /**

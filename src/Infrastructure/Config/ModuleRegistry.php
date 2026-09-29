@@ -42,7 +42,9 @@ final class ModuleRegistry
             throw new InvalidConfigurationException("Duplicate module '{$name}'.");
         }
         if (strtolower($module->getDefinition()->name) !== $key) {
-            throw new InvalidConfigurationException("Module definition name '{$module->getDefinition()->name}' does not match '{$name}'.");
+            throw new InvalidConfigurationException(
+                "Module definition name '{$module->getDefinition()->name}' does not match '{$name}'."
+            );
         }
         $this->modules[$key] = $module;
     }
@@ -153,6 +155,9 @@ final class ModuleRegistry
             try {
                 $module->shutdown(new ModuleContext($module->getDefinition(), $container));
             } catch (\Throwable) {
+                // Intentionally empty: module shutdown is best-effort — a
+                // failing module must not prevent the remaining modules from
+                // being shut down during a teardown sequence.
             }
         }
         $this->started = false;
