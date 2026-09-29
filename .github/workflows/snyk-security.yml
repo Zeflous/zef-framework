@@ -79,7 +79,7 @@ jobs:
 
       - name: Set up Snyk CLI to check for security issues
         # Pinned commit from snyk/actions (no version tag moves with it).
-        uses: snyk/actions/setup@12140f4059e244892ae643824a95459a102120dd # pinned (snyk/actions)
+        uses: snyk/actions/setup@b075801f26076be9bb50521154cafab73f44da0c # pinned (snyk/actions)
 
       # Snyk Code (SAST). `--severity-threshold=low` reports every severity
       # tier, so any finding at all is surfaced. Exit 1 (findings) is recorded
