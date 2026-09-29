@@ -114,7 +114,9 @@ final class FilterQueryParser
             $field = $m[1];
             $op = $m[2];
         }
-        if ($field === '' || strlen($field) > FilterSpec::MAX_FIELD_BYTES || !isset($allowed[$field])) {
+        // $field is provably non-empty here: $key was checked non-empty
+        // above and the regex capture matches at least one character.
+        if (strlen($field) > FilterSpec::MAX_FIELD_BYTES || !isset($allowed[$field])) {
             return null; // lenient: unknown fields are dropped
         }
         $rawValue = strlen($rawValue) > FilterSpec::MAX_VALUE_BYTES

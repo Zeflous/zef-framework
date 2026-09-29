@@ -92,7 +92,11 @@ final class NamespaceFallbackResolver
         $this->fallbackInstances = [];
     }
 
-    /** Longest-prefix fallback lookup. @return array{factory:callable,lifetime:string}|null */
+    /**
+     * Longest-prefix fallback lookup.
+     *
+     * @return null|array{factory: callable, lifetime: string}
+     */
     private function fallbackFor(string $id): ?array
     {
         $best = null;

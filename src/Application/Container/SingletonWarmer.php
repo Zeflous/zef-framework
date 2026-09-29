@@ -13,9 +13,7 @@ namespace Zef\Framework\Container;
 
 final class SingletonWarmer
 {
-    public function __construct(private readonly Container $container)
-    {
-    }
+    public function __construct(private readonly Container $container) {}
 
     public function warm(ServiceRegistry $registry): void
     {

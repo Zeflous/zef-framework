@@ -129,11 +129,16 @@ final class ServiceRegistry extends ContainerEventListenerRegistry
         ?string $module,
         string $lifetime,
     ): void {
+        // $deps arrives as a (possibly string-keyed) map of dependency ids
+        // from Container::register(); the ServiceDefinition constructor
+        // validates every entry is a non-empty string.
+        /** @var list<string> $dependencyIds */
+        $dependencyIds = array_values($deps);
         $this->addDefinition(
             new ServiceDefinition(
                 $id,
                 $factory,
-                array_values($deps),
+                $dependencyIds,
                 $module,
                 $lifetime,
                 $lifetime === ServiceLifetime::SINGLETON,

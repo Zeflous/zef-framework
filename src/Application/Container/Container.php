@@ -13,8 +13,6 @@ namespace Zef\Framework\Container;
 use Psr\Container\ContainerInterface;
 use Zef\Framework\Exception\InvalidConfigurationException;
 use Zef\Framework\Exception\InvalidFactoryException;
-use Zef\Framework\Exception\ServiceNotFoundException;
-use Zef\Framework\Exception\ServiceResolutionException;
 use Zef\Framework\Policy\ArchitecturePolicy;
 use Zef\Framework\Policy\NamespaceScopePolicy;
 use Zef\Framework\Validation\DependencyGraphValidator;

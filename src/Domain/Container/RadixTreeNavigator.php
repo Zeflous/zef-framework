@@ -17,6 +17,8 @@ namespace Zef\Framework\Container;
  * Both query flavours (exact-id lookup and prefix enumeration) walk the
  * same compressed edges; they only disagree on how a query that ends
  * MID-EDGE is treated, so the shared hop lives here once.
+ *
+ * @phpstan-type RadixNode = array{ids: array<string, true>, children: array<string, mixed>, label?: string}
  */
 final class RadixTreeNavigator
 {
@@ -28,10 +30,10 @@ final class RadixTreeNavigator
      * whether any edge was taken (the exact-id check then runs against
      * that node's ids, byte-identical to the previous inline loop).
      *
-     * @param array{ids:array<string,true>,children:array<string,array>} $root
-     * @param list<string>                                              $segments
+     * @param RadixNode    $root
+     * @param list<string> $segments
      *
-     * @return array{node:array{ids:array<string,true>,children:array<string,array>},descended:bool}
+     * @return array{node: RadixNode, descended: bool}
      */
     public static function descendForLookup(array $root, array $segments): array
     {
@@ -55,10 +57,10 @@ final class RadixTreeNavigator
     /**
      * Descends to the node owning everything under a normalized prefix.
      *
-     * @param array{ids:array<string,true>,children:array<string,array>} $root
-     * @param list<string>                                              $segments
+     * @param RadixNode    $root
+     * @param list<string> $segments
      *
-     * @return array{node:null|array{ids:array<string,true>,children:array<string,array>},found:bool}
+     * @return array{node: null|RadixNode, found: bool}
      */
     public static function descendToPrefix(array $root, array $segments): array
     {
@@ -85,10 +87,10 @@ final class RadixTreeNavigator
      * much of its (possibly compound) edge label the remaining query can
      * consume.
      *
-     * @param array{ids:array<string,true>,children:array<string,array>} $node
-     * @param non-empty-list<string>                                    $remaining
+     * @param RadixNode             $node
+     * @param non-empty-list<string> $remaining
      *
-     * @return array{0:string,1:array,2:list<string>,3:bool}
+     * @return array{0: string, 1: RadixNode, 2: list<string>, 3: bool}
      *         ['descend', child, unconsumed tail, true]
      *         ['mid', child, tail, partial label match]
      *         ['miss', node, tail, false]
@@ -96,6 +98,16 @@ final class RadixTreeNavigator
     private static function hop(array $node, array $remaining): array
     {
         $head = $remaining[0];
+
+        /**
+         * Children are homogeneous with their parent (the same node layout
+         * documented on NamespaceRadixTree — built by RadixTreeCompilerPass
+         * and insert()); the storage type widens them to mixed, so re-assert
+         * the node shape here — the is_array guard still rejects anything
+         * that is not an array at all.
+         *
+         * @var null|RadixNode $child
+         */
         $child = $node['children'][$head] ?? null;
         if (!is_array($child)) {
             return ['miss', $node, $remaining, false];
@@ -115,6 +127,8 @@ final class RadixTreeNavigator
     /**
      * Edge label of $child, split back into segments ('' labels fall back
      * to the child key itself).
+     *
+     * @param RadixNode $child
      *
      * @return list<string>
      */

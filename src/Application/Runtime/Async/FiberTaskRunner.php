@@ -59,7 +59,11 @@ final class FiberTaskRunner
         $this->settleIfTerminated($task, $fiber);
     }
 
-    /** The task parked on the given fiber, when it belongs to this runner. */
+    /**
+     * The task parked on the given fiber, when it belongs to this runner.
+     *
+     * @param \Fiber<mixed, mixed, mixed, mixed> $fiber
+     */
     public function taskFor(\Fiber $fiber): ?FiberTask
     {
         return $this->fiberToTask()[$fiber] ?? null;

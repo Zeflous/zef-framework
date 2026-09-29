@@ -147,7 +147,7 @@ final readonly class HealthAggregator
      * Runs one probe under the overall deadline and normalizes its outcome
      * into a single check record (crashing probes degrade to "down").
      *
-     * @param float|int|null $deadline wall-clock hrtime deadline of the whole scrape
+     * @param null|float|int $deadline wall-clock hrtime deadline of the whole scrape
      *
      * @return array{name:string,status:string,message:string}
      */

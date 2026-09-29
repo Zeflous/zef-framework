@@ -45,6 +45,23 @@ final class JobRowCodec
         }
     }
 
+    /**
+     * Row narrowing: PDO rows are array<string, mixed>; ids are strings.
+     * Public for the queue's DELETE-claim (dequeue) WHERE binding, which
+     * narrows the same freshly-selected job_id column value.
+     */
+    public static function str(mixed $value): string
+    {
+        if (is_string($value)) {
+            return $value;
+        }
+        if (is_scalar($value)) {
+            return (string) $value;
+        }
+
+        return '';
+    }
+
     private static function decodePayload(string $payload): mixed
     {
         try {
@@ -71,19 +88,6 @@ final class JobRowCodec
         }
 
         return $headers;
-    }
-
-    /** Row narrowing: PDO rows are array<string, mixed>; ids are strings. */
-    private static function str(mixed $value): string
-    {
-        if (is_string($value)) {
-            return $value;
-        }
-        if (is_scalar($value)) {
-            return (string) $value;
-        }
-
-        return '';
     }
 
     /** Row narrowing: numeric columns (int on SQLite, string on MySQL PDO). */

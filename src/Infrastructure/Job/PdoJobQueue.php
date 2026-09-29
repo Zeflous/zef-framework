@@ -179,7 +179,7 @@ final readonly class PdoJobQueue implements JobQueueInterface
                 $deleted = $this->connection->execute(
                     QueryBuilder::table($this->table)
                         ->delete()
-                        ->where('job_id', '=', $this->str($row['job_id'] ?? null))
+                        ->where('job_id', '=', JobRowCodec::str($row['job_id'] ?? null))
                         ->build(),
                 );
 

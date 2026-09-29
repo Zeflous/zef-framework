@@ -85,7 +85,9 @@ final class FiberScheduler
     public function spawn(callable $fn, string $name = ''): TaskInterface
     {
         $task = $this->taskTable()->create($this, $name, 'task', fn (): mixed => $fn());
-        $this->suspensions()->enqueue(fn (): mixed => $this->runner()->step($task, null));
+        $this->suspensions()->enqueue(function () use ($task): void {
+            $this->runner()->step($task, null);
+        });
 
         return $task;
     }
@@ -105,7 +107,9 @@ final class FiberScheduler
         $this->timers()->insert(
             $clock->nowNano() + (int) round($seconds * self::NANOS_PER_SECOND),
             $task,
-            fn (): mixed => $this->runner()->step($task, null),
+            function () use ($task): void {
+                $this->runner()->step($task, null);
+            },
         );
 
         return $task;

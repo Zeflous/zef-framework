@@ -50,7 +50,8 @@ final class KernelBootSequence
             $config->addProvider($p);
         }
         $config->merge();
-        $maxRefs = (int) $config->get('framework.container.max_cross_module_refs', 0);
+        $rawMaxRefs = $config->get('framework.container.max_cross_module_refs', 0);
+        $maxRefs = is_numeric($rawMaxRefs) ? (int) $rawMaxRefs : 0;
         $container->configurePolicies($maxRefs);
         // v2.21.0: build + validate the application configuration eagerly —
         // a schema violation fails the boot before any module registers.

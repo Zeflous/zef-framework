@@ -33,9 +33,7 @@ final class ProviderBroker
 
     private bool $providersBooted = false;
 
-    public function __construct(private readonly Container $container)
-    {
-    }
+    public function __construct(private readonly Container $container) {}
 
     /**
      * Register a service provider. Eager providers run register() now;

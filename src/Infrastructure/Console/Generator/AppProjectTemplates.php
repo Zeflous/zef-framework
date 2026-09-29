@@ -135,5 +135,4 @@ final class AppProjectTemplates
 
             PHP_WRAP;
     }
-
 }

@@ -52,7 +52,7 @@ final class EdgeMatrixF6Round2Test extends TestCase
         self::assertSame([], $d->tags);
         self::assertNull($d->module);
         $cases = [
-            ['deps non-string', static fn (): ServiceDefinition => new ServiceDefinition('svc.a', static fn (): null => null, [42])],
+            ['deps non-string', static fn (): ServiceDefinition => new ServiceDefinition('svc.a', static fn (): null => null, [42])], // @phpstan-ignore-line — intentionally invalid deps: the constructor must reject them
             ['deps kosong', static fn (): ServiceDefinition => new ServiceDefinition('svc.a', static fn (): null => null, [''])],
             ['tag non-string', static fn (): ServiceDefinition => new ServiceDefinition('svc.a', static fn (): null => null, [], null, ServiceLifetime::SINGLETON, true, false, [42])],
             ['tag kosong', static fn (): ServiceDefinition => new ServiceDefinition('svc.a', static fn (): null => null, [], null, ServiceLifetime::SINGLETON, true, false, [''])],

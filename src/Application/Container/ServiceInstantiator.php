@@ -65,7 +65,7 @@ final class ServiceInstantiator
      * dependencies, invokes the factory under the initialization guard,
      * fires the resolved event and caches the result per lifetime.
      *
-     * @param array<mixed> $dependencies dependency ids of the canonical definition
+     * @param list<string> $dependencies dependency ids of the canonical definition
      */
     public function instantiate(
         string $canonical,
@@ -92,7 +92,7 @@ final class ServiceInstantiator
     }
 
     /**
-     * @param array<mixed> $dependencies dependency ids of the canonical definition
+     * @param list<string> $dependencies dependency ids of the canonical definition
      */
     private function fireResolvingListeners(string $canonical, array $dependencies): void
     {
@@ -116,7 +116,7 @@ final class ServiceInstantiator
     }
 
     /**
-     * @param array<mixed> $dependencies dependency ids of the canonical definition
+     * @param list<string> $dependencies dependency ids of the canonical definition
      */
     private function invokeFactory(
         string $canonical,

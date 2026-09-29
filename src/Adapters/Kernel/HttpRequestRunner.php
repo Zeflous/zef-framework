@@ -105,6 +105,12 @@ final class HttpRequestRunner
                 // and would otherwise ship a stale framing header.
                 $response = $response->withoutHeader('Content-Length');
             }
+            // The PSR-7 with*() mutators are declared on MessageInterface
+            // and typed to return it, but the immutable implementations
+            // return a clone of the same concrete class — the response is
+            // still a ResponseInterface here (the PSR-7 contract for the
+            // mutators), so narrow back before reading the status code.
+            \assert($response instanceof ResponseInterface);
             $elapsed = (hrtime(true) - $startNs) / 1_000_000_000;
             $span
                 ->setAttribute('http.response.status_code', $response->getStatusCode())
@@ -126,9 +132,12 @@ final class HttpRequestRunner
             );
             $this->recordLifecycle($telemetry, 'request.completed', $traceId);
 
-            return $telemetry->isEnabled()
-                ? $response->withHeader('traceparent', $span->getContext()->traceParent())
-                : $response;
+            if ($telemetry->isEnabled()) {
+                $response = $response->withHeader('traceparent', $span->getContext()->traceParent());
+                \assert($response instanceof ResponseInterface);
+            }
+
+            return $response;
         } catch (\Throwable $e) {
             $span->setStatus('ERROR', $e::class);
             $span->addEvent('exception', [

@@ -25,7 +25,7 @@ final class FiberSuspensionCoordinator
      * Ready queue of fiber steps (spawn starts, suspension resolutions),
      * drained FIFO for deterministic, starvation-free round-robin order.
      *
-     * @var list<\Closure(): mixed>
+     * @var list<\Closure(): void>
      */
     private array $ready = [];
 
@@ -133,7 +133,9 @@ final class FiberSuspensionCoordinator
      */
     public function resume(FiberTask $task, SuspendFail|SuspendValue $payload): void
     {
-        $this->ready[] = fn (): mixed => $this->runner->step($task, $payload);
+        $this->ready[] = function () use ($task, $payload): void {
+            $this->runner->step($task, $payload);
+        };
     }
 
     /**

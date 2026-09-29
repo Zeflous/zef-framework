@@ -54,7 +54,11 @@ final class NamespaceLayer
         return $out;
     }
 
-    /** ID-only variant of getByPrefix() (no instantiation). @return list<string> */
+    /**
+     * ID-only variant of getByPrefix() (no instantiation).
+     *
+     * @return list<string>
+     */
     public function getIdsByPrefix(string $prefix): array
     {
         $tree = $this->namespaceTree;
