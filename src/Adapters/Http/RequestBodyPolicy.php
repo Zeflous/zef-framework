@@ -21,8 +21,3 @@ final readonly class RequestBodyPolicy
         }
     }
 }
-
-/*
- * Bug fix #1: seek/rewind now reset $observedBytes so read+rewind+read
- * does not double-count and throw PayloadTooLargeException on small bodies.
- */

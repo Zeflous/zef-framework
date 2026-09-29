@@ -936,11 +936,14 @@ final class MutationDeepHttpTest extends TestCase
 
     public function testDnsLabelGrammarBoundaries(): void
     {
-        foreach (['a', 'z', '0', '9', 'a-b', 'az09', 'a.b', 'a.b.'] as $ok) {
+        // Regresi N-11 (issue #176): '_' is accepted (RFC 3986 reg-name /
+        // RFC 9110 Host grammar — Uri permits it, so must the factory);
+        // leading/trailing '-' and empty labels stay rejected.
+        foreach (['a', 'z', '0', '9', 'a-b', 'a_b', 'az09', 'a.b', 'a.b.'] as $ok) {
             $request = $this->factory(['REQUEST_METHOD' => 'GET', 'REQUEST_URI' => '/', 'HTTP_HOST' => $ok]);
             self::assertSame(\strtolower(\rtrim($ok, '.')), $request->getUri()->getHost(), "Host {$ok} must be accepted");
         }
-        foreach (['a_b', '-a', 'a-', 'a..b', 'a.b..', 'ab-', 'a!b'] as $bad) {
+        foreach (['-a', 'a-', 'a..b', 'a.b..', 'ab-', 'a!b'] as $bad) {
             try {
                 $this->factory(['REQUEST_METHOD' => 'GET', 'REQUEST_URI' => '/', 'HTTP_HOST' => $bad]);
                 self::fail("Expected malformed Host rejection for '{$bad}'.");

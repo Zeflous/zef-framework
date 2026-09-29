@@ -69,11 +69,24 @@ final class NamingRules
         return str_replace('-', '', ucwords($snake, '_-'));
     }
 
+    /**
+     * N-20 (issue #176): consecutive capitals are split PER LETTER —
+     * 'XMLParser' becomes 'x_m_l_parser', not 'xml_parser'. This is the
+     * established scaffold convention, pinned by EdgeMatrixMakerTest as
+     * a documented quirk: changing it now would re-key every generated
+     * service ID ("<module>.<noun>.<snake>"), breaking existing
+     * deployments' container wiring. Callers wanting acronym-intact
+     * snake case must pre-normalize the input themselves.
+     */
     public static function snake(string $pascal): string
     {
         return strtolower((string) preg_replace('/(?<!^)[A-Z]/', '_$0', $pascal));
     }
 
+    /**
+     * Same per-letter acronym convention as {@see snake()} (N-20,
+     * issue #176) — pinned by tests; see snake() for the rationale.
+     */
     public static function kebab(string $pascal): string
     {
         return strtolower((string) preg_replace('/(?<!^)[A-Z]/', '-$0', $pascal));
