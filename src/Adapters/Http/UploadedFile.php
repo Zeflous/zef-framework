@@ -202,16 +202,14 @@ final class UploadedFile implements UploadedFileInterface
 
     private function cleanupAfterMove(string $tmpTarget, bool $success, ?int $originalPosition): void
     {
-        if (!$success) {
-            // Cleanup of $tmpTarget, a name this class generated itself
-            // ($targetPath . '.zef-tmp-' . bin2hex(random_bytes(8))). No request
-            // input reaches the argument, and this runs only on the failure path.
-            // Registered as an accepted suppression: docs/security/php-sast.md §7.
-            // php.lang.security.unlink-use matches every non-literal argument by
-            // construction, so no rewrite of this call can clear it (measured, §7.1).
-            if (is_file($tmpTarget)) {
-                unlink($tmpTarget); // nosemgrep: php.lang.security.unlink-use
-            }
+        // Cleanup of $tmpTarget, a name this class generated itself
+        // ($targetPath . '.zef-tmp-' . bin2hex(random_bytes(8))). No request
+        // input reaches the argument, and this runs only on the failure path.
+        // Registered as an accepted suppression: docs/security/php-sast.md §7.
+        // php.lang.security.unlink-use matches every non-literal argument by
+        // construction, so no rewrite of this call can clear it (measured, §7.1).
+        if (!$success && is_file($tmpTarget)) {
+            unlink($tmpTarget); // nosemgrep: php.lang.security.unlink-use
         }
         if (!$success && $originalPosition !== null) {
             try {

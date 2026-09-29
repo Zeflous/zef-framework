@@ -154,31 +154,11 @@ final class SecurityRuntimeMiddleware implements MiddlewareInterface
             // bug. Safe context only: client IP + request id, no headers.
             $this->logSwallowedFailure('storage failure (fail-closed 503)', $context->clientIp, $requestId, $e);
 
-            return [null, $this->serviceUnavailableResponse($requestId)];
+            return [null, SecurityResponseFactory::serviceUnavailable($requestId)];
         }
-        if ($decision->allowed) {
-            return [$decision, null];
-        }
+        $response = $decision->allowed ? null : SecurityResponseFactory::tooManyRequests($decision, $requestId);
 
-        return [$decision, $this->tooManyRequestsResponse($decision, $requestId)];
-    }
-
-    private function serviceUnavailableResponse(string $requestId): ResponseInterface
-    {
-        return JsonResponse::error(503, 'Service Unavailable', ['correlation_id' => $requestId], [
-            'Retry-After' => '1',
-            'X-Request-ID' => $requestId,
-        ]);
-    }
-
-    private function tooManyRequestsResponse(RateLimitDecision $decision, string $requestId): ResponseInterface
-    {
-        return JsonResponse::error(429, 'Too Many Requests', ['correlation_id' => $requestId], [
-            'Retry-After' => (string) $decision->retryAfter,
-            'X-RateLimit-Limit' => (string) $decision->limit,
-            'X-RateLimit-Remaining' => '0',
-            'X-Request-ID' => $requestId,
-        ]);
+        return [$decision, $response];
     }
 
     /**
@@ -194,9 +174,7 @@ final class SecurityRuntimeMiddleware implements MiddlewareInterface
         try {
             OriginPolicy::assertAllowed($context->origin, $this->policy->allowedOrigins);
         } catch (\Throwable) {
-            return JsonResponse::error(403, 'Forbidden', ['reason' => 'Origin denied'], [
-                'X-Request-ID' => $requestId,
-            ]);
+            return SecurityResponseFactory::originDenied($requestId);
         }
 
         return null;
@@ -212,25 +190,25 @@ final class SecurityRuntimeMiddleware implements MiddlewareInterface
      */
     private function enforceCsrf(string $method, ServerRequestInterface $request, string $requestId): array
     {
-        $csrf = $this->csrf();
-        if (!$csrf instanceof CsrfTokenManager) {
+        $tokenManager = $this->csrf();
+        if (!$tokenManager instanceof CsrfTokenManager) {
             return [null, null];
         }
         $cookieToken = $this->cookieValue($request->getHeaderLine('Cookie'), $this->policy->csrfCookieName);
         if (!in_array($method, self::SAFE_METHODS, true)) {
-            return [null, $this->unsafeMethodCsrfResponse($csrf, $request, $cookieToken, $requestId)];
+            return [null, $this->unsafeMethodCsrfResponse($tokenManager, $request, $cookieToken, $requestId)];
         }
         // Re-issue not only when the cookie is absent but also when it is
         // stale/invalid (secret rotation, tampering); the old code left
         // browsers permanently locked out of unsafe requests with no
         // recovery path.
-        $needsReissue = $cookieToken === null || !$csrf->isValid($cookieToken);
+        $needsReissue = $cookieToken === null || !$tokenManager->isValid($cookieToken);
 
-        return [$needsReissue ? $csrf->issue() : null, null];
+        return [$needsReissue ? $tokenManager->issue() : null, null];
     }
 
     private function unsafeMethodCsrfResponse(
-        CsrfTokenManager $csrf,
+        CsrfTokenManager $tokenManager,
         ServerRequestInterface $request,
         ?string $cookieToken,
         string $requestId,
@@ -238,15 +216,13 @@ final class SecurityRuntimeMiddleware implements MiddlewareInterface
         $headerToken = $request->getHeaderLine($this->policy->csrfHeaderName);
         $tokenValid = $cookieToken !== null
             && $headerToken !== ''
-            && $csrf->isValid($cookieToken)
+            && $tokenManager->isValid($cookieToken)
             && hash_equals($cookieToken, $headerToken);
         if ($tokenValid) {
             return null;
         }
 
-        return JsonResponse::error(403, 'Forbidden', ['reason' => 'CSRF validation failed'], [
-            'X-Request-ID' => $requestId,
-        ]);
+        return SecurityResponseFactory::csrfFailed($requestId);
     }
 
     private function decorateWithRateHeaders(

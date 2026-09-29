@@ -126,7 +126,7 @@ final readonly class HttpRequestRunner
             $this->recordLifecycle($telemetry, 'request.completed', $traceId);
 
             if ($telemetry->isEnabled()) {
-                return $this->withTraceparent($response, $span->getContext()->traceParent());
+                $response = $this->withTraceparent($response, $span->getContext()->traceParent());
             }
 
             return $response;

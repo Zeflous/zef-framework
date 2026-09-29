@@ -33,7 +33,11 @@ final class UriGrammar
     private const string HOST_NAME_PATTERN = '/^(?=.{1,253}$)' . self::HOST_LABEL
         . '(?:\.' . self::HOST_LABEL . ')*$/';
 
-    private function __construct() {}
+    private function __construct()
+    {
+        // Intentionally empty: static grammar helper — the private constructor
+        // only exists to prevent instantiation of this all-static class.
+    }
 
     /**
      * Parse + validate + percent-encode a URI string into its components.
