@@ -11,15 +11,10 @@ declare(strict_types=1);
 
 namespace Zef\Framework\Console\Generator;
 
-use Zef\Framework\Console\TemplateLoader;
 use Zef\Framework\Foundation\ZefVersion;
 
 final readonly class AppSkeleton
 {
-    public function __construct(
-        private TemplateLoader $templates = new TemplateLoader(),
-    ) {}
-
     /** @return array<string,string> absolute path => file contents */
     public function blueprint(
         string $target,
@@ -29,9 +24,9 @@ final readonly class AppSkeleton
         string $frameworkRef,
     ): array {
         $moduleNamespace = "Zef\\Module\\{$pascal}";
-        $projectFiles = new AppProjectTemplates($this->templates);
-        $entryFiles = new AppEntryTemplates($this->templates);
-        $moduleFiles = new AppModuleTemplates($this->templates);
+        $projectFiles = new AppProjectTemplates();
+        $entryFiles = new AppEntryTemplates();
+        $moduleFiles = new AppModuleTemplates();
 
         // The path repository below carries an explicit `versions` pin derived
         // from ZefVersion::VERSION. Without it, Composer resolves the path repo

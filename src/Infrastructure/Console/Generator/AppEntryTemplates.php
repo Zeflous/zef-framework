@@ -12,17 +12,11 @@ declare(strict_types=1);
 
 namespace Zef\Framework\Console\Generator;
 
-use Zef\Framework\Console\TemplateLoader;
-
 final readonly class AppEntryTemplates
 {
-    public function __construct(
-        private TemplateLoader $templates = new TemplateLoader(),
-    ) {}
-
     public function worker(): string
     {
-        return $this->templates->render(<<<'PHP_WRAP'
+        return <<<'PHP_WRAP'
             <?php
 
             /**
@@ -65,12 +59,12 @@ final readonly class AppEntryTemplates
 
             exit($runtime->run());
 
-            PHP_WRAP);
+            PHP_WRAP;
     }
 
     public function appZef(): string
     {
-        return $this->templates->render(<<<'PHP_WRAP'
+        return <<<'PHP_WRAP'
             #!/usr/bin/env php
             <?php
 
@@ -102,6 +96,6 @@ final readonly class AppEntryTemplates
                 . " the maker commands only: run `php bin/zef list`.\n");
             exit(1);
 
-            PHP_WRAP);
+            PHP_WRAP;
     }
 }

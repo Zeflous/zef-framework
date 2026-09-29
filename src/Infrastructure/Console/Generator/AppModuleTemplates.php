@@ -12,19 +12,13 @@ declare(strict_types=1);
 
 namespace Zef\Framework\Console\Generator;
 
-use Zef\Framework\Console\TemplateLoader;
-
 final readonly class AppModuleTemplates
 {
-    public function __construct(
-        private TemplateLoader $templates = new TemplateLoader(),
-    ) {}
-
     public function appBootstrap(string $pascal): string
     {
         $module = "Zef\\Module\\{$pascal}\\ConfigProvider";
 
-        return $this->templates->render(<<<PHP
+        return <<<PHP
             <?php
 
             /**
@@ -55,12 +49,12 @@ final readonly class AppModuleTemplates
                 }
             }
 
-            PHP);
+            PHP;
     }
 
     public function homeConfigProvider(string $moduleNamespace, string $kebab): string
     {
-        return $this->templates->render(<<<PHP
+        return <<<PHP
             <?php
 
             declare(strict_types=1);
@@ -104,12 +98,12 @@ final readonly class AppModuleTemplates
                 }
             }
 
-            PHP);
+            PHP;
     }
 
     public function homeHandler(string $moduleNamespace, string $kebab): string
     {
-        return $this->templates->render(<<<PHP
+        return <<<PHP
             <?php
 
             declare(strict_types=1);
@@ -138,6 +132,6 @@ final readonly class AppModuleTemplates
                 }
             }
 
-            PHP);
+            PHP;
     }
 }

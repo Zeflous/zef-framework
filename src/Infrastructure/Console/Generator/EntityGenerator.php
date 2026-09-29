@@ -14,7 +14,6 @@ use Zef\Framework\Console\ConsoleIO;
 use Zef\Framework\Console\GeneratorInterface;
 use Zef\Framework\Console\NamingRules;
 use Zef\Framework\Console\ScaffoldWriter;
-use Zef\Framework\Console\TemplateLoader;
 
 final readonly class EntityGenerator implements GeneratorInterface
 {
@@ -22,7 +21,6 @@ final readonly class EntityGenerator implements GeneratorInterface
         private string $root,
         private ConsoleIO $io,
         private ScaffoldWriter $writer,
-        private TemplateLoader $templates = new TemplateLoader(),
     ) {}
 
     public function generate(?string $rawName, array $argv = []): int
@@ -43,7 +41,7 @@ final readonly class EntityGenerator implements GeneratorInterface
         }
 
         $ns = 'Zef\Module\\' . basename($moduleDir) . '\Domain';
-        $this->writer->writeFile("{$moduleDir}/Domain/{$name}.php", $this->templates->render(<<<PHP
+        $this->writer->writeFile("{$moduleDir}/Domain/{$name}.php", <<<PHP
             <?php
 
             declare(strict_types=1);
@@ -82,7 +80,7 @@ final readonly class EntityGenerator implements GeneratorInterface
                 }
             }
 
-            PHP));
+            PHP);
         $this->io->out(<<<'TXT'
 
             Next steps:

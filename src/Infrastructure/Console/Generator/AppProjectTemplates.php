@@ -12,17 +12,11 @@ declare(strict_types=1);
 
 namespace Zef\Framework\Console\Generator;
 
-use Zef\Framework\Console\TemplateLoader;
-
 final readonly class AppProjectTemplates
 {
-    public function __construct(
-        private TemplateLoader $templates = new TemplateLoader(),
-    ) {}
-
     public function envExample(string $address): string
     {
-        return $this->templates->render(<<<ENV
+        return <<<ENV
             # ZEF runtime knobs (copy to .env or export in your shell).
             ZEF_ENV=dev
             ZEF_DEBUG=0
@@ -30,12 +24,12 @@ final readonly class AppProjectTemplates
             ZEF_WORKER_MAX_JOBS=0
             ZEF_WORKER_MEMORY_LIMIT=0
 
-            ENV);
+            ENV;
     }
 
     public function rrYaml(string $address): string
     {
-        return $this->templates->render(<<<YAML
+        return <<<YAML
             # RoadRunner v2025.1 configuration (scaffolded by bin/zef make:app).
             # Run: vendor/bin/rr serve -c .rr.yaml
 
@@ -59,12 +53,12 @@ final readonly class AppProjectTemplates
               level: info
               encoding: console
 
-            YAML);
+            YAML;
     }
 
     public function readme(string $kebab, string $address): string
     {
-        return $this->templates->render(<<<MD
+        return <<<MD
             # {$kebab}
 
             Standalone ZEF Framework application (hexagonal · PSR-15 · RoadRunner · PHP 8.4+).
@@ -102,12 +96,12 @@ final readonly class AppProjectTemplates
             Copy `.env.example` and adjust the `ZEF_*` knobs. `ZEF_DEBUG=1`
             enables verbose error surfaces during development only.
 
-            MD);
+            MD;
     }
 
     public function publicIndex(): string
     {
-        return $this->templates->render(<<<'PHP_WRAP'
+        return <<<'PHP_WRAP'
             <?php
 
             /**
@@ -139,6 +133,6 @@ final readonly class AppProjectTemplates
                 echo $debug ? get_class($e) . ': ' . $e->getMessage() : 'Internal Server Error';
             }
 
-            PHP_WRAP);
+            PHP_WRAP;
     }
 }

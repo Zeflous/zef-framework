@@ -39,7 +39,6 @@ use Zef\Framework\Console\GeneratorInterface;
 use Zef\Framework\Console\InvalidNameException;
 use Zef\Framework\Console\NamingRules;
 use Zef\Framework\Console\ScaffoldWriter;
-use Zef\Framework\Console\TemplateLoader;
 
 final readonly class AppGenerator implements GeneratorInterface
 {
@@ -51,7 +50,6 @@ final readonly class AppGenerator implements GeneratorInterface
         private string $root,
         private ConsoleIO $io,
         private ScaffoldWriter $writer,
-        private TemplateLoader $templates = new TemplateLoader(),
     ) {
         $this->paths = $this->buildPathResolver();
         $this->skeleton = $this->buildSkeleton();
@@ -105,7 +103,7 @@ final readonly class AppGenerator implements GeneratorInterface
 
     private function buildSkeleton(): AppSkeleton
     {
-        return new AppSkeleton($this->templates);
+        return new AppSkeleton();
     }
 
     /**
