@@ -134,6 +134,29 @@ final class UriGrammar
         return $result;
     }
 
+    public static function assertHost(string $host): void
+    {
+        if ($host === '') {
+            return;
+        }
+        self::assertNoControls($host, 'URI host');
+        if (str_contains($host, ':')) {
+            if (filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) === false) {
+                throw new \InvalidArgumentException('Invalid URI host.');
+            }
+
+            return;
+        }
+        if (filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false) {
+            return;
+        }
+        // RFC 3986 reg-name also permits '_' (common for intranet hosts,
+        // RFC 9110 Host = reg-name); the DNS-only class rejected it.
+        if (strlen($host) > 253 || preg_match(self::HOST_NAME_PATTERN, $host) !== 1) {
+            throw new \InvalidArgumentException('Invalid URI host.');
+        }
+    }
+
     private static function encodeUserInfo(string $user, ?string $pass): string
     {
         $userInfo = self::encodeComponent($user, self::USERINFO_ALLOWED);
@@ -156,28 +179,5 @@ final class UriGrammar
         }
 
         return $host;
-    }
-
-    public static function assertHost(string $host): void
-    {
-        if ($host === '') {
-            return;
-        }
-        self::assertNoControls($host, 'URI host');
-        if (str_contains($host, ':')) {
-            if (filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) === false) {
-                throw new \InvalidArgumentException('Invalid URI host.');
-            }
-
-            return;
-        }
-        if (filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false) {
-            return;
-        }
-        // RFC 3986 reg-name also permits '_' (common for intranet hosts,
-        // RFC 9110 Host = reg-name); the DNS-only class rejected it.
-        if (strlen($host) > 253 || preg_match(self::HOST_NAME_PATTERN, $host) !== 1) {
-            throw new \InvalidArgumentException('Invalid URI host.');
-        }
     }
 }

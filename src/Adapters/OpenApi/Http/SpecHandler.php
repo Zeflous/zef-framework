@@ -34,19 +34,6 @@ final readonly class SpecHandler implements RequestHandlerInterface
         $this->etag = '"' . hash('sha256', $this->body) . '"';
     }
 
-    /**
-     * The document is rendered once at construction so every response and
-     * the ETag derive from the same immutable body.
-     *
-     * @param array<string, mixed> $spec built OpenAPI document
-     */
-    private static function serializedDocument(array $spec, bool $pretty): string
-    {
-        $serializer = new JsonSpecificationSerializer();
-
-        return $serializer->serialize($spec, $pretty);
-    }
-
     #[\Override]
     public function handle(ServerRequestInterface $request): ResponseInterface
     {
@@ -64,5 +51,18 @@ final readonly class SpecHandler implements RequestHandlerInterface
             ],
             $this->body,
         );
+    }
+
+    /**
+     * The document is rendered once at construction so every response and
+     * the ETag derive from the same immutable body.
+     *
+     * @param array<string, mixed> $spec built OpenAPI document
+     */
+    private static function serializedDocument(array $spec, bool $pretty): string
+    {
+        $serializer = new JsonSpecificationSerializer();
+
+        return $serializer->serialize($spec, $pretty);
     }
 }

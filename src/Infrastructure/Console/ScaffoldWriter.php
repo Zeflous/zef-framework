@@ -76,6 +76,7 @@ final readonly class ScaffoldWriter
         }
         $created = false;
         set_error_handler(static fn (): bool => true);
+
         try {
             $created = mkdir($dir, 0o777, true);
         } finally {
@@ -94,6 +95,7 @@ final readonly class ScaffoldWriter
     {
         $written = false;
         set_error_handler(static fn (): bool => true);
+
         try {
             $written = file_put_contents($path, $contents);
         } finally {

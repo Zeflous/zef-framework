@@ -254,6 +254,7 @@ final class OtlpHttpJsonExporter implements SpanExporterInterface, MetricExporte
         }
         if ($result === false) {
             $reason = $transportError !== null ? ': ' . TelemetrySanitizer::redact($transportError) : '.';
+
             throw new OtlpExporterException('OTLP exporter transport failure' . $reason);
         }
         if ($status >= 400 && $status < 500) {

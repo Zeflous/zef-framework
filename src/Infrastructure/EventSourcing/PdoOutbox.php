@@ -60,19 +60,13 @@ final readonly class PdoOutbox implements OutboxStoreInterface, OutboxClaimInter
         $this->clock = $clock ?? static fn (): int => (int) (microtime(true) * 1_000_000_000);
     }
 
-    /** Quoting the table name once up front keeps every later query builder call short. */
-    private static function quoteTable(string $table): string
-    {
-        return (new QueryBuilder())->quoteIdentifier($table, 'table');
-    }
-
     /**
      * Create the outbox table (portable DDL, safe to run repeatedly), plus
      * the relay index and the legacy-table lease-column upgrade.
      */
     public function createSchema(): void
     {
-        (new PdoOutboxSchema($this->connection, $this->table, $this->quotedTable))->create();
+        new PdoOutboxSchema($this->connection, $this->table, $this->quotedTable)->create();
     }
 
     #[\Override]
@@ -185,8 +179,9 @@ final readonly class PdoOutbox implements OutboxStoreInterface, OutboxClaimInter
         $leaseUntil = $now + $leaseSeconds * 1_000_000_000;
         EventGrammar::assertUnixNano($leaseUntil, 'lease deadline');
 
-        $entries = (new PdoOutboxClaimer($this->connection, $this->table, $this->quotedTable))
-            ->claim($owner, $limit, $now, $leaseUntil);
+        $entries = new PdoOutboxClaimer($this->connection, $this->table, $this->quotedTable)
+            ->claim($owner, $limit, $now, $leaseUntil)
+        ;
         usort($entries, self::compareFifo(...));
 
         return $entries;
@@ -205,6 +200,12 @@ final readonly class PdoOutbox implements OutboxStoreInterface, OutboxClaimInter
                 ->where('lease_owner', '=', $owner)
                 ->build(),
         );
+    }
+
+    /** Quoting the table name once up front keeps every later query builder call short. */
+    private static function quoteTable(string $table): string
+    {
+        return new QueryBuilder()->quoteIdentifier($table, 'table');
     }
 
     private function reader(): PdoOutboxReader

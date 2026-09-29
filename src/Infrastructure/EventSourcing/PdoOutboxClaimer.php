@@ -86,7 +86,7 @@ final readonly class PdoOutboxClaimer
             . "' AND \"next_attempt_at\" <= " . $now
             . ' AND ("lease_until" IS NULL OR "lease_until" <= ' . $now
             . ') ORDER BY "created_at" ASC, "id" ASC LIMIT ' . $limit
-            . (new PdoOutboxLockSuffix($this->connection, $this->quotedTable))->suffix();
+            . new PdoOutboxLockSuffix($this->connection, $this->quotedTable)->suffix();
 
         return SqlQuery::raw($sql);
     }

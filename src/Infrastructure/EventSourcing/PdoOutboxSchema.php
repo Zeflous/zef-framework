@@ -12,8 +12,8 @@ declare(strict_types=1);
 namespace Zef\Framework\EventSourcing;
 
 use Zef\Framework\Database\ConnectionInterface;
-use Zef\Framework\Database\QueryException;
 use Zef\Framework\Database\QueryBuilder;
+use Zef\Framework\Database\QueryException;
 use Zef\Framework\Database\SqlQuery;
 
 /**
@@ -94,7 +94,7 @@ final readonly class PdoOutboxSchema
      */
     private function createRelayIndex(): void
     {
-        $index = (new QueryBuilder())->quoteIdentifier('idx_' . $this->table . '_relay', 'index');
+        $index = new QueryBuilder()->quoteIdentifier('idx_' . $this->table . '_relay', 'index');
         $columns = '("status", "next_attempt_at", "created_at")';
 
         try {
