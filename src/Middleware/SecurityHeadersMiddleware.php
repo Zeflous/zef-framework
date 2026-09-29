@@ -47,6 +47,14 @@ final readonly class SecurityHeadersMiddleware implements MiddlewareInterface
             ($this->policy['hsts'] ?? false) === true
             && strtolower($request->getUri()->getScheme()) === 'https'
         ) {
+            // N-3 (issue #176): HSTS is deliberately scheme-gated while the
+            // Secure cookie attribute (SecurityRuntimeMiddleware) is emitted
+            // purely on policy. RFC 6797 §7.2 forbids sending
+            // Strict-Transport-Security over non-secure transport: an MITM
+            // controlling plain http could otherwise pin the host's HTTPS
+            // policy. A Secure cookie on plain http is harmless (browsers
+            // simply never echo it back), and scheme-gating it would silently
+            // drop the flag behind TLS-terminating proxies.
             return $response->withHeader(
                 'Strict-Transport-Security',
                 'max-age=31536000; includeSubDomains',

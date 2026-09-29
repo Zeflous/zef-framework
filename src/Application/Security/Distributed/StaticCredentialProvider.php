@@ -27,9 +27,13 @@ final readonly class StaticCredentialProvider implements CredentialProviderInter
         if ($validTokens === []) {
             throw new \InvalidArgumentException('StaticCredentialProvider requires at least one valid token.');
         }
-        // Compare fixed-length digests instead of the raw secrets:
-        // in_array() on raw tokens leaks timing (length + early-exit
-        // memcmp) in the authentication path.
+        // Compare fixed-length SHA-256 digests instead of the raw secrets
+        // so the authentication lookup cannot leak the raw token's length
+        // or a matching prefix. N-2 (issue #176): this is digest
+        // hardening, NOT constant-time — in_array() still early-exits on
+        // digest equality (hash_equals is not used); the residual timing
+        // signal only reveals the digest's position in the list, never
+        // any property of the raw secret itself.
         $this->tokenDigests = array_map(static fn (string $t): string => hash('sha256', $t), $validTokens);
     }
 

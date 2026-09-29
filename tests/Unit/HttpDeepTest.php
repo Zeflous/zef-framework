@@ -311,13 +311,16 @@ final class HttpDeepTest extends TestCase
 
     public function testFactoryParsesTrailingDotAndDefaultPorts(): void
     {
+        // Regresi N-7 (issue #176): an explicit Host-header default port
+        // normalizes to "no port" once it reaches Uri (http:80).
         $request = $this->factoryRequest([
             'REQUEST_METHOD' => 'GET',
             'REQUEST_URI' => '/dot',
             'HTTP_HOST' => 'example.test.:80',
         ]);
         self::assertSame('example.test', $request->getUri()->getHost());
-        self::assertSame(80, $request->getUri()->getPort());
+        self::assertNull($request->getUri()->getPort(), 'explicit http:80 from the Host header is omitted');
+        self::assertSame('http://example.test/dot', (string) $request->getUri());
     }
 
     public function testFactoryRejectsMalformedHosts(): void

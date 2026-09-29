@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 namespace Zef\Framework\Job;
 
+use Psr\Log\LoggerInterface;
 use Zef\Framework\Cache\LockStoreInterface;
 
 /**
@@ -33,11 +34,13 @@ use Zef\Framework\Cache\LockStoreInterface;
  * - When the producer throws, the exception propagates (the worker's
  *   retry policy must see it), and the lease is released best-effort so
  *   retries may legitimately re-run the job. When that release itself
- *   fails (store outage), the failure is reported via error_log() instead
- *   of being swallowed silently: the lease then stays held for the rest
- *   of the window — degraded but observable, and self-healing once the
- *   TTL lapses. The producer's exception is never masked by a store
- *   error, and the store error is never masked either.
+ *   fails (store outage), the failure is reported through the optional
+ *   injected PSR-3 logger (N-16, issue #176); with no logger configured
+ *   it falls back to error_log() so the default wiring stays observable:
+ *   the lease then stays held for the rest of the window — degraded but
+ *   observable, and self-healing once the TTL lapses. The producer's
+ *   exception is never masked by a store error, and the store error is
+ *   never masked either.
  *
  * The lease TTL doubles as the idempotency window (default 3600s). Lock
  * TTLs are bounded 1..86400s by the port, so windows above one day are
@@ -54,7 +57,16 @@ final readonly class LockingJobIdempotencyStore implements JobIdempotencyStoreIn
      */
     private const int MAX_KEY_LENGTH = 191;
 
-    public function __construct(private LockStoreInterface $store) {}
+    /**
+     * N-16 (issue #176): the release-failure report goes through the PSR-3
+     * port when one is injected (same pattern as TransactionManager);
+     * null keeps the historical error_log() fallback so default wiring
+     * never loses observability.
+     */
+    public function __construct(
+        private LockStoreInterface $store,
+        private ?LoggerInterface $logger = null,
+    ) {}
 
     #[\Override]
     public function remember(string $key, callable $producer, int $ttlSeconds = 3600): mixed
@@ -87,12 +99,25 @@ final readonly class LockingJobIdempotencyStore implements JobIdempotencyStoreIn
             try {
                 $this->store->release($leaseKey, $owner);
             } catch (\Throwable $releaseFailure) {
-                error_log(sprintf(
-                    '[ZEF][job] idempotency lease release failed for key "%s" (window %ds): %s — lease remains held until TTL lapse; retries for this key are blocked until then.',
+                // N-16 (issue #176): prefer the logger port; error_log() is
+                // only the no-logger fallback.
+                $reason = 'lease remains held until TTL lapse; retries for this key are blocked until then';
+                $message = sprintf(
+                    'Idempotency lease release failed for key "%s" (window %ds): %s — %s.',
                     $key,
                     $ttlSeconds,
                     $releaseFailure->getMessage(),
-                ));
+                    $reason,
+                );
+                if ($this->logger instanceof LoggerInterface) {
+                    $this->logger->error($message, [
+                        'key' => $key,
+                        'ttl_seconds' => $ttlSeconds,
+                        'exception' => $releaseFailure,
+                    ]);
+                } else {
+                    error_log('[ZEF][job] ' . $message);
+                }
             }
 
             throw $e;

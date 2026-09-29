@@ -583,14 +583,18 @@ final class EdgeMatrixF7AppJobTest extends TestCase
         self::assertNull($scheduler->scheduleOf('job.absent'));
     }
 
-    public function testTickZeroIsValidAndFirstTickUsesNowMinusOne(): void
+    public function testTickZeroIsValidAndFirstTickSeedIsClampedToZero(): void
     {
+        // Regresi N-18 (issue #176): tick(0) forwarded -1 to
+        // nextRunAfter(), which real schedules (CronExpression) reject —
+        // the seed is clamped to 0, so the epoch tick is a well-defined
+        // pass. Positive ticks keep the exact now-1 seed.
         $queue = new InMemoryJobQueue();
         $scheduler = new Scheduler($queue);
         $sched = new F7FakeSchedule(returnNow: 0);
         $scheduler->register('job.t', null, $sched);
         self::assertSame(8, $scheduler->tick(0), 'tick(0) valid; stationary schedule saturates catch-up cap');
-        self::assertSame(-1, $sched->firstArg, 'first lookup must be nextRunAfter(now - 1)');
+        self::assertSame(0, $sched->firstArg, 'first lookup seed is clamped to 0, never -1');
         self::assertSame(0, $sched->lastArg);
         self::assertSame(0, $scheduler->nextRunOf('job.t'));
     }

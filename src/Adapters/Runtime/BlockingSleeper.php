@@ -19,5 +19,3 @@ final class BlockingSleeper
         }
     }
 }
-
-// Bug fix #12: validates waitRequest/respond in constructor.

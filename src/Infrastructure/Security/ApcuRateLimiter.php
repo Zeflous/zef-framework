@@ -29,6 +29,16 @@ final readonly class ApcuRateLimiter implements RateLimiterInterface
 {
     private const string PREFIX = 'zef:ratelimit:';
 
+    /**
+     * N-1 (issue #176): $maxKeys is accepted for configuration symmetry
+     * with the other limiter adapters and validated, but APCu entry counts
+     * are not observable from userland, so this adapter cannot bound the
+     * shared segment — bounding is the store's responsibility
+     * (apc.shm_size). The limiter keeps no key index; each bucket counter
+     * carries its own TTL (2x the window), so stale buckets evaporate and
+     * the resident set stays proportional to distinct keys active within
+     * that horizon.
+     */
     public function __construct(private int $maxKeys = 10000)
     {
         if ($this->maxKeys < 1) {

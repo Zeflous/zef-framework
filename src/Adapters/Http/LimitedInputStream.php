@@ -48,6 +48,17 @@ final class LimitedInputStream implements StreamInterface
         return $this->inner->detach();
     }
 
+    /**
+     * N-8 (issue #176): reports the EFFECTIVE size — min(inner size,
+     * policy limit) — never the raw underlying size. PSR-7 consumers use
+     * getSize() to reason about how many bytes the stream can actually
+     * deliver, and this wrapper refuses to deliver anything past the
+     * limit; an oversized body therefore reports exactly maxBytes. Null
+     * still means "unknown" (delegated to the inner stream), and note
+     * that a read past the limit throws PayloadTooLargeException rather
+     * than truncating, so the effective size is an upper bound on what
+     * getContents() will return for a compliant body.
+     */
     #[\Override]
     public function getSize(): ?int
     {
