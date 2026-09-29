@@ -43,6 +43,8 @@ final class Migrator
     public const string LOCK_TABLE = 'zef_migrations_lock';
     private const string VERSION_RE = '/^\d{14}$/';
     private const int MAX_NAME_BYTES = 128;
+    private const string MIGRATIONS_SCHEMA
+        = '"version" VARCHAR(14) NOT NULL PRIMARY KEY, "name" VARCHAR(128) NOT NULL, "applied_at" INTEGER NOT NULL';
 
     /** @var array<string, MigrationInterface> */
     private array $registered = [];
@@ -228,8 +230,7 @@ final class Migrator
     private function ensureSchema(): void
     {
         $this->connection->execute(SqlQuery::raw(
-            'CREATE TABLE IF NOT EXISTS "' . self::MIGRATIONS_TABLE . '" ('
-            . '"version" VARCHAR(14) NOT NULL PRIMARY KEY, "name" VARCHAR(128) NOT NULL, "applied_at" INTEGER NOT NULL)',
+            'CREATE TABLE IF NOT EXISTS "' . self::MIGRATIONS_TABLE . '" (' . self::MIGRATIONS_SCHEMA . ')',
         ));
     }
 
