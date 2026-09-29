@@ -38,6 +38,10 @@ final readonly class CronExpression implements ScheduleInterface
 {
     private const int MAX_SCAN_MINUTES = 1461 * 24 * 60; // one full leap cycle
 
+    private const string NEVER_FIRES_MESSAGE = <<<'MSG'
+        Cron expression '%s' can never fire (the restricted day-of-month has no valid date in the restricted months).
+        MSG;
+
     private function __construct(
         /** @var array<int,int> sorted allowed values */
         public array $minutes,
@@ -175,9 +179,7 @@ final readonly class CronExpression implements ScheduleInterface
         }
 
         throw new CronExpressionException(sprintf(
-            <<<'MSG'
-                Cron expression '%s' can never fire (the restricted day-of-month has no valid date in the restricted months).
-                MSG,
+            self::NEVER_FIRES_MESSAGE,
             $this->expression,
         ));
     }

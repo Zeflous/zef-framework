@@ -46,6 +46,10 @@ use Zef\Framework\Exception\InvalidConfigurationException;
  */
 final class ConfigMigrator
 {
+    private const string DOWNGRADE_NOT_SUPPORTED = <<<'MSG'
+        Config data is schema version %d, newer than the target version %d — downgrade migration is not supported.
+        MSG;
+
     /** @var array<int, list<callable(array<array-key,mixed>):array<array-key,mixed>>> steps per target version */
     private array $steps = [];
 
@@ -123,7 +127,7 @@ final class ConfigMigrator
     private function downgradeNotSupported(int $fromVersion, int $toVersion): InvalidConfigurationException
     {
         return new InvalidConfigurationException(sprintf(
-            'Config data is schema version %d, newer than the target version %d — downgrade migration is not supported.',
+            self::DOWNGRADE_NOT_SUPPORTED,
             $fromVersion,
             $toVersion,
         ));
