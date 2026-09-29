@@ -4,7 +4,29 @@
 # documentation.
 
 # Snyk security scanning: Open Source (SCA), Code (SAST) and IaC.
-# SARIF produced by Snyk Code is uploaded to the GitHub Code Scanning tab.
+#
+# STRICT FAIL-CLOSED MODEL
+# ------------------------
+#   Snyk Code ───────┐
+#   Snyk Open Source ├─ scan → upload evidence → strict verdict
+#   Snyk IaC ────────┘
+#
+#   0                  → PASS
+#   LOW finding        → FAIL
+#   MEDIUM finding     → FAIL
+#   HIGH finding       → FAIL
+#   CRITICAL finding   → FAIL
+#   scanner error      → FAIL
+#   missing result     → FAIL
+#
+# Every scanner runs with `--severity-threshold=low`, so no severity tier is
+# filtered out of the result set. Each scanner records its own exit code as a
+# step output; the SARIF evidence is uploaded to GitHub Code Scanning BEFORE
+# the verdict is computed; and a single explicit final verdict step fails the
+# job unless all three scanners reported exit code 0.
+#
+# Exit-code contract (Snyk CLI): 0 = clean, 1 = findings, >1 = scanner error.
+# Under this model 1 and >1 are both blocking — findings are no longer ignored.
 #
 # Requires the repository secret SNYK_TOKEN
 # (https://github.com/snyk/actions#getting-your-snyk-token).
@@ -54,21 +76,50 @@ jobs:
         # Pinned commit from snyk/actions (no version tag moves with it).
         uses: snyk/actions/setup@12140f4059e244892ae643824a95459a102120dd # pinned (snyk/actions)
 
-      # Snyk exits with code 1 when it finds issues, which would otherwise abort
-      # the job and skip the SARIF upload. Exit 1 is treated as "findings" and
-      # allowed through; any higher code is a genuine scan error and still fails.
+      # Snyk Code (SAST). `--severity-threshold=low` reports every severity
+      # tier, so any finding at all is surfaced. Exit 1 (findings) is recorded
+      # and deliberately NOT masked: the final verdict step turns it into a
+      # failure. Exit >1 is a genuine scanner error and is recorded the same
+      # way, so the verdict step fails on it too.
       - name: Snyk Code test (SAST, SARIF output)
         id: snyk_code
         run: |
           rc=0
-          snyk code test --sarif > snyk-code.sarif || rc=$?
+          snyk code test --severity-threshold=low --sarif-file-output=snyk-code.sarif || rc=$?
           echo "snyk code test exit code: ${rc} (0=clean, 1=findings, >1=error)"
-          if [ "${rc}" -gt 1 ]; then
-            echo "::error::snyk code test failed with exit code ${rc} (scan error, not findings)"
-            exit "${rc}"
-          fi
+          echo "exit_code=${rc}" >> "$GITHUB_OUTPUT"
 
-      # Upload runs even when the scan above reported findings.
+      # Snyk Open Source (SCA). This replaces the previous `snyk monitor`,
+      # which only snapshotted the dependency graph to Snyk and never failed
+      # on findings. `snyk test --all-projects` scans every detected project
+      # and exits 1 when any vulnerability at or above the threshold is found,
+      # so the dependency gate is now real and blocking.
+      - name: Snyk Open Source test (SCA, SARIF output)
+        id: snyk_sca
+        run: |
+          rc=0
+          snyk test --all-projects --severity-threshold=low --sarif-file-output=snyk-sca.sarif || rc=$?
+          echo "snyk test exit code: ${rc} (0=clean, 1=findings, >1=error)"
+          echo "exit_code=${rc}" >> "$GITHUB_OUTPUT"
+
+      # Snyk IaC. Same threshold and same exit-code contract as the two scans
+      # above. The scan target is left at the repository root (as before), so
+      # the deploy/ tree — Dockerfile, compose file and k8s manifests — is
+      # covered without narrowing the scan to a subdirectory.
+      - name: Snyk IaC test (SARIF output)
+        id: snyk_iac
+        run: |
+          rc=0
+          snyk iac test --severity-threshold=low --report --sarif-file-output=snyk-iac.sarif || rc=$?
+          echo "snyk iac test exit code: ${rc} (0=clean, 1=findings, >1=error)"
+          echo "exit_code=${rc}" >> "$GITHUB_OUTPUT"
+
+      # ---------------------------------------------------------------------
+      # Evidence upload. Runs even when a scan above reported findings, and
+      # always BEFORE the verdict step, so the Code Scanning tab is populated
+      # regardless of the verdict outcome. Each scanner writes its own SARIF
+      # file (Snyk overwrites a shared path with the most recent scan).
+      # ---------------------------------------------------------------------
       - name: Upload Snyk Code results to GitHub Code Scanning
         if: always() && hashFiles('snyk-code.sarif') != ''
         uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
@@ -76,20 +127,64 @@ jobs:
           sarif_file: snyk-code.sarif
           category: snyk-code
 
-      # Snyk Open Source (SCA). `monitor` uploads the dependency graph to Snyk;
-      # it exits non-zero only on a real error, so it is deliberately not masked.
-      - name: Snyk Open Source monitor
-        run: snyk monitor --all-projects
+      - name: Upload Snyk Open Source results to GitHub Code Scanning
+        if: always() && hashFiles('snyk-sca.sarif') != ''
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          sarif_file: snyk-sca.sarif
+          category: snyk-open-source
 
-      # Same exit-code-1 contract as the Code step: findings (1) must not abort
-      # the job, a real error (>1) must.
-      - name: Snyk IaC test and report
-        id: snyk_iac
+      - name: Upload Snyk IaC results to GitHub Code Scanning
+        if: always() && hashFiles('snyk-iac.sarif') != ''
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          sarif_file: snyk-iac.sarif
+          category: snyk-iac
+
+      # ---------------------------------------------------------------------
+      # Explicit final verdict. Fail-closed: this is the ONLY place the job's
+      # pass/fail is decided, and it passes only when every scanner reported
+      # exit code 0.
+      #
+      #   exit 0        → PASS
+      #   exit 1        → FAIL (findings are blocking, not ignored)
+      #   exit >1       → FAIL (scanner error is blocking)
+      #   missing/empty → FAIL (a scanner that produced no result cannot pass)
+      #
+      # `if: always()` guarantees the verdict is evaluated even when an earlier
+      # step failed, so a failure can never be silently swallowed.
+      # ---------------------------------------------------------------------
+      - name: Snyk strict verdict (fail-closed)
+        if: always()
         run: |
-          rc=0
-          snyk iac test --report || rc=$?
-          echo "snyk iac test exit code: ${rc} (0=clean, 1=findings, >1=error)"
-          if [ "${rc}" -gt 1 ]; then
-            echo "::error::snyk iac test failed with exit code ${rc} (scan error, not findings)"
-            exit "${rc}"
+          set -u
+          code_rc="${{ steps.snyk_code.outputs.exit_code }}"
+          sca_rc="${{ steps.snyk_sca.outputs.exit_code }}"
+          iac_rc="${{ steps.snyk_iac.outputs.exit_code }}"
+
+          echo "Snyk strict verdict — scanner exit codes"
+          echo "  snyk code test (SAST)       : ${code_rc:-<missing>}"
+          echo "  snyk test (Open Source/SCA) : ${sca_rc:-<missing>}"
+          echo "  snyk iac test (IaC)         : ${iac_rc:-<missing>}"
+          echo "  0 = clean, 1 = findings, >1 = scanner error, <missing> = no result reported"
+
+          verdict=0
+          for pair in "code:${code_rc}" "open-source:${sca_rc}" "iac:${iac_rc}"; do
+            name="${pair%%:*}"
+            rc="${pair#*:}"
+            if [ -z "${rc}" ]; then
+              echo "::error::${name}: no exit code reported (missing result) — FAIL"
+              verdict=1
+            elif [ "${rc}" -ne 0 ]; then
+              echo "::error::${name}: exit code ${rc} (1=findings, >1=scanner error) — FAIL"
+              verdict=1
+            else
+              echo "${name}: exit code 0 — PASS"
+            fi
+          done
+
+          if [ "${verdict}" -ne 0 ]; then
+            echo "::error::Snyk strict verdict: FAIL — at least one scanner did not report exit code 0"
+            exit 1
           fi
+          echo "Snyk strict verdict: PASS — all scanners reported exit code 0"
