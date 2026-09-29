@@ -51,6 +51,19 @@ final readonly class ModuleDefinition
     ) {
         $name = trim($name);
         Identifier::assertModuleName($name);
+        $this->services = self::validatedServices($services);
+        $this->aliases = self::validatedAliases($aliases);
+        $this->routes = self::validatedRoutes($routes);
+        $this->dependencies = self::normalizedDependencies($dependencies);
+    }
+
+    /**
+     * @param array<array-key,mixed> $services
+     *
+     * @return array<string,ServiceDefinition>
+     */
+    private static function validatedServices(array $services): array
+    {
         foreach ($services as $id => $definition) {
             if (!is_string($id) || $id === '' || !$definition instanceof ServiceDefinition) {
                 throw new \InvalidArgumentException(
@@ -63,28 +76,56 @@ final readonly class ModuleDefinition
                 );
             }
         }
+
+        return $services;
+    }
+
+    /**
+     * @param array<array-key,mixed> $aliases
+     *
+     * @return array<string,string>
+     */
+    private static function validatedAliases(array $aliases): array
+    {
         foreach ($aliases as $alias => $target) {
             if (!is_string($alias) || $alias === '' || !is_string($target) || $target === '') {
                 throw new \InvalidArgumentException('Module aliases must map non-empty strings to non-empty strings.');
             }
         }
-        foreach ($dependencies as $dependency) {
-            Identifier::assertModuleName($dependency, 'module dependency');
-        }
-        $normalizedDependencies = [];
-        foreach ($dependencies as $dependency) {
-            $normalizedDependencies[] = strtolower($dependency);
-        }
-        $dependencies = array_values(array_unique($normalizedDependencies));
+
+        return $aliases;
+    }
+
+    /**
+     * @param array<mixed> $routes
+     *
+     * @return list<RouteDefinition>
+     */
+    private static function validatedRoutes(array $routes): array
+    {
         foreach ($routes as $route) {
             if (!$route instanceof RouteDefinition) {
                 throw new \InvalidArgumentException('Module routes must contain RouteDefinition instances.');
             }
         }
-        $this->services = $services;
-        $this->aliases = $aliases;
-        $this->routes = array_values($routes);
-        $this->dependencies = $dependencies;
+
+        return array_values($routes);
+    }
+
+    /**
+     * @param array<int,string> $dependencies
+     *
+     * @return list<string>
+     */
+    private static function normalizedDependencies(array $dependencies): array
+    {
+        $normalized = [];
+        foreach ($dependencies as $dependency) {
+            Identifier::assertModuleName($dependency, 'module dependency');
+            $normalized[] = strtolower($dependency);
+        }
+
+        return array_values(array_unique($normalized));
     }
 
     public static function fromArray(string $name, array $config): self
