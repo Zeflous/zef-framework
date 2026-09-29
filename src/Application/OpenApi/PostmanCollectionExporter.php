@@ -283,9 +283,9 @@ final class PostmanCollectionExporter
     /**
      * @param array<array-key, mixed> $schema
      *
-     * @return \stdClass|array<string, mixed>
+     * @return array<string, mixed>|\stdClass
      */
-    private function objectExample(array $schema): \stdClass|array
+    private function objectExample(array $schema): array|\stdClass
     {
         $properties = is_array($schema['properties'] ?? null) ? $schema['properties'] : [];
         $out = [];

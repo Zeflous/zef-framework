@@ -60,54 +60,11 @@ final readonly class Schema
         public mixed $example = null,
         public ?array $enum = null,
     ) {
-        if ($this->type === SchemaType::Array && !$this->items instanceof Schema && $this->ref === null) {
-            throw new SchemaDefinitionException('Array schema must define items.');
-        }
-        if ($this->minLength !== null && $this->minLength < 0) {
-            throw new SchemaDefinitionException("Schema minLength must be >= 0 (got {$this->minLength}).");
-        }
-        if ($this->maxLength !== null && $this->maxLength < 1) {
-            throw new SchemaDefinitionException("Schema maxLength must be >= 1 (got {$this->maxLength}).");
-        }
-        if ($this->pattern !== null && ($this->pattern === '' || strlen($this->pattern) > self::MAX_PATTERN_LENGTH)) {
-            throw new SchemaDefinitionException('Schema pattern length must be 1..2048.');
-        }
-        if ($this->minItems !== null && $this->minItems < 0) {
-            throw new SchemaDefinitionException("Schema minItems must be >= 0 (got {$this->minItems}).");
-        }
-        if ($this->maxItems !== null && $this->maxItems < 1) {
-            throw new SchemaDefinitionException("Schema maxItems must be >= 1 (got {$this->maxItems}).");
-        }
-        if ($this->minProperties !== null && $this->minProperties < 0) {
-            throw new SchemaDefinitionException("Schema minProperties must be >= 0 (got {$this->minProperties}).");
-        }
-        if ($this->maxProperties !== null && $this->maxProperties < 1) {
-            throw new SchemaDefinitionException("Schema maxProperties must be >= 1 (got {$this->maxProperties}).");
-        }
-        foreach ($this->required as $field) {
-            if (!is_string($field) || trim($field) === '') {
-                throw new SchemaDefinitionException('Schema required entries must be non-empty strings.');
-            }
-        }
-        if ($this->required !== [] && array_unique($this->required) !== $this->required) {
-            throw new SchemaDefinitionException('Schema required entries must be unique.');
-        }
-        foreach ($this->properties as $name => $property) {
-            if (!is_string($name) || trim($name) === '' || mb_strlen($name) > 128) {
-                throw new SchemaDefinitionException('Schema property names must be non-empty strings of at most 128 characters.');
-            }
-            if (!$property instanceof self) {
-                throw new SchemaDefinitionException("Schema property '{$name}' must be a Schema instance.");
-            }
-        }
-        if ($this->enum !== null && $this->enum === []) {
-            throw new SchemaDefinitionException('Schema enum must be a non-empty list when provided.');
-        }
-        foreach ($this->enum ?? [] as $value) {
-            if (!is_string($value) && !is_int($value) && !is_float($value) && !is_bool($value)) {
-                throw new SchemaDefinitionException('Schema enum values must be scalars.');
-            }
-        }
+        $this->assertShape();
+        $this->assertBounds();
+        $this->assertRequired();
+        $this->assertProperties();
+        $this->assertEnum();
     }
 
     /**
@@ -158,20 +115,153 @@ final readonly class Schema
      * Recursive serialization; null/unset constraints are omitted so the
      * emitted document stays minimal and deterministic.
      *
-     * @return array{'$ref': string, nullable?: true}|array{type: string, format?: string, description?: string, title?: string, nullable?: true, readOnly?: true, writeOnly?: true, deprecated?: true, minLength?: int, maxLength?: int, pattern?: string, minimum?: int, maximum?: int, minItems?: int, maxItems?: int, uniqueItems?: true, minProperties?: int, maxProperties?: int, required?: list<string>, properties?: array<string, array<string, mixed>>, items?: array<string, mixed>, oneOf?: list<array<string, mixed>>, anyOf?: list<array<string, mixed>>, allOf?: list<array<string, mixed>>, additionalProperties?: array<string, mixed>|bool, default?: mixed, example?: mixed, enum?: list<bool|float|int|string>, '$ref'?: string}
+     * @return array{
+     *     '$ref': string,
+     *     nullable?: true,
+     * }|array{
+     *     type: string,
+     *     format?: string,
+     *     description?: string,
+     *     title?: string,
+     *     nullable?: true,
+     *     readOnly?: true,
+     *     writeOnly?: true,
+     *     deprecated?: true,
+     *     minLength?: int,
+     *     maxLength?: int,
+     *     pattern?: string,
+     *     minimum?: int,
+     *     maximum?: int,
+     *     minItems?: int,
+     *     maxItems?: int,
+     *     uniqueItems?: true,
+     *     minProperties?: int,
+     *     maxProperties?: int,
+     *     required?: list<string>,
+     *     properties?: array<string, array<string, mixed>>,
+     *     items?: array<string, mixed>,
+     *     oneOf?: list<array<string, mixed>>,
+     *     anyOf?: list<array<string, mixed>>,
+     *     allOf?: list<array<string, mixed>>,
+     *     additionalProperties?: array<string, mixed>|bool,
+     *     default?: mixed,
+     *     example?: mixed,
+     *     enum?: list<bool|float|int|string>,
+     *     '$ref'?: string,
+     * }
      */
     public function toArray(): array
     {
         if ($this->ref !== null) {
-            $ref = ['$ref' => $this->ref];
-            if ($this->nullable === true) {
-                $ref['nullable'] = true;
-            }
-
-            return $ref;
+            return $this->refArray($this->ref);
         }
 
         $out = ['type' => $this->type->value];
+        $this->appendMetadata($out);
+        $this->appendBounds($out);
+        $this->appendMembers($out);
+
+        return $out;
+    }
+
+    private function assertShape(): void
+    {
+        if ($this->type === SchemaType::Array && !$this->items instanceof Schema && $this->ref === null) {
+            throw new SchemaDefinitionException('Array schema must define items.');
+        }
+        if ($this->pattern !== null && ($this->pattern === '' || strlen($this->pattern) > self::MAX_PATTERN_LENGTH)) {
+            throw new SchemaDefinitionException('Schema pattern length must be 1..2048.');
+        }
+    }
+
+    private function assertBounds(): void
+    {
+        if ($this->minLength !== null && $this->minLength < 0) {
+            throw new SchemaDefinitionException("Schema minLength must be >= 0 (got {$this->minLength}).");
+        }
+        if ($this->maxLength !== null && $this->maxLength < 1) {
+            throw new SchemaDefinitionException("Schema maxLength must be >= 1 (got {$this->maxLength}).");
+        }
+        if ($this->minItems !== null && $this->minItems < 0) {
+            throw new SchemaDefinitionException("Schema minItems must be >= 0 (got {$this->minItems}).");
+        }
+        if ($this->maxItems !== null && $this->maxItems < 1) {
+            throw new SchemaDefinitionException("Schema maxItems must be >= 1 (got {$this->maxItems}).");
+        }
+        if ($this->minProperties !== null && $this->minProperties < 0) {
+            throw new SchemaDefinitionException("Schema minProperties must be >= 0 (got {$this->minProperties}).");
+        }
+        if ($this->maxProperties !== null && $this->maxProperties < 1) {
+            throw new SchemaDefinitionException("Schema maxProperties must be >= 1 (got {$this->maxProperties}).");
+        }
+    }
+
+    private function assertRequired(): void
+    {
+        foreach ($this->required as $field) {
+            if (!is_string($field) || trim($field) === '') {
+                throw new SchemaDefinitionException('Schema required entries must be non-empty strings.');
+            }
+        }
+        if ($this->required !== [] && array_unique($this->required) !== $this->required) {
+            throw new SchemaDefinitionException('Schema required entries must be unique.');
+        }
+    }
+
+    private function assertProperties(): void
+    {
+        foreach ($this->properties as $name => $property) {
+            if (!is_string($name) || trim($name) === '' || mb_strlen($name) > 128) {
+                throw new SchemaDefinitionException(
+                    'Schema property names must be non-empty strings'
+                    . ' of at most 128 characters.',
+                );
+            }
+            if (!$property instanceof self) {
+                throw new SchemaDefinitionException("Schema property '{$name}' must be a Schema instance.");
+            }
+        }
+    }
+
+    private function assertEnum(): void
+    {
+        if ($this->enum !== null && $this->enum === []) {
+            throw new SchemaDefinitionException('Schema enum must be a non-empty list when provided.');
+        }
+        foreach ($this->enum ?? [] as $value) {
+            if (!is_string($value) && !is_int($value) && !is_float($value) && !is_bool($value)) {
+                throw new SchemaDefinitionException('Schema enum values must be scalars.');
+            }
+        }
+    }
+
+    /**
+     * @return array{'$ref': string, nullable?: true}
+     */
+    private function refArray(string $ref): array
+    {
+        $out = ['$ref' => $ref];
+        if ($this->nullable === true) {
+            $out['nullable'] = true;
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param array{
+     *     type: string,
+     *     format?: string,
+     *     description?: string,
+     *     title?: string,
+     *     nullable?: true,
+     *     readOnly?: true,
+     *     writeOnly?: true,
+     *     deprecated?: true,
+     * } $out
+     */
+    private function appendMetadata(array &$out): void
+    {
         if ($this->format !== null) {
             $out['format'] = $this->format;
         }
@@ -193,10 +283,55 @@ final readonly class Schema
         if ($this->deprecated === true) {
             $out['deprecated'] = true;
         }
-        foreach (['minLength' => $this->minLength, 'maxLength' => $this->maxLength, 'minimum' => $this->minimum, 'maximum' => $this->maximum, 'minItems' => $this->minItems, 'maxItems' => $this->maxItems, 'minProperties' => $this->minProperties, 'maxProperties' => $this->maxProperties] as $key => $value) {
-            if ($value !== null) {
-                $out[$key] = $value;
-            }
+    }
+
+    /**
+     * @param array{
+     *     type: string,
+     *     format?: string,
+     *     description?: string,
+     *     title?: string,
+     *     nullable?: true,
+     *     readOnly?: true,
+     *     writeOnly?: true,
+     *     deprecated?: true,
+     *     minLength?: int,
+     *     maxLength?: int,
+     *     minimum?: int,
+     *     maximum?: int,
+     *     minItems?: int,
+     *     maxItems?: int,
+     *     minProperties?: int,
+     *     maxProperties?: int,
+     *     pattern?: string,
+     *     uniqueItems?: true,
+     * } $out
+     */
+    private function appendBounds(array &$out): void
+    {
+        if ($this->minLength !== null) {
+            $out['minLength'] = $this->minLength;
+        }
+        if ($this->maxLength !== null) {
+            $out['maxLength'] = $this->maxLength;
+        }
+        if ($this->minimum !== null) {
+            $out['minimum'] = $this->minimum;
+        }
+        if ($this->maximum !== null) {
+            $out['maximum'] = $this->maximum;
+        }
+        if ($this->minItems !== null) {
+            $out['minItems'] = $this->minItems;
+        }
+        if ($this->maxItems !== null) {
+            $out['maxItems'] = $this->maxItems;
+        }
+        if ($this->minProperties !== null) {
+            $out['minProperties'] = $this->minProperties;
+        }
+        if ($this->maxProperties !== null) {
+            $out['maxProperties'] = $this->maxProperties;
         }
         if ($this->pattern !== null) {
             $out['pattern'] = $this->pattern;
@@ -204,6 +339,42 @@ final readonly class Schema
         if ($this->uniqueItems === true) {
             $out['uniqueItems'] = true;
         }
+    }
+
+    /**
+     * @param array{
+     *     type: string,
+     *     format?: string,
+     *     description?: string,
+     *     title?: string,
+     *     nullable?: true,
+     *     readOnly?: true,
+     *     writeOnly?: true,
+     *     deprecated?: true,
+     *     minLength?: int,
+     *     maxLength?: int,
+     *     minimum?: int,
+     *     maximum?: int,
+     *     minItems?: int,
+     *     maxItems?: int,
+     *     minProperties?: int,
+     *     maxProperties?: int,
+     *     pattern?: string,
+     *     uniqueItems?: true,
+     *     required?: list<string>,
+     *     properties?: array<string, array<string, mixed>>,
+     *     items?: array<string, mixed>,
+     *     oneOf?: list<array<string, mixed>>,
+     *     anyOf?: list<array<string, mixed>>,
+     *     allOf?: list<array<string, mixed>>,
+     *     additionalProperties?: array<string, mixed>|bool,
+     *     default?: mixed,
+     *     example?: mixed,
+     *     enum?: list<bool|float|int|string>,
+     * } $out
+     */
+    private function appendMembers(array &$out): void
+    {
         if ($this->required !== []) {
             $out['required'] = $this->required;
         }
@@ -213,16 +384,22 @@ final readonly class Schema
         if ($this->items instanceof Schema) {
             $out['items'] = $this->items->toArray();
         }
-        foreach (['oneOf' => $this->oneOf, 'anyOf' => $this->anyOf, 'allOf' => $this->allOf] as $key => $list) {
-            if ($list !== null) {
-                $out[$key] = array_map(static fn (self $schema): array => $schema->toArray(), $list);
-            }
+        if ($this->oneOf !== null) {
+            $out['oneOf'] = array_map(static fn (self $schema): array => $schema->toArray(), $this->oneOf);
+        }
+        if ($this->anyOf !== null) {
+            $out['anyOf'] = array_map(static fn (self $schema): array => $schema->toArray(), $this->anyOf);
+        }
+        if ($this->allOf !== null) {
+            $out['allOf'] = array_map(static fn (self $schema): array => $schema->toArray(), $this->allOf);
         }
         if ($this->additionalProperties instanceof Schema) {
             $out['additionalProperties'] = $this->additionalProperties->toArray();
         } elseif ($this->additionalPropertiesAllowed !== null) {
             $out['additionalProperties'] = $this->additionalPropertiesAllowed;
         }
+        // Neither schema nor bool additionalProperties: key omitted.
+
         if ($this->default !== null) {
             $out['default'] = $this->default;
         }
@@ -232,7 +409,5 @@ final readonly class Schema
         if ($this->enum !== null) {
             $out['enum'] = $this->enum;
         }
-
-        return $out;
     }
 }
