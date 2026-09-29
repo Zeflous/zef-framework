@@ -21,16 +21,19 @@ use Zef\Framework\Validation\DependencyGraphValidator;
 
 final class Container implements ContainerInterface, ServiceRegistrarInterface
 {
-    private const FROZEN_MESSAGE = 'Container is frozen.';
+    private const string FROZEN_MESSAGE = 'Container is frozen.';
 
-    private readonly ServiceRegistry $registry;
-    private readonly ServiceRegistrar $registrar;
-    private readonly DependencyGraphValidator $graphValidator;
-    private readonly ContainerResolver $resolver;
-    private readonly ContainerCompiler $compiler;
+    // php:S2830: collaborators are wired in initialize() (not the constructor
+    // body), so they stay non-readonly — phpstan forbids readonly assignment
+    // outside the constructor; they are still write-once by construction.
+    private ServiceRegistry $registry;
+    private ServiceRegistrar $registrar;
+    private DependencyGraphValidator $graphValidator;
+    private ContainerResolver $resolver;
+    private ContainerCompiler $compiler;
     private bool $frozen = false;
     private int $maxCrossModuleRefs = 0;
-    private readonly ArchitecturePolicy $policy;
+    private ArchitecturePolicy $policy;
 
     // v2.10.0 enterprise state (all pre-freeze composition-time data).
     /**
@@ -588,7 +591,11 @@ final class Container implements ContainerInterface, ServiceRegistrarInterface
         }
     }
 
-    /** Registers the outermost-first decorator chain as nested wrappers (inside out). */
+    /**
+     * Registers the outermost-first decorator chain as nested wrappers (inside out).
+     *
+     * @param list<callable> $chain
+     */
     private function wrapDecoratorChain(
         string $id,
         string $baseId,

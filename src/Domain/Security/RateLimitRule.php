@@ -54,7 +54,7 @@ final readonly class RateLimitRule
     ) {
         $this->assertName($name);
         $this->assertQuota($limit, $windowSeconds, $cost);
-        $this->pathPrefix = self::normalisedPathPrefix($pathPrefix);
+        $this->pathPrefix = $this->normalisedPathPrefix($pathPrefix);
         $this->assertMethods($methods);
     }
 
@@ -138,14 +138,14 @@ final readonly class RateLimitRule
      * identically — a config typo must not change the matched set. The
      * bare root "/" is its own normal form.
      */
-    private static function normalisedPathPrefix(string $pathPrefix): string
+    private function normalisedPathPrefix(string $pathPrefix): string
     {
         if ($pathPrefix === '' || !str_starts_with($pathPrefix, '/')) {
             throw new \InvalidArgumentException('Rate limit rule pathPrefix must start with "/".');
         }
         $pathPrefix = rtrim($pathPrefix, '/');
         if ($pathPrefix === '') {
-            $pathPrefix = '/';
+            return '/';
         }
 
         return $pathPrefix;

@@ -150,7 +150,7 @@ final class MigrationLock
         );
         $lockedRaw = $rows[0]['locked_at'] ?? null;
         $ttlRaw = $rows[0]['ttl'] ?? null;
-        if (!self::isNumericScalar($lockedRaw) || !self::isNumericScalar($ttlRaw)) {
+        if (!$this->isNumericScalar($lockedRaw) || !$this->isNumericScalar($ttlRaw)) {
             throw new QueryException('Migration lock row is malformed.');
         }
         $lockedAt = (int) $lockedRaw;
@@ -213,7 +213,7 @@ final class MigrationLock
      *
      * @phpstan-assert-if-true int|float|string $value
      */
-    private static function isNumericScalar(mixed $value): bool
+    private function isNumericScalar(mixed $value): bool
     {
         return is_int($value) || is_float($value) || is_string($value);
     }

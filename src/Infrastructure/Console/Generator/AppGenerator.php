@@ -42,9 +42,9 @@ use Zef\Framework\Console\ScaffoldWriter;
 
 final readonly class AppGenerator implements GeneratorInterface
 {
-    private readonly AppPathResolver $paths;
+    private AppPathResolver $paths;
 
-    private readonly AppSkeleton $skeleton;
+    private AppSkeleton $skeleton;
 
     public function __construct(
         private string $root,

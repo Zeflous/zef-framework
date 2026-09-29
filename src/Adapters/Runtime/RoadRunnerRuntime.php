@@ -20,7 +20,7 @@ final class RoadRunnerRuntime implements RuntimeInterface
     private bool $started = false;
 
     /** @var array<string,bool|float|int|string> */
-    private array $runtimeConfig;
+    private readonly array $runtimeConfig;
 
     private ?RuntimeGovernor $governor = null;
     private ?RuntimeSignalManager $signalManager = null;
