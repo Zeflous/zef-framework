@@ -24,8 +24,7 @@ final class RuntimeSignalManager
     public function __construct(
         private readonly bool $enabled,
         private readonly \Closure $onSignal,
-    ) {
-    }
+    ) {}
 
     public function install(): void
     {

@@ -507,7 +507,7 @@ final class RuntimeSecMutationDebtTest extends TestCase
     /** Materializes (and returns) the runtime's lazily built governor for private-state inspection. */
     private function governorOf(RoadRunnerRuntime $runtime): RuntimeGovernor
     {
-        $governor = (new \ReflectionMethod(RoadRunnerRuntime::class, 'governor'))->invoke($runtime);
+        $governor = new \ReflectionMethod(RoadRunnerRuntime::class, 'governor')->invoke($runtime);
         self::assertInstanceOf(RuntimeGovernor::class, $governor);
 
         return $governor;

@@ -44,8 +44,7 @@ final class RuntimeServeLoop
         private readonly RuntimeGovernor $governor,
         private readonly RuntimeResponder $responder,
         private readonly int $maxJobs = 0,
-    ) {
-    }
+    ) {}
 
     /** Runs the accept/dispatch loop until drained; returns the process exit code. */
     public function serve(): int
@@ -56,6 +55,7 @@ final class RuntimeServeLoop
             $outcome = $this->serveOneCycle();
             if ($outcome === self::CYCLE_CONTINUE_FAILED) {
                 $exitCode = 1;
+
                 continue;
             }
             if ($outcome !== self::CYCLE_CONTINUE) {
@@ -64,6 +64,7 @@ final class RuntimeServeLoop
                     self::CYCLE_MEMORY => 2,
                     default => $exitCode,
                 };
+
                 break;
             }
         }
@@ -76,6 +77,7 @@ final class RuntimeServeLoop
     {
         $this->stopRequested = true;
         $this->governor->transition('draining');
+
         try {
             $this->worker->stop();
         } catch (\Throwable) {
@@ -110,19 +112,22 @@ final class RuntimeServeLoop
     /**
      * Gate the next cycle: memory ceiling first, then the worker wait.
      *
-     * @return ServerRequestInterface|int the request to dispatch, or the terminal cycle outcome
+     * @return int|ServerRequestInterface the request to dispatch, or the terminal cycle outcome
      */
-    private function awaitRequest(): ServerRequestInterface|int
+    private function awaitRequest(): int|ServerRequestInterface
     {
         if ($this->governor->overMemoryLimit()) {
             $this->requestStop();
+
             return self::CYCLE_MEMORY;
         }
+
         try {
             $request = $this->worker->waitRequest();
         } catch (\Throwable $e) {
             $this->responder->reportWorkerFailure($e);
             $this->requestStop();
+
             return self::CYCLE_FAILED;
         }
         if (!$request instanceof ServerRequestInterface) {

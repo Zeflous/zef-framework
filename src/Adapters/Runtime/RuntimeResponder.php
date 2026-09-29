@@ -18,9 +18,7 @@ use Zef\Framework\Http\Response;
 
 final class RuntimeResponder
 {
-    public function __construct(private readonly WorkerInterface $worker)
-    {
-    }
+    public function __construct(private readonly WorkerInterface $worker) {}
 
     /** Forwards a successfully produced response to the worker, framing-reconciled. */
     public function respond(ResponseInterface $response): void
@@ -61,6 +59,7 @@ final class RuntimeResponder
     public function reportWorkerFailure(\Throwable $e): void
     {
         $message = $e::class . ': ' . $e->getMessage();
+
         try {
             $this->worker->error($message);
         } catch (\Throwable) {

@@ -43,8 +43,7 @@ final class RuntimeGovernor
         private readonly Application $application,
         private readonly array $runtimeConfig,
         private readonly int $memoryLimitBytes,
-    ) {
-    }
+    ) {}
 
     public function initialize(): void
     {
