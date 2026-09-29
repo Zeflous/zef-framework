@@ -177,8 +177,8 @@ final class OtlpHttpJsonExporter implements SpanExporterInterface, MetricExporte
     private function postJson(string $url, array $payload): void
     {
         $json = json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
-        $headers = "Content-Type: application/json\r\nAccept: application/json\r\n"
-            . 'Content-Length: ' . strlen($json) . "\r\n";
+        $headers = "Content-Type: application/json\r\nAccept: application/json\r\nContent-Length: "
+            . strlen($json) . "\r\n";
         $context = stream_context_create([
             'http' => [
                 'method' => 'POST',

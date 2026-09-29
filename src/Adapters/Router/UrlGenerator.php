@@ -67,7 +67,7 @@ final readonly class UrlGenerator
      */
     private function segment(string $name, string $part, array $params, array &$consumed): string
     {
-        if (preg_match('/^\{([A-Za-z_][A-Za-z0-9_]*)(?::([A-Za-z_][A-Za-z0-9_]*))?\}$/', $part, $m) !== 1) {
+        if (preg_match('/^\{([A-Za-z_]\w*)(?::([A-Za-z_]\w*))?\}$/', $part, $m) !== 1) {
             return $part;
         }
         $paramName = $m[1];

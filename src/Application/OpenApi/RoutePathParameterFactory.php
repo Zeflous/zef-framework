@@ -85,7 +85,7 @@ final class RoutePathParameterFactory
     private function patternNames(string $pattern): array
     {
         $names = [];
-        $regex = '/\{([A-Za-z_][A-Za-z0-9_]*)(?::([A-Za-z_][A-Za-z0-9_]*))?\}/';
+        $regex = '/\{([A-Za-z_]\w*)(?::([A-Za-z_]\w*))?\}/';
         if (preg_match_all($regex, $pattern, $matches, PREG_SET_ORDER) > 0) {
             foreach ($matches as $match) {
                 $names[] = [$match[1], $match[2] ?? null];

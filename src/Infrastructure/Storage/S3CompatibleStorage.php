@@ -157,7 +157,7 @@ final readonly class S3CompatibleStorage implements ObjectStorageInterface
             }
             $response = $this->signed('GET', '', $query, '');
             $this->assertSuccess($response, 'LIST objects');
-            $pageKeys = $this->parseListResponse($response);
+            $pageKeys = S3ListingParser::parse($response);
             foreach ($pageKeys['keys'] as $key) {
                 $keys[] = $key;
             }
@@ -220,61 +220,5 @@ final readonly class S3CompatibleStorage implements ObjectStorageInterface
             $operation . ' failed with HTTP status ' . $response->status
             . ($snippet === '' ? '.' : ': ' . $snippet),
         );
-    }
-
-    /**
-     * Parses the listing XML with libxml diagnostics routed into libxml's
-     * own error buffer instead of the engine warning channel (php:S2002 —
-     * no '@' suppression); the previous internal-errors state is restored.
-     */
-    private function parseListingXml(string $body): false|\SimpleXMLElement
-    {
-        $previous = libxml_use_internal_errors(true);
-
-        try {
-            $xml = simplexml_load_string($body);
-        } finally {
-            libxml_use_internal_errors($previous);
-        }
-
-        return $xml;
-    }
-
-    /**
-     * Extract the object keys and the continuation marker from a
-     * ListObjectsV2 document (namespace-aware: MinIO/Ceph emit the
-     * 2006-03-01 default xmlns, AWS omits it). The token is non-null exactly
-     * when the page reports IsTruncated=true.
-     *
-     * @return array{keys: list<string>, token: null|string}
-     */
-    private function parseListResponse(S3HttpResponse $response): array
-    {
-        if (!\function_exists('simplexml_load_string')) {
-            throw new StorageException('The SimpleXML extension is required to parse S3 listing responses.');
-        }
-        $xml = $this->parseListingXml($response->body);
-        if ($xml === false) {
-            throw new StorageException('S3 listing response is not valid XML.');
-        }
-        $namespaces = $xml->getDocNamespaces();
-        $root = isset($namespaces['']) && (string) $namespaces[''] !== ''
-            ? $xml->children((string) $namespaces[''])
-            : $xml;
-        $keys = [];
-        foreach ($root->Contents as $entry) {
-            $keys[] = (string) $entry->Key;
-        }
-        if (strtolower(trim((string) $root->IsTruncated)) !== 'true') {
-            return ['keys' => $keys, 'token' => null];
-        }
-        $token = trim((string) $root->NextContinuationToken);
-        if ($token === '') {
-            // Truncated without a token is a malformed V2 document: fail
-            // loudly rather than silently reporting a partial page (P-9).
-            throw new StorageException('S3 listing response is truncated without a continuation token.');
-        }
-
-        return ['keys' => $keys, 'token' => $token];
     }
 }

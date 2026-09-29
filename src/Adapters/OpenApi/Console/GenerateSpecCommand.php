@@ -108,12 +108,11 @@ final class GenerateSpecCommand
         // Guard the writable surface up front (php:S2002: no '@' suppression):
         // the return-value check below stays as the race backstop (disk full,
         // file removed between the guard and the write).
-        $writableTarget = $directory;
-        if (is_file($path)) {
-            $writableTarget = $path;
-        } elseif ($directory === '') {
-            $writableTarget = '.';
-        }
+        $writableTarget = match (true) {
+            is_file($path) => $path,
+            $directory === '' => '.',
+            default => $directory,
+        };
         if (!is_writable($writableTarget)) {
             throw new SpecificationException("Cannot write specification to '{$path}'.");
         }

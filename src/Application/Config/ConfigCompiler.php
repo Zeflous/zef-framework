@@ -63,8 +63,9 @@ final readonly class ConfigCompiler
         }
         $code = "<?php\n\ndeclare(strict_types=1);\n\n/* Compiled application configuration (ZEF Framework v"
             . ZefVersion::VERSION
-            . '). Do not edit. Contains resolved secrets — keep out of version control, chmod 600. */'
-            . "\n\nreturn " . var_export($values, true) . ";\n";
+            . "). Do not edit. Contains resolved secrets — keep out of version control, chmod 600. */\n\nreturn "
+            . var_export($values, true)
+            . ";\n";
         $tmp = $directory . '/.' . $basename . '.' . bin2hex(random_bytes(6)) . '.tmp';
         if (file_put_contents($tmp, $code) === false) {
             throw new InvalidConfigurationException("Failed to write compiled config temp file '{$tmp}'.");

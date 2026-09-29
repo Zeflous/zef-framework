@@ -170,12 +170,16 @@ final readonly class CronExpression implements ScheduleInterface
 
     private function assertFires(): void
     {
-        if ($this->neverFires) {
-            throw new CronExpressionException(
-                "Cron expression '{$this->expression}' can never fire (the restricted day-of-month "
-                . 'has no valid date in the restricted months).',
-            );
+        if (!$this->neverFires) {
+            return;
         }
+
+        throw new CronExpressionException(sprintf(
+            <<<'MSG'
+                Cron expression '%s' can never fire (the restricted day-of-month has no valid date in the restricted months).
+                MSG,
+            $this->expression,
+        ));
     }
 
     private function scanNext(\Closure $matches, int $nowUnixNano): int

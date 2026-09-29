@@ -39,7 +39,7 @@ final class RoutePatternParser
             static function (string $segment): array {
                 if (
                     preg_match(
-                        '/^\{([A-Za-z_][A-Za-z0-9_]*)(?::([A-Za-z_][A-Za-z0-9_]*))?\}$/',
+                        '/^\{([A-Za-z_]\w*)(?::([A-Za-z_]\w*))?\}$/',
                         $segment,
                         $matches,
                     ) === 1

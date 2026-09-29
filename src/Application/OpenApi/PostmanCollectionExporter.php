@@ -177,7 +177,7 @@ final class PostmanCollectionExporter
         foreach (explode('/', trim($path, '/')) as $segment) {
             $segments[] = $segment === ''
                 ? $segment
-                : preg_replace('/^\{([A-Za-z_][A-Za-z0-9_]*)\}$/', ':$1', $segment);
+                : preg_replace('/^\{([A-Za-z_]\w*)\}$/', ':$1', $segment);
         }
 
         return $segments;

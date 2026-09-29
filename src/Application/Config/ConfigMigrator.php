@@ -123,8 +123,7 @@ final class ConfigMigrator
     private function downgradeNotSupported(int $fromVersion, int $toVersion): InvalidConfigurationException
     {
         return new InvalidConfigurationException(sprintf(
-            'Config data is schema version %d, newer than the target version %d'
-            . ' — downgrade migration is not supported.',
+            'Config data is schema version %d, newer than the target version %d — downgrade migration is not supported.',
             $fromVersion,
             $toVersion,
         ));

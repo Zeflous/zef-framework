@@ -109,19 +109,19 @@ final class RadixTreeNavigator
          * @var null|RadixNode $child
          */
         $child = $node['children'][$head] ?? null;
-        if (!is_array($child)) {
-            return ['miss', $node, $remaining, false];
-        }
-        $label = self::labelOf($child, $head);
-        $labelCount = count($label);
-        if (count($remaining) < $labelCount) {
-            return ['mid', $child, $remaining, self::segmentsMatch($remaining, $label, count($remaining))];
-        }
-        if (self::segmentsMatch($remaining, $label, $labelCount)) {
-            return ['descend', $child, array_slice($remaining, $labelCount), true];
+        if (is_array($child)) {
+            $label = self::labelOf($child, $head);
+            $labelCount = count($label);
+            if (count($remaining) < $labelCount) {
+                return ['mid', $child, $remaining, self::segmentsMatch($remaining, $label, count($remaining))];
+            }
+            if (self::segmentsMatch($remaining, $label, $labelCount)) {
+                return ['descend', $child, array_slice($remaining, $labelCount), true];
+            }
         }
 
-        // Full-length label mismatch: the shared miss shape (no edge taken).
+        // No edge at all, or a full-length label mismatch: the shared miss
+        // shape (no edge taken).
         return ['miss', $node, $remaining, false];
     }
 

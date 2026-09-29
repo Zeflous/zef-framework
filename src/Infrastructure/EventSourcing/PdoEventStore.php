@@ -13,7 +13,6 @@ namespace Zef\Framework\EventSourcing;
 use Zef\Framework\Database\ConnectionInterface;
 use Zef\Framework\Database\QueryBuilder;
 use Zef\Framework\Database\QueryException;
-use Zef\Framework\Database\SqlQuery;
 use Zef\Framework\Database\SqlState;
 
 /**
@@ -55,22 +54,6 @@ use Zef\Framework\Database\SqlState;
  */
 final readonly class PdoEventStore implements EventStoreInterface
 {
-    /** DDL prefix shared by the three store-wide unique constraints. */
-    private const string UNIQUE_CONSTRAINT_PREFIX = 'CONSTRAINT "uq_';
-
-    /** Every stored-event column, in storage order. */
-    private const array STORED_EVENT_COLUMNS = [
-        'global_sequence',
-        'event_id',
-        'aggregate_type',
-        'aggregate_id',
-        'version',
-        'event_type',
-        'payload',
-        'metadata',
-        'recorded_at',
-    ];
-
     private string $table;
 
     /** @var (\Closure(): int) */
@@ -92,35 +75,13 @@ final readonly class PdoEventStore implements EventStoreInterface
     }
 
     /**
-     * Create the events table (portable DDL, safe to run repeatedly).
-     *
-     * The DDL is assembled from column/constraint fragments (php:S2005: no
-     * adjacent string-literal concatenation, php:S103: no overlong lines);
-     * the resulting statement is byte-identical to the former inline chain.
+     * Create the events table (portable DDL, safe to run repeatedly) —
+     * assembled and executed by {@see PdoEventStoreSchema}, the schema
+     * collaborator split out of this class (php:S2042).
      */
     public function createSchema(): void
     {
-        $columns = [
-            '"global_sequence" BIGINT NOT NULL',
-            '"event_id" VARCHAR(64) NOT NULL',
-            '"aggregate_type" VARCHAR(128) NOT NULL',
-            '"aggregate_id" VARCHAR(128) NOT NULL',
-            '"version" BIGINT NOT NULL',
-            '"event_type" VARCHAR(191) NOT NULL',
-            '"payload" TEXT NOT NULL',
-            '"metadata" TEXT NOT NULL',
-            '"recorded_at" BIGINT NOT NULL',
-        ];
-        $constraints = [
-            self::UNIQUE_CONSTRAINT_PREFIX . $this->table
-                . '_stream" UNIQUE ("aggregate_type", "aggregate_id", "version")',
-            self::UNIQUE_CONSTRAINT_PREFIX . $this->table . '_event_id" UNIQUE ("event_id")',
-            self::UNIQUE_CONSTRAINT_PREFIX . $this->table . '_global" UNIQUE ("global_sequence")',
-        ];
-        $ddl = 'CREATE TABLE IF NOT EXISTS "' . $this->table . '" ('
-            . implode(', ', [...$columns, ...$constraints])
-            . ')';
-        $this->connection->execute(SqlQuery::raw($ddl));
+        PdoEventStoreSchema::create($this->connection, $this->table);
     }
 
     #[\Override]
@@ -168,7 +129,7 @@ final readonly class PdoEventStore implements EventStoreInterface
         }
 
         $query = QueryBuilder::table($this->table)
-            ->select(...self::STORED_EVENT_COLUMNS)
+            ->select(...PdoEventStoreSchema::STORED_EVENT_COLUMNS)
             ->where('aggregate_type', '=', $aggregateType)
             ->where('aggregate_id', '=', $aggregateId)
         ;
@@ -194,7 +155,7 @@ final readonly class PdoEventStore implements EventStoreInterface
             throw new EventSourcingException("limit must be >= 1 when provided (got {$limit}).");
         }
         $qb = QueryBuilder::table($this->table)
-            ->select(...self::STORED_EVENT_COLUMNS)
+            ->select(...PdoEventStoreSchema::STORED_EVENT_COLUMNS)
             ->where('global_sequence', '>=', $fromGlobalSequence)
             ->orderBy('global_sequence', 'ASC')
         ;

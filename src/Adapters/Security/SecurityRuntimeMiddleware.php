@@ -140,20 +140,23 @@ final class SecurityRuntimeMiddleware implements MiddlewareInterface
                 $this->policy->rateLimitMaxRequests,
                 $this->policy->rateLimitWindowSeconds,
             );
-        } catch (RateLimiterCapacityException $e) {
+        } catch (\Throwable $e) {
             // ZEF-DEEP-02: a full key store is not a storage failure — the
             // request is served untracked rather than converting capacity
             // into a global 503. Buckets that already exist keep counting.
-            $this->logSwallowedFailure('capacity exhausted (untracked fail-open)', $context->clientIp, $requestId, $e);
+            // Every other swallowed failure is fail-closed 503 (Regresi I-5,
+            // issue #173): it is logged — a mass 503 must be diagnosable as
+            // attack vs bug. Safe context only: client IP + request id, no
+            // headers.
+            $capacity = $e instanceof RateLimiterCapacityException;
+            $this->logSwallowedFailure(
+                $capacity ? 'capacity exhausted (untracked fail-open)' : 'storage failure (fail-closed 503)',
+                $context->clientIp,
+                $requestId,
+                $e,
+            );
 
-            return [null, null];
-        } catch (\Throwable $e) {
-            // Regresi I-5 (issue #173): the swallowed failure is logged —
-            // a mass 503 (fail-closed) must be diagnosable as attack vs
-            // bug. Safe context only: client IP + request id, no headers.
-            $this->logSwallowedFailure('storage failure (fail-closed 503)', $context->clientIp, $requestId, $e);
-
-            return [null, SecurityResponseFactory::serviceUnavailable($requestId)];
+            return [null, $capacity ? null : SecurityResponseFactory::serviceUnavailable($requestId)];
         }
         $response = $decision->allowed ? null : SecurityResponseFactory::tooManyRequests($decision, $requestId);
 
