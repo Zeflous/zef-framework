@@ -134,7 +134,13 @@ final class QueryBuilder
         return $this->aggregate('COUNT', $column);
     }
 
-    public function join(SqlExpression|string $table, string $first, string $operator, string $second, string $type = 'inner'): self
+    public function join(
+        SqlExpression|string $table,
+        string $first,
+        string $operator,
+        string $second,
+        string $type = 'inner',
+    ): self
     {
         $this->assertSelect('join()');
         $type = strtolower($type);
@@ -171,7 +177,10 @@ final class QueryBuilder
     {
         $op = $this->assertComparisonOperator($operator);
 
-        return $this->addWhere($this->quoteColumnPath($first) . ' ' . $op . ' ' . $this->quoteColumnPath($second), 'AND');
+        return $this->addWhere(
+            $this->quoteColumnPath($first) . ' ' . $op . ' ' . $this->quoteColumnPath($second),
+            'AND',
+        );
     }
 
     /** OR condition against the previous condition. */
@@ -346,6 +355,8 @@ final class QueryBuilder
                 $expected = array_keys($row);
             } elseif (array_keys($row) !== $expected) {
                 throw new QueryException("insertRows() row {$i} column set differs from the first row.");
+            } else {
+                // Same column set as the first row: nothing to normalise.
             }
             foreach ($row as $column => $value) {
                 $this->quoteIdentifier($column, 'column');
@@ -443,10 +454,12 @@ final class QueryBuilder
             // when a raw SQL fragment is mistakenly passed as an identifier —
             // keeps raw SQL greppable instead of inviting unsafe workarounds.
             if (preg_match('/[\s()*,<>=]/', $identifier) === 1) {
-                $message .= ' Identifiers must match [A-Za-z_][A-Za-z0-9_]{0,63}'
-                    . ' (optionally table.column or column AS alias); for raw SQL pass an'
-                    . ' explicit SqlExpression instead — e.g. new SqlExpression(...),'
-                    . ' selectRaw(...), or SqlQuery::raw(...).';
+                $message .= implode('', [
+                    ' Identifiers must match [A-Za-z_][A-Za-z0-9_]{0,63}',
+                    ' (optionally table.column or column AS alias); for raw SQL pass an',
+                    ' explicit SqlExpression instead — e.g. new SqlExpression(...),',
+                    ' selectRaw(...), or SqlQuery::raw(...).',
+                ]);
             }
 
             throw new QueryException($message);
@@ -492,7 +505,7 @@ final class QueryBuilder
         if ($trimmed === '') {
             throw new QueryException('Column must not be empty.');
         }
-        if (preg_match('/^([A-Za-z0-9_.]+)\s+AS\s+([A-Za-z_][A-Za-z0-9_]{0,63})$/i', $trimmed, $m) === 1) {
+        if (preg_match('/^([a-z0-9_.]+)\s+AS\s+([a-z_][a-z0-9_]{0,63})$/i', $trimmed, $m) === 1) {
             return $this->quoteColumnPath($m[1]) . ' AS ' . $this->quoteIdentifier($m[2], 'alias');
         }
 
@@ -513,7 +526,7 @@ final class QueryBuilder
 
     private function assertScalar(mixed $value, string $context): void
     {
-        if ($value === null || is_bool($value) || is_int($value) || is_float($value) || is_string($value)) {
+        if ($value === null || is_scalar($value)) {
             return;
         }
         if ($value instanceof SqlExpression) {
@@ -650,7 +663,7 @@ final class QueryBuilder
             $columns[] = $this->quoteIdentifier((string) $column, 'column');
         }
         $rowSql = [];
-        $params = [];
+        $bindings = [];
         foreach ($this->insertRows as $row) {
             $rowParams = [];
             foreach ($row as $value) {
@@ -658,14 +671,14 @@ final class QueryBuilder
                     $rowParams[] = (string) $value;
                 } else {
                     $rowParams[] = '?';
-                    $params[] = $value;
+                    $bindings[] = $value;
                 }
             }
             $rowSql[] = '(' . implode(', ', $rowParams) . ')';
         }
         $sql = 'INSERT INTO ' . $this->table . ' (' . implode(', ', $columns) . ') VALUES ' . implode(', ', $rowSql);
 
-        return new SqlQuery($sql, $params);
+        return new SqlQuery($sql, $bindings);
     }
 
     private function buildUpdate(): SqlQuery
@@ -682,20 +695,20 @@ final class QueryBuilder
             );
         }
         $sets = [];
-        $params = [];
+        $bindings = [];
         foreach ($this->updatePairs as $column => $value) {
             if ($value instanceof SqlExpression) {
                 $sets[] = $this->quoteIdentifier((string) $column, 'column') . ' = ' . $value;
             } else {
                 $sets[] = $this->quoteIdentifier((string) $column, 'column') . ' = ?';
-                $params[] = $value;
+                $bindings[] = $value;
             }
         }
         $sql = 'UPDATE ' . $this->table . ' SET ' . implode(', ', $sets) . $this->renderWhereSuffix();
 
         return new SqlQuery(
             $sql,
-            array_merge($params, $this->params),
+            array_merge($bindings, $this->params),
             $this->whereParts === [], // only reached when allowUnbounded() was set
         );
     }
