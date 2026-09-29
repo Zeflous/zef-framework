@@ -31,10 +31,16 @@ final readonly class ModuleBootstrapper implements Config\ModuleRegistrar
                 ? $config
                 : Config\ModuleDefinition::fromArray($module, $config);
         } catch (\Throwable $e) {
-            throw new InvalidConfigurationException("Module '{$module}' has invalid definition: {$e->getMessage()}", 0, $e);
+            throw new InvalidConfigurationException(
+                "Module '{$module}' has invalid definition: {$e->getMessage()}",
+                0,
+                $e,
+            );
         }
         if (strtolower($definition->name) !== strtolower($module)) {
-            throw new InvalidConfigurationException("Module definition name '{$definition->name}' does not match '{$module}'.");
+            throw new InvalidConfigurationException(
+                "Module definition name '{$definition->name}' does not match '{$module}'.",
+            );
         }
         foreach ($definition->services as $serviceDefinition) {
             if ($serviceDefinition->module !== $module) {
