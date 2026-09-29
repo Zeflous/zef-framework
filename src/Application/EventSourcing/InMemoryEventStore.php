@@ -66,9 +66,9 @@ final class InMemoryEventStore implements EventStoreInterface
         $version = $expectedVersion;
         $created = [];
         foreach ($events as $pending) {
-            $version++;
+            ++$version;
             $globalSequence = $this->nextGlobalSequence;
-            $this->nextGlobalSequence++;
+            ++$this->nextGlobalSequence;
             $created[] = new StoredEvent(
                 eventId: bin2hex(random_bytes(16)),
                 aggregateType: $aggregateType,

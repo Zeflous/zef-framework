@@ -47,6 +47,58 @@ final readonly class Operation
         self::assertSecurity($operationId, $security);
     }
 
+    /**
+     * @return array{
+     *     operationId: string,
+     *     summary?: string,
+     *     description?: string,
+     *     tags?: list<string>,
+     *     parameters?: list<array<string, mixed>>,
+     *     requestBody?: array<string, mixed>,
+     *     responses: array<int|string, array<string, mixed>>,
+     *     deprecated?: true,
+     *     security?: list<array<string, list<string>>>,
+     * }
+     */
+    public function toArray(): array
+    {
+        $out = [
+            'operationId' => $this->operationId,
+        ];
+        if ($this->summary !== '') {
+            $out['summary'] = $this->summary;
+        }
+        if ($this->description !== '') {
+            $out['description'] = $this->description;
+        }
+        if ($this->tags !== []) {
+            $out['tags'] = $this->tags;
+        }
+        if ($this->parameters !== []) {
+            /** @var list<Parameter> $parameters */
+            $parameters = $this->parameters;
+            $out['parameters'] = array_map(static fn (Parameter $p): array => $p->toArray(), $parameters);
+        }
+        if ($this->requestBody instanceof RequestBody) {
+            $out['requestBody'] = $this->requestBody->toArray();
+        }
+        $responses = [];
+        foreach ($this->responses as $status => $response) {
+            $responses[(string) $status] = $response->toArray();
+        }
+        $out['responses'] = $responses;
+        if ($this->deprecated) {
+            $out['deprecated'] = true;
+        }
+        if ($this->security !== []) {
+            /** @var list<SecurityRequirement> $security */
+            $security = $this->security;
+            $out['security'] = array_map(static fn (SecurityRequirement $r): array => $r->toArray(), $security);
+        }
+
+        return $out;
+    }
+
     private static function assertMethod(string $method): void
     {
         if (!in_array(strtoupper($method), self::METHODS, true)) {
@@ -124,57 +176,5 @@ final readonly class Operation
                 );
             }
         }
-    }
-
-    /**
-     * @return array{
-     *     operationId: string,
-     *     summary?: string,
-     *     description?: string,
-     *     tags?: list<string>,
-     *     parameters?: list<array<string, mixed>>,
-     *     requestBody?: array<string, mixed>,
-     *     responses: array<int|string, array<string, mixed>>,
-     *     deprecated?: true,
-     *     security?: list<array<string, list<string>>>,
-     * }
-     */
-    public function toArray(): array
-    {
-        $out = [
-            'operationId' => $this->operationId,
-        ];
-        if ($this->summary !== '') {
-            $out['summary'] = $this->summary;
-        }
-        if ($this->description !== '') {
-            $out['description'] = $this->description;
-        }
-        if ($this->tags !== []) {
-            $out['tags'] = $this->tags;
-        }
-        if ($this->parameters !== []) {
-            /** @var list<Parameter> $parameters */
-            $parameters = $this->parameters;
-            $out['parameters'] = array_map(static fn (Parameter $p): array => $p->toArray(), $parameters);
-        }
-        if ($this->requestBody instanceof RequestBody) {
-            $out['requestBody'] = $this->requestBody->toArray();
-        }
-        $responses = [];
-        foreach ($this->responses as $status => $response) {
-            $responses[(string) $status] = $response->toArray();
-        }
-        $out['responses'] = $responses;
-        if ($this->deprecated) {
-            $out['deprecated'] = true;
-        }
-        if ($this->security !== []) {
-            /** @var list<SecurityRequirement> $security */
-            $security = $this->security;
-            $out['security'] = array_map(static fn (SecurityRequirement $r): array => $r->toArray(), $security);
-        }
-
-        return $out;
     }
 }

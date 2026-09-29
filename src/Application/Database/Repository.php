@@ -80,9 +80,8 @@ abstract class Repository
             }
         } elseif ($offset !== 0) {
             throw new \InvalidArgumentException('offset() requires a limit.');
-        } else {
-            // No limit and no offset: nothing to apply to the builder.
         }
+        // No limit and no offset: nothing to apply to the builder.
 
         return $this->connection->fetchAll($qb->build());
     }
@@ -135,20 +134,20 @@ abstract class Repository
     }
 
     /**
-     * Eager table-name validation delegated to the query builder's own
-     * identifier grammar (throws {@see QueryException} on a bad name).
-     */
-    private static function assertValidTable(string $table): void
-    {
-        (new QueryBuilder())->quoteIdentifier($table, 'table');
-    }
-
-    /**
      * Fresh builder bound to this repository's table.
      */
     protected function qb(): QueryBuilder
     {
         return QueryBuilder::table($this->table);
+    }
+
+    /**
+     * Eager table-name validation delegated to the query builder's own
+     * identifier grammar (throws {@see QueryException} on a bad name).
+     */
+    private static function assertValidTable(string $table): void
+    {
+        new QueryBuilder()->quoteIdentifier($table, 'table');
     }
 
     /**
