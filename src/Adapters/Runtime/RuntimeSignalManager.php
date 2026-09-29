@@ -20,7 +20,7 @@ final class RuntimeSignalManager
     /** @var list<int> */
     private array $owned = [];
 
-    /** @param callable(): void $onSignal invoked for SIGTERM/SIGINT */
+    /** @param \Closure(): void $onSignal invoked for SIGTERM/SIGINT */
     public function __construct(
         private readonly bool $enabled,
         private readonly \Closure $onSignal,

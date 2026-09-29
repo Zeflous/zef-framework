@@ -222,6 +222,9 @@ final class DatabaseMigratorTest extends TestCase
 
         $m = $this->migrator();
         $lock = new \ReflectionProperty(Migrator::class, 'lock')->getValue($m);
+        if (!$lock instanceof MigrationLock) {
+            self::fail('Migrator::lock must hold a MigrationLock');
+        }
         new \ReflectionProperty(MigrationLock::class, 'depth')->setValue($lock, 1);
 
         $this->expectException(TransactionException::class);

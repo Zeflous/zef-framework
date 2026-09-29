@@ -91,6 +91,7 @@ final class RuntimeServeLoop
         return $this->handled;
     }
 
+    /** @phpstan-impure each cycle mutates the governor counters and the handled tally */
     private function serveOneCycle(): int
     {
         $this->governor->emitResourceHealth();

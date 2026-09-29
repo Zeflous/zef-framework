@@ -23,12 +23,22 @@ namespace Zef\Framework\Resource;
  * base fields can ever reach the caller, values are bounded scalar strings,
  * and unknown fields/operators/oversized input are dropped leniently
  * (a listing endpoint must not 500 because of client input).
+ *
+ * @phpstan-type ORDERED_OP 'gt'|'gte'|'lt'|'lte'
  */
 final readonly class FilterSpec
 {
     public const int MAX_CONDITIONS = 32;
     public const int MAX_FIELD_BYTES = 64;
     public const int MAX_VALUE_BYTES = 256;
+
+    /** The four ordered-comparison operators routed to compareWithin(). */
+    private const array ORDERED_OPERATORS = [
+        FilterCondition::GT,
+        FilterCondition::GTE,
+        FilterCondition::LT,
+        FilterCondition::LTE,
+    ];
 
     /**
      * @var list<FilterCondition>
@@ -259,10 +269,14 @@ final readonly class FilterSpec
     /**
      * Ordered operators (gt/gte/lt/lte); a null actual value never matches.
      *
+     * @param ORDERED_OP $op
      * @param list<string>|string $expected
      */
     private function compareWithin(mixed $actual, array|string $expected, string $op): bool
     {
+        if (!in_array($op, self::ORDERED_OPERATORS, true)) {
+            return false;
+        }
         if ($actual === null) {
             return false;
         }

@@ -208,7 +208,11 @@ final class MigrationLock
         }
     }
 
-    /** Lock-row cells may surface as int, float or string depending on the driver. */
+    /**
+     * Lock-row cells may surface as int, float or string depending on the driver.
+     *
+     * @phpstan-assert-if-true int|float|string $value
+     */
     private static function isNumericScalar(mixed $value): bool
     {
         return is_int($value) || is_float($value) || is_string($value);

@@ -147,7 +147,7 @@ final class CommandBus implements CommandBusInterface
      * EventDispatchException skipped the cache write and a client retry
      * re-EXECUTED the command (double side effects).
      *
-     * @param array<mixed> $pendingEvents
+     * @param list<object> $pendingEvents
      */
     private function runHandlerChain(object $command, CqrsContext $context, array &$pendingEvents): mixed
     {
@@ -246,7 +246,7 @@ final class CommandBus implements CommandBusInterface
      * scope), afterCommit executes immediately, preserving the exact
      * pre-2.22 timing.
      *
-     * @param array<mixed> $pendingEvents
+     * @param list<object> $pendingEvents
      */
     private function fanOutEvents(
         array $pendingEvents,
