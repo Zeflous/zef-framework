@@ -27,7 +27,9 @@ final readonly class Server
         }
         foreach ($variables as $key => $value) {
             if (!is_string($key) || trim($key) === '' || !is_string($value)) {
-                throw new \InvalidArgumentException('Server variables must map non-empty string names to string values.');
+                throw new \InvalidArgumentException(
+                    'Server variables must map non-empty string names to string values.',
+                );
             }
         }
     }

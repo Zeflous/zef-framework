@@ -64,8 +64,10 @@ final class PatternQueryCache
             return $this->memo[$pattern];
         }
         ++$this->misses;
+        $result = $this->config->query($pattern);
+        $this->memo[$pattern] = $result;
 
-        return $this->memo[$pattern] = $this->config->query($pattern);
+        return $result;
     }
 
     /**

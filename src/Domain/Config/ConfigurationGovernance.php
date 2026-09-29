@@ -40,7 +40,10 @@ final class ConfigurationGovernance
             }
         }
 
-        return $this->snapshot = new ConfigurationSnapshot($values, $version);
+        $snapshot = new ConfigurationSnapshot($values, $version);
+        $this->snapshot = $snapshot;
+
+        return $snapshot;
     }
 
     public function current(): ?ConfigurationSnapshot
