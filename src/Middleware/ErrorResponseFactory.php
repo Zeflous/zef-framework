@@ -33,7 +33,8 @@ final readonly class ErrorResponseFactory
      * case) so normal prose is left untouched — the explicit ASCII classes
      * are the contract (php:S5867 by-design).
      */
-    private const string REDACTION_CANDIDATE_RE = '/\b([a-z][a-z0-9_-]{2,})\b(\s*[=:]\s*|\s+)(["\']?)[a-z0-9._\/-]{4,}\3/i';
+    private const string REDACTION_CANDIDATE_RE =
+        '/\b([a-z][a-z0-9_-]{2,})\b(\s*[=:]\s*|\s+)(["\']?)[a-z0-9._\/-]{4,}\3/i';
 
     public function __construct(private bool $devMode = false) {}
 

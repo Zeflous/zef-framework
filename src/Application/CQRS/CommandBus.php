@@ -99,24 +99,17 @@ final class CommandBus implements CommandBusInterface
         $idempotent = $context->idempotencyKey !== null && $this->idempotencyStore instanceof IdempotencyStoreInterface;
         $eventTransactions = $transactions ?? $this->transactions;
         $execute = function () use ($command, $context, &$pendingEvents): mixed {
-            $handler = $this->resolveHandler($command, 'command');
-            $next = $this->buildChain($handler);
-            $result = $next($command, $context);
-            if ($result instanceof CqrsEventResult) {
-                // Defer the event fan-out until AFTER the result is cached:
-                // the handler already ran, so a listener failure must not
-                // invalidate idempotency — with the fan-out inside the
-                // producer, EventDispatchException skipped the cache write
-                // and a client retry re-EXECUTED the command (double side
-                // effects).
-                $pendingEvents = $result->events;
-
-                return $result->result;
-            }
-
-            return $result;
+            return $this->runHandlerChain($command, $context, $pendingEvents);
         };
-        $produce = function () use ($execute, $transactions, $eventTransactions, $beforeCommit, $isolation, $idempotent, &$postCommitFailure): mixed {
+        $produce = function () use (
+            $transactions,
+            $eventTransactions,
+            $beforeCommit,
+            $isolation,
+            $idempotent,
+            $execute,
+            &$postCommitFailure,
+        ): mixed {
             // A savepoint is not a durable commit. The remember-only store
             // port cannot reserve a key until an enclosing scope completes.
             if ($idempotent && ($eventTransactions?->inTransaction() ?? false)) {
@@ -125,61 +118,142 @@ final class CommandBus implements CommandBusInterface
             if (!$transactions instanceof TransactionManagerInterface) {
                 return $execute();
             }
+            $outcome = $this->commitThroughTransaction(
+                $transactions,
+                $execute,
+                $beforeCommit,
+                $isolation,
+                $idempotent,
+            );
+            $postCommitFailure = $outcome['failure'];
 
-            $committed = false;
-            $result = null;
+            return $outcome['result'];
+        };
+        $result = $this->guardDispatchDepth(
+            fn (): mixed => $this->rememberOrProduce($command, $context, $produce),
+        );
+        if ($postCommitFailure instanceof \Throwable) {
+            throw $postCommitFailure;
+        }
+        $this->fanOutEvents($pendingEvents, $context, $eventTransactions);
 
-            try {
-                return $transactions->withTransaction(function (ConnectionInterface $connection) use ($transactions, $execute, $beforeCommit, $idempotent, &$committed, &$result): mixed {
+        return $result;
+    }
+
+    /**
+     * Runs the middleware chain and defers the event fan-out until AFTER the
+     * result is cached: the handler already ran, so a listener failure must
+     * not invalidate idempotency — with the fan-out inside the producer,
+     * EventDispatchException skipped the cache write and a client retry
+     * re-EXECUTED the command (double side effects).
+     *
+     * @param array<mixed> $pendingEvents
+     */
+    private function runHandlerChain(object $command, CqrsContext $context, array &$pendingEvents): mixed
+    {
+        $handler = $this->resolveHandler($command, 'command');
+        $next = $this->buildChain($handler);
+        $result = $next($command, $context);
+        if ($result instanceof CqrsEventResult) {
+            $pendingEvents = $result->events;
+
+            return $result->result;
+        }
+
+        return $result;
+    }
+
+    /** @param callable(): mixed $produce */
+    private function rememberOrProduce(object $command, CqrsContext $context, callable $produce): mixed
+    {
+        if ($context->idempotencyKey !== null && $this->idempotencyStore instanceof IdempotencyStoreInterface) {
+            return $this->idempotencyStore->remember(
+                hash('sha256', $command::class . '|' . $context->idempotencyKey),
+                $produce,
+                $this->idempotencyTtlSeconds,
+            );
+        }
+
+        return $produce();
+    }
+
+    /**
+     * Runs $execute inside the managed transaction and classifies a failure
+     * as post-commit (committed writes must remain replayable) or a rollback.
+     *
+     * @param null|\Closure(ConnectionInterface): void $beforeCommit
+     * @param callable(): mixed $execute
+     *
+     * @return array{result: mixed, failure: \Throwable|null}
+     */
+    private function commitThroughTransaction(
+        TransactionManagerInterface $transactions,
+        callable $execute,
+        ?\Closure $beforeCommit,
+        ?IsolationLevel $isolation,
+        bool $idempotent,
+    ): array {
+        /** @var array{done: bool} $commit */
+        $commit = ['done' => false];
+        $result = null;
+
+        try {
+            $result = $transactions->withTransaction(
+                function (ConnectionInterface $connection) use (
+                    $transactions,
+                    $execute,
+                    $beforeCommit,
+                    $idempotent,
+                    &$commit,
+                    &$result,
+                ): mixed {
                     if ($idempotent && $connection->transactionLevel() !== 1) {
                         throw new \LogicException('Idempotent commands must own the outermost connection transaction.');
                     }
                     // First hook distinguishes a commit failure from a later
                     // hook failure: committed writes must remain replayable.
-                    $transactions->afterCommit(static function () use (&$committed): void {
-                        $committed = true;
+                    $transactions->afterCommit(static function () use (&$commit): void {
+                        $commit['done'] = true;
                     });
                     $result = $execute();
                     $beforeCommit?->__invoke($connection);
 
                     return $result;
-                }, $isolation);
-            } catch (\Throwable $error) {
-                if (!$committed) {
-                    throw $error;
-                }
-                $postCommitFailure = $error;
-
-                return $result;
+                },
+                $isolation,
+            );
+        } catch (\Throwable $error) {
+            if (!$commit['done']) {
+                throw $error;
             }
-        };
-        $result = $this->guardDispatchDepth(
-            function () use ($command, $context, $produce): mixed {
-                if ($context->idempotencyKey !== null && $this->idempotencyStore instanceof IdempotencyStoreInterface) {
-                    return $this->idempotencyStore->remember(
-                        hash('sha256', $command::class . '|' . $context->idempotencyKey),
-                        $produce,
-                        $this->idempotencyTtlSeconds,
-                    );
-                }
 
-                return $produce();
-            },
-        );
-        if ($postCommitFailure instanceof \Throwable) {
-            throw $postCommitFailure;
+            return ['result' => $result, 'failure' => $error];
         }
-        // Fan out only for THIS invocation: $pendingEvents stays empty on
-        // an idempotent replay, so events are never re-fired. The first
-        // caller observes EventDispatchException; all listeners already
-        // ran by then (aggregating dispatcher).
-        //
-        // With a TransactionManager wired (v2.22.0), fan-out is queued via
-        // afterCommit(): events fire only after the OUTERMOST transaction
-        // commits — a rolled-back command emits nothing, and listeners
-        // observe committed data. Without one (or outside a managed
-        // scope), afterCommit executes immediately, preserving the exact
-        // pre-2.22 timing.
+
+        return ['result' => $result, 'failure' => null];
+    }
+
+    /**
+     * Fan out only for THIS invocation: $pendingEvents stays empty on
+     * an idempotent replay, so events are never re-fired. The first
+     * caller observes EventDispatchException; all listeners already
+     * ran by then (aggregating dispatcher).
+     *
+     * With a TransactionManager wired (v2.22.0), fan-out is queued via
+     * afterCommit(): events fire only after the OUTERMOST transaction
+     * commits — a rolled-back command emits nothing, and listeners
+     * observe committed data. Without one (or outside a managed
+     * scope), afterCommit executes immediately, preserving the exact
+     * pre-2.22 timing.
+     *
+     * @param array<mixed> $pendingEvents
+     */
+    private function fanOutEvents(
+        array $pendingEvents,
+        CqrsContext $context,
+        ?TransactionManagerInterface $eventTransactions,
+    ): void
+    {
         foreach ($pendingEvents as $event) {
             $fanOut = function () use ($event, $context): void {
                 $this->eventBus?->dispatchWithContext($event, $context->toEventContext());
@@ -191,7 +265,5 @@ final class CommandBus implements CommandBusInterface
             }
             $fanOut();
         }
-
-        return $result;
     }
 }
