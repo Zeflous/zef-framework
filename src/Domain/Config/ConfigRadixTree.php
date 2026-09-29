@@ -200,8 +200,13 @@ final readonly class ConfigRadixTree
      * @param list<string> $segments
      * @param null|array{wildcards:int,path:string,value:mixed} $best
      */
-    private function longestFrom(ConfigRadixNode $node, array $segments, int $wildcards, string $path, ?array &$best): void
-    {
+    private function longestFrom(
+        ConfigRadixNode $node,
+        array $segments,
+        int $wildcards,
+        string $path,
+        ?array &$best,
+    ): void {
         if ($segments === []) {
             if (!$node->has) {
                 return;
