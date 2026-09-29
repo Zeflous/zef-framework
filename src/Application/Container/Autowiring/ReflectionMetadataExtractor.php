@@ -47,70 +47,17 @@ final class ReflectionMetadataExtractor
 
     private function extractParameter(string $owner, \ReflectionParameter $p): AutowireParameterSpec
     {
-        $name = $p->getName();
         $type = $p->getType();
 
-        $className = null;
-        $isBuiltinScalar = false;
-        $unsupported = null;
-
-        if ($type === null) {
-            // Untyped parameter: only default/null fallback applies.
-            $isBuiltinScalar = true;
-        } elseif ($type instanceof \ReflectionNamedType) {
-            if ($type->isBuiltin()) {
-                $isBuiltinScalar = true;
-            } else {
-                $className = $type->getName();
-                if ($className === 'static') {
-                    $className = $owner;
-                }
-                if (!class_exists($className) && !interface_exists($className) && !enum_exists($className)) {
-                    $unsupported = "type '{$className}' does not exist";
-                }
-            }
-        } elseif ($type instanceof \ReflectionUnionType) {
-            $names = [];
-            foreach ($type->getTypes() as $t) {
-                if ($t instanceof \ReflectionNamedType) {
-                    $names[] = $t->getName();
-                }
-            }
-            $unsupported = 'union type (' . implode('|', $names) . ') is not autowireable';
-        } elseif ($type instanceof \ReflectionIntersectionType) {
-            $unsupported = 'intersection type is not autowireable';
-        } else {
-            $unsupported = 'unsupported type declaration';
-        }
-
-        $hasDefault = false;
-        $default = null;
-        $defaultConstant = null;
-        // Variadic parameters are always "optional" from a call perspective
-        // but never carry a usable default value.
-        // @infection-ignore-all LogicalAnd — ekuivalen: getDefaultValue dan getDefaultValueConstantName sama-sama melempar ReflectionException tanpa default; catch dalam mengembalikan hasDefault=false
-        if ($p->isDefaultValueAvailable() && !$p->isVariadic()) {
-            try {
-                $default = $p->getDefaultValue();
-                $hasDefault = true;
-            } catch (\ReflectionException) {
-                // e.g. `new`-expression initializers: fall back to the
-                // constant name so code generation can reference it.
-                try {
-                    $defaultConstant = $p->getDefaultValueConstantName();
-                    $hasDefault = $defaultConstant !== null;
-                } catch (\ReflectionException) {
-                    $hasDefault = false;
-                }
-            }
-        }
+        [$className, $isBuiltinScalar, $unsupported] = $this->resolveType($owner, $type);
+        [$hasDefault, $default, $defaultConstant] = $this->resolveDefault($p);
 
         $inject = $this->attributeArg($owner, $p, Inject::class);
         $value = $this->attributeArg($owner, $p, Value::class);
         $target = $this->attributeArg($owner, $p, Target::class);
 
         return new AutowireParameterSpec(
-            name: $name,
+            name: $p->getName(),
             position: $p->getPosition(),
             className: $className,
             isBuiltinScalar: $isBuiltinScalar,
@@ -127,6 +74,103 @@ final class ReflectionMetadataExtractor
         );
     }
 
+    /**
+     * Resolves the parameter's type declaration into the autowiring facts:
+     * [class name (null for builtins/untyped), is-builtin-scalar flag,
+     * unsupported-type reason].
+     *
+     * @return array{null|string, bool, null|string}
+     */
+    private function resolveType(string $owner, ?\ReflectionType $type): array
+    {
+        if (!$type instanceof \ReflectionType) {
+            // Untyped parameter: only default/null fallback applies.
+            return [null, true, null];
+        }
+        if ($type instanceof \ReflectionNamedType) {
+            return $this->resolveNamedType($owner, $type);
+        }
+        if ($type instanceof \ReflectionUnionType) {
+            return [null, false, $this->unionReason($type)];
+        }
+        if ($type instanceof \ReflectionIntersectionType) {
+            return [null, false, 'intersection type is not autowireable'];
+        }
+
+        return [null, false, 'unsupported type declaration'];
+    }
+
+    /**
+     * @return array{null|string, bool, null|string}
+     */
+    private function resolveNamedType(string $owner, \ReflectionNamedType $type): array
+    {
+        if ($type->isBuiltin()) {
+            return [null, true, null];
+        }
+        $className = $type->getName();
+        if ($className === 'static') {
+            $className = $owner;
+        }
+        if (!class_exists($className) && !interface_exists($className) && !enum_exists($className)) {
+            return [$className, false, "type '{$className}' does not exist"];
+        }
+
+        return [$className, false, null];
+    }
+
+    private function unionReason(\ReflectionUnionType $type): string
+    {
+        $names = [];
+        foreach ($type->getTypes() as $t) {
+            if ($t instanceof \ReflectionNamedType) {
+                $names[] = $t->getName();
+            }
+        }
+
+        return 'union type (' . implode('|', $names) . ') is not autowireable';
+    }
+
+    /**
+     * Resolves the default value facts: [has-default, default value,
+     * default constant name] — see the fallback chain below.
+     *
+     * @return array{bool, mixed, null|string}
+     */
+    private function resolveDefault(\ReflectionParameter $p): array
+    {
+        // Variadic parameters are always "optional" from a call perspective
+        // but never carry a usable default value.
+        // @infection-ignore-all LogicalAnd — ekuivalen: getDefaultValue dan
+        // getDefaultValueConstantName sama-sama melempar ReflectionException
+        // tanpa default; catch dalam mengembalikan hasDefault=false
+        if (!$p->isDefaultValueAvailable() || $p->isVariadic()) {
+            return [false, null, null];
+        }
+
+        try {
+            return [true, $p->getDefaultValue(), null];
+        } catch (\ReflectionException) {
+            // e.g. `new`-expression initializers: fall back to the
+            // constant name so code generation can reference it.
+            return $this->defaultConstantOrNull($p);
+        }
+    }
+
+    /**
+     * @return array{bool, null, null|string}
+     */
+    private function defaultConstantOrNull(\ReflectionParameter $p): array
+    {
+        try {
+            $defaultConstant = $p->getDefaultValueConstantName();
+
+            return [$defaultConstant !== null, null, $defaultConstant];
+        } catch (\ReflectionException) {
+            return [false, null, null];
+        }
+    }
+
     private function attributeArg(string $owner, \ReflectionParameter $p, string $attributeClass): ?string
     {
         $attributes = $p->getAttributes($attributeClass, \ReflectionAttribute::IS_INSTANCEOF);
@@ -134,16 +178,24 @@ final class ReflectionMetadataExtractor
             return null;
         }
         if (count($attributes) > 1) {
-            throw new InvalidConfigurationException("Cannot autowire {$owner}::\${$p->getName()}: duplicate '{$attributeClass}' attributes.");
+            throw new InvalidConfigurationException(
+                "Cannot autowire {$owner}::\${$p->getName()}: duplicate '{$attributeClass}' attributes.",
+            );
         }
 
         try {
             $instance = $attributes[0]->newInstance();
         } catch (\Throwable $e) {
-            throw new InvalidConfigurationException("Cannot autowire {$owner}::\${$p->getName()}: {$e->getMessage()}", 0, $e);
+            throw new InvalidConfigurationException(
+                "Cannot autowire {$owner}::\${$p->getName()}: {$e->getMessage()}",
+                0,
+                $e,
+            );
         }
 
-        // @infection-ignore-all Coalesce — ekuivalen: Inject/Value/Target hanya punya satu properti; ?? menekan baca properti tak terdefinisi sehingga semua urutan berimpit
+        // @infection-ignore-all Coalesce — ekuivalen: Inject/Value/Target hanya
+        // punya satu properti; ?? menekan baca properti tak terdefinisi sehingga
+        // semua urutan berimpit
         return $instance->id ?? $instance->key ?? $instance->class;
     }
 }

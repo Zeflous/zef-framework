@@ -46,25 +46,7 @@ final readonly class UrlGenerator
         $consumed = [];
         $path = [];
         foreach ($parts as $part) {
-            if (preg_match('/^\{([A-Za-z_][A-Za-z0-9_]*)(?::([A-Za-z_][A-Za-z0-9_]*))?\}$/', $part, $m) === 1) {
-                $paramName = $m[1];
-                $constraint = $m[2] ?? null;
-                if (!array_key_exists($paramName, $params)) {
-                    throw new \InvalidArgumentException("Route '{$name}' requires parameter '{$paramName}'.");
-                }
-                $value = $this->stringify($name, $paramName, $params[$paramName]);
-                if ($constraint !== null) {
-                    // Mirrors Router::match() semantics: constraint violation throws.
-                    if (!$this->constraints->test($paramName, $constraint, $value)) {
-                        throw new RouteConstraintException($paramName, $constraint, $value);
-                    }
-                }
-                $consumed[$paramName] = true;
-                $path[] = rawurlencode($value);
-
-                continue;
-            }
-            $path[] = $part;
+            $path[] = $this->segment($name, $part, $params, $consumed);
         }
         foreach (array_keys($params) as $extra) {
             if (!isset($consumed[(string) $extra])) {
@@ -73,6 +55,34 @@ final readonly class UrlGenerator
         }
 
         return '/' . implode('/', $path);
+    }
+
+    /**
+     * Resolves one path segment: dynamic `{param}` / `{param:constraint}`
+     * placeholders are substituted (validated) and marked consumed; static
+     * segments pass through untouched.
+     *
+     * @param array<string,null|scalar|\Stringable> $params
+     * @param array<string,true> $consumed
+     */
+    private function segment(string $name, string $part, array $params, array &$consumed): string
+    {
+        if (preg_match('/^\{([A-Za-z_][A-Za-z0-9_]*)(?::([A-Za-z_][A-Za-z0-9_]*))?\}$/', $part, $m) !== 1) {
+            return $part;
+        }
+        $paramName = $m[1];
+        $constraint = $m[2] ?? null;
+        if (!array_key_exists($paramName, $params)) {
+            throw new \InvalidArgumentException("Route '{$name}' requires parameter '{$paramName}'.");
+        }
+        $value = $this->stringify($name, $paramName, $params[$paramName]);
+        if ($constraint !== null && !$this->constraints->test($paramName, $constraint, $value)) {
+            // Mirrors Router::match() semantics: constraint violation throws.
+            throw new RouteConstraintException($paramName, $constraint, $value);
+        }
+        $consumed[$paramName] = true;
+
+        return rawurlencode($value);
     }
 
     private function stringify(string $route, string $param, mixed $value): string
@@ -84,6 +94,9 @@ final readonly class UrlGenerator
             return (string) $value;
         }
 
-        throw new \InvalidArgumentException("Route '{$route}' parameter '{$param}' must be scalar or Stringable, got " . get_debug_type($value) . '.');
+        throw new \InvalidArgumentException(
+            "Route '{$route}' parameter '{$param}' must be scalar or Stringable, got "
+            . get_debug_type($value) . '.',
+        );
     }
 }

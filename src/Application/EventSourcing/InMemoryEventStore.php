@@ -39,8 +39,12 @@ final class InMemoryEventStore implements EventStoreInterface
     public function __construct(private readonly ?\Closure $clock = null) {}
 
     #[\Override]
-    public function appendToStream(string $aggregateType, string $aggregateId, int $expectedVersion, PendingEvent ...$events): array
-    {
+    public function appendToStream(
+        string $aggregateType,
+        string $aggregateId,
+        int $expectedVersion,
+        PendingEvent ...$events,
+    ): array {
         EventGrammar::assertAggregateType($aggregateType);
         EventGrammar::assertAggregateType($aggregateId, 'aggregate ID');
         if ($expectedVersion < 0) {
@@ -62,12 +66,15 @@ final class InMemoryEventStore implements EventStoreInterface
         $version = $expectedVersion;
         $created = [];
         foreach ($events as $pending) {
+            ++$version;
+            $globalSequence = $this->nextGlobalSequence;
+            ++$this->nextGlobalSequence;
             $created[] = new StoredEvent(
                 eventId: bin2hex(random_bytes(16)),
                 aggregateType: $aggregateType,
                 aggregateId: $aggregateId,
-                version: ++$version,
-                globalSequence: $this->nextGlobalSequence++,
+                version: $version,
+                globalSequence: $globalSequence,
                 eventType: $pending->eventType,
                 payload: $pending->payload,
                 metadata: $pending->metadata,

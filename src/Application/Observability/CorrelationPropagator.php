@@ -22,14 +22,8 @@ final class CorrelationPropagator
         ?string $idempotencyKey = null,
         array $attributes = [],
     ): ?CorrelationContext {
-        if ($traceParent === null || strlen($traceParent) > CorrelationContext::MAX_TRACEPARENT_BYTES) {
-            return null;
-        }
-        if ($traceState !== null && strlen($traceState) > CorrelationContext::MAX_TRACESTATE_BYTES) {
-            return null;
-        }
-        $value = trim($traceParent);
-        if (strlen($value) !== CorrelationContext::MAX_TRACEPARENT_BYTES) {
+        $value = self::normalizedTraceParent($traceParent, $traceState);
+        if ($value === null) {
             return null;
         }
         if (preg_match('/^00-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})$/i', $value, $m) !== 1) {
@@ -53,11 +47,35 @@ final class CorrelationPropagator
 
     public static function inject(?CorrelationContext $context): ?CorrelationHeaders
     {
-        return $context instanceof CorrelationContext ? new CorrelationHeaders($context->traceParent(), $context->traceState) : null;
+        if (!$context instanceof CorrelationContext) {
+            return null;
+        }
+
+        return new CorrelationHeaders($context->traceParent(), $context->traceState);
     }
 
     public static function disabled(): null
     {
         return null;
+    }
+
+    /**
+     * Applies the traceparent/tracestate size and shape guards and returns
+     * the trimmed traceparent value, or null when the input is rejected.
+     */
+    private static function normalizedTraceParent(?string $traceParent, ?string $traceState): ?string
+    {
+        if ($traceParent === null || strlen($traceParent) > CorrelationContext::MAX_TRACEPARENT_BYTES) {
+            return null;
+        }
+        if ($traceState !== null && strlen($traceState) > CorrelationContext::MAX_TRACESTATE_BYTES) {
+            return null;
+        }
+        $value = trim($traceParent);
+        if (strlen($value) !== CorrelationContext::MAX_TRACEPARENT_BYTES) {
+            return null;
+        }
+
+        return $value;
     }
 }

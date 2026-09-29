@@ -25,7 +25,7 @@ abstract class Repository
         string $table,
     ) {
         // Validate eagerly so a typo surfaces at construction, not first query.
-        new QueryBuilder()->quoteIdentifier($table, 'table');
+        $this->assertValidTable($table);
         $this->table = $table;
     }
 
@@ -73,14 +73,16 @@ abstract class Repository
         foreach ($orderBy ?? [] as $column => $direction) {
             $qb->orderBy($column, $direction);
         }
+        if ($limit === null && $offset !== 0) {
+            throw new \InvalidArgumentException('offset() requires a limit.');
+        }
         if ($limit !== null) {
             $qb->limit($limit);
             if ($offset > 0) {
                 $qb->offset($offset);
             }
-        } elseif ($offset !== 0) {
-            throw new \InvalidArgumentException('offset() requires a limit.');
         }
+        // No limit and no offset: nothing to apply to the builder.
 
         return $this->connection->fetchAll($qb->build());
     }
@@ -138,6 +140,15 @@ abstract class Repository
     protected function qb(): QueryBuilder
     {
         return QueryBuilder::table($this->table);
+    }
+
+    /**
+     * Eager table-name validation delegated to the query builder's own
+     * identifier grammar (throws {@see QueryException} on a bad name).
+     */
+    private function assertValidTable(string $table): void
+    {
+        new QueryBuilder()->quoteIdentifier($table, 'table');
     }
 
     /**

@@ -84,8 +84,8 @@ final class UnitOfWork
         if ($this->flushing) {
             throw new TransactionException('UnitOfWork::flush() re-entered while flushing.');
         }
-        $operations = $this->operations;
-        if ($operations === []) {
+        $pending = $this->operations;
+        if ($pending === []) {
             return 0;
         }
         $this->operations = [];
@@ -93,7 +93,7 @@ final class UnitOfWork
 
         try {
             $executed = 0;
-            foreach ($operations as $operation) {
+            foreach ($pending as $operation) {
                 $operation($connection);
                 ++$executed;
             }
@@ -141,8 +141,8 @@ final class UnitOfWork
         if ($this->flushing) {
             throw new TransactionException('UnitOfWork::flushRetrying() re-entered while flushing.');
         }
-        $operations = $this->operations;
-        if ($operations === []) {
+        $pending = $this->operations;
+        if ($pending === []) {
             return 0;
         }
         $this->flushing = true;
@@ -155,7 +155,7 @@ final class UnitOfWork
 
                 try {
                     $executed = 0;
-                    foreach ($operations as $operation) {
+                    foreach ($pending as $operation) {
                         $operation($connection);
                         ++$executed;
                     }
