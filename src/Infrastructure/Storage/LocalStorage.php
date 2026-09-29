@@ -233,6 +233,11 @@ final readonly class LocalStorage implements ObjectStorageInterface
             return true;
         }
 
-        return $this->runQuietly(fn (): bool => unlink($path));
+        // Every path reaching here was resolved and root-checked by this
+        // storage instance itself (see the call-site notes); registered as
+        // an accepted suppression: docs/security/php-sast.md §7.
+        return $this->runQuietly(
+            fn (): bool => unlink($path), // nosemgrep: php.lang.security.unlink-use
+        );
     }
 }
