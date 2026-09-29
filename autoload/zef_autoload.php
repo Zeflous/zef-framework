@@ -413,6 +413,7 @@ if (!function_exists('zef_framework_autoload')) {
                 "Zef\\Framework\\Resource\\AdmissionSnapshot" => __DIR__ . '/../src/Domain/Resource/AdmissionSnapshot.php',
                 "Zef\\Framework\\Resource\\Cursor" => __DIR__ . '/../src/Domain/Resource/Cursor.php',
                 "Zef\\Framework\\Resource\\FilterCondition" => __DIR__ . '/../src/Domain/Resource/FilterCondition.php',
+                "Zef\\Framework\\Resource\\FilterQueryParser" => __DIR__ . '/../src/Domain/Resource/FilterQueryParser.php',
                 "Zef\\Framework\\Resource\\FilterSpec" => __DIR__ . '/../src/Domain/Resource/FilterSpec.php',
                 "Zef\\Framework\\Resource\\InMemoryAdmissionController" => __DIR__ . '/../src/Application/Resource/InMemoryAdmissionController.php',
                 "Zef\\Framework\\Resource\\PageRequest" => __DIR__ . '/../src/Domain/Resource/PageRequest.php',
