@@ -56,14 +56,6 @@ final readonly class Config
     }
 
     /**
-     * @param array<array-key,mixed> $values
-     */
-    private static function buildIndex(array $values): ConfigRadixTree
-    {
-        return new ConfigRadixTree($values);
-    }
-
-    /**
      * Full raw tree. Treat as read-only; PHP copy-on-write keeps the bag safe.
      *
      * @return array<array-key,mixed>
@@ -194,6 +186,14 @@ final readonly class Config
     public function longestMatch(string $key): mixed
     {
         return $this->index->longestMatch($key);
+    }
+
+    /**
+     * @param array<array-key,mixed> $values
+     */
+    private static function buildIndex(array $values): ConfigRadixTree
+    {
+        return new ConfigRadixTree($values);
     }
 
     private function typed(string $key, ConfigValueType $type, ?string $enumClass = null): mixed

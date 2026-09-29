@@ -47,24 +47,6 @@ final readonly class ConfigRadixTree
     }
 
     /**
-     * Builds the trie root (php:S2830): the node assembly lives in a named
-     * factory so the constructor only assigns derived state.
-     *
-     * @param array<array-key,mixed> $values
-     */
-    private static function buildRoot(array $values): ConfigRadixNode
-    {
-        $children = [];
-        foreach ($values as $key => $value) {
-            $children[(string) $key] = is_array($value) && $value !== []
-                ? self::buildNode($value)
-                : new ConfigRadixNode(true, $value, []);
-        }
-
-        return new ConfigRadixNode(false, null, $children);
-    }
-
-    /**
      * All paths matching the anchored wildcard pattern, path => value at the
      * matched path (leaf scalars, empty arrays, lists and subtree arrays
      * alike). `*` matches exactly ONE segment; it must be the whole segment
@@ -138,6 +120,24 @@ final readonly class ConfigRadixTree
         $this->longestFrom($this->root, $segments, 0, '', $best);
 
         return $best === null ? null : $best['value'];
+    }
+
+    /**
+     * Builds the trie root (php:S2830): the node assembly lives in a named
+     * factory so the constructor only assigns derived state.
+     *
+     * @param array<array-key,mixed> $values
+     */
+    private static function buildRoot(array $values): ConfigRadixNode
+    {
+        $children = [];
+        foreach ($values as $key => $value) {
+            $children[(string) $key] = is_array($value) && $value !== []
+                ? self::buildNode($value)
+                : new ConfigRadixNode(true, $value, []);
+        }
+
+        return new ConfigRadixNode(false, null, $children);
     }
 
     /**

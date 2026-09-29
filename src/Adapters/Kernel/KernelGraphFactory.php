@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 namespace Zef\Framework\Kernel;
 
+use Zef\Framework\Application;
 use Zef\Framework\Config\ConfigAggregator;
 use Zef\Framework\Config\ModuleRegistry;
 use Zef\Framework\Container\Container;
@@ -26,7 +27,7 @@ use Zef\Framework\Validation\RouteConstraintValidator;
  * @internal
  *
  * Named factories for the kernel object graph (extracted from the
- * {@see \Zef\Framework\Application} constructor so it only wires fields,
+ * {@see Application} constructor so it only wires fields,
  * php:S2830). Each factory is a pure `new` over its arguments — no
  * conditionals, no side effects — so the composition stays trivially
  * auditable; the constructor calls them in the historical order.
