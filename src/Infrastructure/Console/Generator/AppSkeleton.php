@@ -6,7 +6,7 @@ declare(strict_types=1);
  * ZEF Framework v2.29.0 — Infrastructure layer (outbound adapters).
  * Assembles the scaffolded application file map (php:S2042): the
  * composer.json blueprint plus every stub file body, rendered through
- * the AppProjectTemplates / AppCodeTemplates renderers.
+ * the AppProjectTemplates / AppEntryTemplates / AppModuleTemplates renderers.
  */
 
 namespace Zef\Framework\Console\Generator;
@@ -30,7 +30,8 @@ final readonly class AppSkeleton
     ): array {
         $moduleNamespace = "Zef\\Module\\{$pascal}";
         $projectFiles = new AppProjectTemplates($this->templates);
-        $codeFiles = new AppCodeTemplates($this->templates);
+        $entryFiles = new AppEntryTemplates($this->templates);
+        $moduleFiles = new AppModuleTemplates($this->templates);
 
         // The path repository below carries an explicit `versions` pin derived
         // from ZefVersion::VERSION. Without it, Composer resolves the path repo
@@ -79,14 +80,14 @@ final readonly class AppSkeleton
             "{$target}/.rr.yaml" => $projectFiles->rrYaml($address),
             "{$target}/README.md" => $projectFiles->readme($kebab, $address),
             "{$target}/public/index.php" => $projectFiles->publicIndex(),
-            "{$target}/bin/worker.php" => $codeFiles->worker(),
-            "{$target}/bin/zef" => $codeFiles->appZef(),
-            "{$target}/app/Bootstrap.php" => $codeFiles->appBootstrap($pascal),
-            "{$target}/modules/{$pascal}/ConfigProvider.php" => $codeFiles->homeConfigProvider(
+            "{$target}/bin/worker.php" => $entryFiles->worker(),
+            "{$target}/bin/zef" => $entryFiles->appZef(),
+            "{$target}/app/Bootstrap.php" => $moduleFiles->appBootstrap($pascal),
+            "{$target}/modules/{$pascal}/ConfigProvider.php" => $moduleFiles->homeConfigProvider(
                 $moduleNamespace,
                 $kebab,
             ),
-            "{$target}/modules/{$pascal}/HomeHandler.php" => $codeFiles->homeHandler($moduleNamespace, $kebab),
+            "{$target}/modules/{$pascal}/HomeHandler.php" => $moduleFiles->homeHandler($moduleNamespace, $kebab),
         ];
     }
 }
