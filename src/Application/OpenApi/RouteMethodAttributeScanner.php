@@ -40,8 +40,9 @@ final class RouteMethodAttributeScanner
             return RouteHandlerMetadata::empty();
         }
 
+        $context = new RouteScanContext($handlerClass, $method, $pattern, $openApiPath, $generator);
         foreach ($matched as $source) {
-            $this->applySourceAttributes($source, $meta, $method, $pattern, $openApiPath, $generator, $handlerClass);
+            $this->applySourceAttributes($source, $meta, $context);
         }
 
         return $meta->toMetadata();
@@ -66,19 +67,15 @@ final class RouteMethodAttributeScanner
     private function applySourceAttributes(
         \ReflectionMethod $source,
         RouteMetadataAccumulator $meta,
-        string $method,
-        string $pattern,
-        string $openApiPath,
-        SchemaGenerator $generator,
-        string $handlerClass,
+        RouteScanContext $context,
     ): void {
         $sourceName = $source->getName();
         foreach ($source->getAttributes(Attribute\Route::class, self::ATTR_INSTANCEOF) as $attribute) {
             $routeMeta = $attribute->newInstance();
-            if (strcasecmp($routeMeta->method, $method) !== 0) {
+            if (strcasecmp($routeMeta->method, $context->method) !== 0) {
                 continue;
             }
-            if (!in_array($routeMeta->path, ['', $pattern, $openApiPath], true)) {
+            if (!in_array($routeMeta->path, ['', $context->pattern, $context->openApiPath], true)) {
                 continue;
             }
             $meta->applyRoute($routeMeta);
@@ -88,10 +85,15 @@ final class RouteMethodAttributeScanner
             $meta->applyParameter($attribute->newInstance());
         }
         foreach ($source->getAttributes(Attribute\RequestBody::class, self::ATTR_INSTANCEOF) as $attribute) {
-            $meta->applyRequestBody($attribute->newInstance(), $generator, $handlerClass, $sourceName);
+            $meta->applyRequestBody(
+                $attribute->newInstance(),
+                $context->generator,
+                $context->handlerClass,
+                $sourceName,
+            );
         }
         foreach ($source->getAttributes(Attribute\Response::class, self::ATTR_INSTANCEOF) as $attribute) {
-            $meta->applyResponse($attribute->newInstance(), $generator);
+            $meta->applyResponse($attribute->newInstance(), $context->generator);
         }
         foreach ($source->getAttributes(Attribute\Security::class, self::ATTR_INSTANCEOF) as $attribute) {
             $meta->applyMethodSecurity($attribute->newInstance());

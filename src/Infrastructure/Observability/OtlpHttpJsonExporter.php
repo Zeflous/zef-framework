@@ -36,7 +36,7 @@ final class OtlpHttpJsonExporter implements SpanExporterInterface, MetricExporte
         }
         $payload = [
             'resourceSpans' => [[
-                'resource' => ['attributes' => $this->attributes($this->resource)],
+                'resource' => ['attributes' => OtlpJsonPayloadEncoder::attributes($this->resource)],
                 'scopeSpans' => [[
                     'scope' => ['name' => 'zef-observability'],
                     'spans' => array_map($this->span(...), $spans),
@@ -63,14 +63,14 @@ final class OtlpHttpJsonExporter implements SpanExporterInterface, MetricExporte
                     'dataPoints' => [[
                         'asDouble' => (float) $metric['sum'],
                         'timeUnixNano' => (string) TelemetryClock::nowUnixNano(),
-                        'attributes' => $this->attributes($metric['attributes']),
+                        'attributes' => OtlpJsonPayloadEncoder::attributes($metric['attributes']),
                     ]],
                 ],
             ];
         }
         $this->postJson($this->endpointFor('/v1/metrics'), [
             'resourceMetrics' => [[
-                'resource' => ['attributes' => $this->attributes($this->resource)],
+                'resource' => ['attributes' => OtlpJsonPayloadEncoder::attributes($this->resource)],
                 'scopeMetrics' => [[
                     'scope' => ['name' => 'zef-observability'],
                     'metrics' => $list,
@@ -91,12 +91,12 @@ final class OtlpHttpJsonExporter implements SpanExporterInterface, MetricExporte
                 'timeUnixNano' => (string) $record->timeUnixNano,
                 'severityText' => $record->severity,
                 'body' => ['stringValue' => $record->body],
-                'attributes' => $this->attributes($record->attributes),
+                'attributes' => OtlpJsonPayloadEncoder::attributes($record->attributes),
             ];
         }
         $this->postJson($this->endpointFor('/v1/logs'), [
             'resourceLogs' => [[
-                'resource' => ['attributes' => $this->attributes($this->resource)],
+                'resource' => ['attributes' => OtlpJsonPayloadEncoder::attributes($this->resource)],
                 'scopeLogs' => [[
                     'scope' => ['name' => 'zef-observability'],
                     'logRecords' => $list,
@@ -135,7 +135,7 @@ final class OtlpHttpJsonExporter implements SpanExporterInterface, MetricExporte
             'kind' => 'SPAN_KIND_SERVER',
             'startTimeUnixNano' => (string) $span->startUnixNano,
             'endTimeUnixNano' => (string) $span->endUnixNano,
-            'attributes' => $this->attributes($span->attributes),
+            'attributes' => OtlpJsonPayloadEncoder::attributes($span->attributes),
             'status' => [
                 'code' => match ($span->status) {
                     'OK' => 'STATUS_CODE_OK',
@@ -159,56 +159,13 @@ final class OtlpHttpJsonExporter implements SpanExporterInterface, MetricExporte
                     'timeUnixNano' => (string) $event['time_unix_nano'],
                     // Event attributes are KeyValue messages, exactly like
                     // span/resource attributes — not a plain value map.
-                    'attributes' => $this->attributes($event['attributes'] ?? []),
+                    'attributes' => OtlpJsonPayloadEncoder::attributes($event['attributes'] ?? []),
                 ],
                 $span->events,
             );
         }
 
         return $out;
-    }
-
-    /**
-     * @param array<string,mixed> $attributes
-     *
-     * @return list<array{key:string,value:array<string,mixed>}>
-     */
-    private function attributes(array $attributes): array
-    {
-        $out = [];
-        foreach ($attributes as $key => $value) {
-            $out[] = ['key' => $key, 'value' => $this->anyValue($value)];
-        }
-
-        return $out;
-    }
-
-    /** @return array<string,mixed> */
-    private function anyValue(mixed $value): array
-    {
-        return match (true) {
-            is_bool($value) => ['boolValue' => $value],
-            is_int($value) => ['intValue' => (string) $value],
-            is_float($value) => ['doubleValue' => $value],
-            is_array($value) => $this->arrayValue($value),
-            default => $this->scalarValue($value),
-        };
-    }
-
-    /**
-     * @param array<mixed> $value
-     *
-     * @return array<string,mixed>
-     */
-    private function arrayValue(array $value): array
-    {
-        return ['arrayValue' => ['values' => array_map($this->anyValue(...), array_values($value))]];
-    }
-
-    /** @return array<string,mixed> */
-    private function scalarValue(mixed $value): array
-    {
-        return ['stringValue' => TelemetrySanitizer::string(is_string($value) ? $value : get_debug_type($value))];
     }
 
     /**
