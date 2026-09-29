@@ -61,13 +61,13 @@ final readonly class ConfigCompiler
                 "Config value at '{$unexportable}' cannot be compiled (only scalars, nulls and arrays are exportable)."
             );
         }
-        $code = "<?php\n\ndeclare(strict_types=1);\n\n"
-            . '/* Compiled application configuration (ZEF Framework v' . ZefVersion::VERSION
+        $code = "<?php\n\ndeclare(strict_types=1);\n\n/* Compiled application configuration (ZEF Framework v"
+            . ZefVersion::VERSION
             . '). Do not edit. Contains resolved secrets — keep out of version control, chmod 600. */'
             . "\n\n"
             . 'return ' . var_export($values, true) . ";\n";
         $tmp = $directory . '/.' . $basename . '.' . bin2hex(random_bytes(6)) . '.tmp';
-        if (@file_put_contents($tmp, $code) === false) {
+        if (file_put_contents($tmp, $code) === false) {
             throw new InvalidConfigurationException("Failed to write compiled config temp file '{$tmp}'.");
         }
         // The Unix mode contract is POSIX-only: PHP's Windows emulation
@@ -76,15 +76,20 @@ final readonly class ConfigCompiler
         // publish itself (issue #110). On Windows the compiled file keeps
         // the process default ACL and the publish stays atomic.
         if (DIRECTORY_SEPARATOR === '/') {
-            @chmod($tmp, $this->fileMode);
+            // Best-effort mode application: a failed chmod leaves the
+            // restrictive process default in place and the atomic publish
+            // below still runs (the historical behaviour).
+            chmod($tmp, $this->fileMode);
         }
-        if (!@rename($tmp, $targetFile)) {
+        if (!rename($tmp, $targetFile)) {
             // Cleanup of $tmp, a name this method generated itself
-            // ('.' . $basename . '.' . bin2hex(random_bytes(6)) . '.tmp', line 48). No
+            // ('.' . $basename . '.' . bin2hex(random_bytes(6)) . '.tmp'). No
             // request input reaches the argument; this runs only when the rename
             // immediately above failed. Registered as an accepted suppression:
             // docs/security/php-sast.md §7.
-            @unlink($tmp); // nosemgrep: php.lang.security.unlink-use
+            if (is_file($tmp)) {
+                unlink($tmp); // nosemgrep: php.lang.security.unlink-use
+            }
 
             throw new InvalidConfigurationException("Failed to publish compiled config '{$targetFile}'.");
         }
