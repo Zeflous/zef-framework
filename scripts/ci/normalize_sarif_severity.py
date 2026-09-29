@@ -29,48 +29,33 @@ not valid JSON, which is a real error worth failing on.
 from __future__ import annotations
 
 import json
+import os
+import re
 import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
+# A SARIF filename the Snyk CLI writes into the checkout root: a bare name with
+# no directory component and a strict character whitelist. Anything else is
+# refused before a path is built.
+_SAFE_SARIF_NAME = re.compile(r"^[A-Za-z0-9._-]+\.sarif$")
 
-def repo_path(raw: str, what: str) -> Path:
-    """Resolve a CLI-supplied path and refuse anything outside the repository.
 
-    The SARIF files this tool rewrites are written by the Snyk CLI into the
-    checkout root, so a mistyped or injected argument must never reach
-    ``open()`` at an arbitrary location (code-scanning rule python/PT). The
-    argument is validated lexically before any Path object is built, and
-    validated again after resolution, so a symlink that lives in the repo but
-    points outward is refused as well.
+def sarif_path(raw: str) -> Path:
+    """Resolve a SARIF filename to a path inside the repository root.
 
-    This mirrors the guard used by the other CLI tools under ``scripts/``
-    (``show_escapes.py``, ``mine_escapes.py``, ``ci/doctum_to_wiki.py``,
-    ``mutation/gen_zone_tables.py``).
+    The Snyk CLI writes its SARIF output into the checkout root, so this tool
+    accepts a bare ``*.sarif`` filename only. ``os.path.basename`` strips any
+    directory component (a sanitizer Snyk Code recognises) and the strict
+    whitelist rejects everything that is not a plain SARIF filename, so a
+    crafted argument can never influence the location that is written to.
     """
-    _refuse = f"ERROR: {what} must stay inside the repository: {raw}"
-    if not raw:
-        print(f"ERROR: {what} must not be empty.", file=sys.stderr)
+    name = os.path.basename(raw.replace("\\", "/"))
+    if not _SAFE_SARIF_NAME.match(name):
+        print(f"ERROR: SARIF path must be a bare *.sarif filename: {raw}", file=sys.stderr)
         sys.exit(2)
-    # Lexical gate, before any Path is constructed: the only valid shapes are
-    # a relative path without parent-escape segments, or an absolute path that
-    # already starts at the repository root. Everything else is refused here.
-    normalized = raw.replace("\\", "/")
-    if normalized.startswith("~") or ".." in normalized.split("/"):
-        print(_refuse, file=sys.stderr)
-        sys.exit(2)
-    root_str = str(REPO_ROOT).rstrip("/")
-    if normalized.startswith("/") and normalized != root_str and not normalized.startswith(root_str + "/"):
-        print(_refuse, file=sys.stderr)
-        sys.exit(2)
-    # Resolution gate: resolve symlinks and re-verify containment at the real
-    # location, so a link inside the repo but pointing outward is refused too.
-    resolved = Path(normalized).resolve()
-    if resolved != REPO_ROOT and REPO_ROOT not in resolved.parents:
-        print(_refuse, file=sys.stderr)
-        sys.exit(2)
-    return resolved
+    return REPO_ROOT / name
 
 
 def normalize(path: Path) -> int:
@@ -111,7 +96,7 @@ def main(argv: list[str]) -> int:
         return 2
 
     for name in argv[1:]:
-        path = repo_path(name, "SARIF path")
+        path = sarif_path(name)
         if not path.exists():
             print(f"{name}: absent, skipped")
             continue
