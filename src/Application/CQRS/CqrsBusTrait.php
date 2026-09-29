@@ -36,7 +36,8 @@ trait CqrsBusTrait
      */
     private function guardDispatchDepth(callable $operation): mixed
     {
-        if (++$this->dispatchDepth > self::DISPATCH_DEPTH_LIMIT) {
+        ++$this->dispatchDepth;
+        if ($this->dispatchDepth > self::DISPATCH_DEPTH_LIMIT) {
             --$this->dispatchDepth;
 
             throw new \LogicException(static::class . ' dispatch depth exceeded (recursive dispatch?).');
@@ -53,8 +54,8 @@ trait CqrsBusTrait
     {
         $next = \Closure::fromCallable($handler);
         for ($i = count($this->middleware) - 1; $i >= 0; --$i) {
-            $middleware = $this->middleware[$i];
-            $next = static fn (object $message, CqrsContext $ctx): mixed => $middleware->process($message, $ctx, $next);
+            $layer = $this->middleware[$i];
+            $next = static fn (object $message, CqrsContext $ctx): mixed => $layer->process($message, $ctx, $next);
         }
 
         return $next;
@@ -76,7 +77,9 @@ trait CqrsBusTrait
             throw new CqrsHandlerNotFoundException("No {$kind} handler registered for {$class}.");
         }
         if (count($matches) > 1) {
-            throw new CqrsHandlerConflictException("Ambiguous {$kind} handlers for {$class}. Register the concrete class explicitly.");
+            throw new CqrsHandlerConflictException(
+                "Ambiguous {$kind} handlers for {$class}. Register the concrete class explicitly.",
+            );
         }
 
         return $matches[0][1];

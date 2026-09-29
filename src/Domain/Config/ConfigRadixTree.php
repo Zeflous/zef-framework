@@ -43,13 +43,7 @@ final readonly class ConfigRadixTree
      */
     public function __construct(array $values)
     {
-        $children = [];
-        foreach ($values as $key => $value) {
-            $children[(string) $key] = is_array($value) && $value !== []
-                ? self::buildNode($value)
-                : new ConfigRadixNode(true, $value, []);
-        }
-        $this->root = new ConfigRadixNode(false, null, $children);
+        $this->root = $this->buildRoot($values);
     }
 
     /**
@@ -129,6 +123,24 @@ final readonly class ConfigRadixTree
     }
 
     /**
+     * Builds the trie root (php:S2830): the node assembly lives in a named
+     * factory so the constructor only assigns derived state.
+     *
+     * @param array<array-key,mixed> $values
+     */
+    private function buildRoot(array $values): ConfigRadixNode
+    {
+        $children = [];
+        foreach ($values as $key => $value) {
+            $children[(string) $key] = is_array($value) && $value !== []
+                ? self::buildNode($value)
+                : new ConfigRadixNode(true, $value, []);
+        }
+
+        return new ConfigRadixNode(false, null, $children);
+    }
+
+    /**
      * @param array<array-key,mixed> $values
      */
     private static function buildNode(array $values): ConfigRadixNode
@@ -200,8 +212,13 @@ final readonly class ConfigRadixTree
      * @param list<string> $segments
      * @param null|array{wildcards:int,path:string,value:mixed} $best
      */
-    private function longestFrom(ConfigRadixNode $node, array $segments, int $wildcards, string $path, ?array &$best): void
-    {
+    private function longestFrom(
+        ConfigRadixNode $node,
+        array $segments,
+        int $wildcards,
+        string $path,
+        ?array &$best,
+    ): void {
         if ($segments === []) {
             if (!$node->has) {
                 return;

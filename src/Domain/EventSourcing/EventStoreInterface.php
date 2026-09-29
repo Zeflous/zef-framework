@@ -45,7 +45,12 @@ interface EventStoreInterface
      * @throws ConcurrencyException when the actual last version differs from $expectedVersion
      * @throws EventSourcingException on invalid grammar or an empty event list
      */
-    public function appendToStream(string $aggregateType, string $aggregateId, int $expectedVersion, PendingEvent ...$events): array;
+    public function appendToStream(
+        string $aggregateType,
+        string $aggregateId,
+        int $expectedVersion,
+        PendingEvent ...$events,
+    ): array;
 
     /**
      * @param string $aggregateType stream family label

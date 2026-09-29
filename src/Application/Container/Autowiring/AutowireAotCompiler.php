@@ -84,24 +84,30 @@ final class AutowireAotCompiler
      *
      * @throws InvalidConfigurationException when any value is not exportable
      */
-    public static function export(AutowireResult $result, string $path, string $header = 'ZEF AOT autowire compilation'): void
-    {
+    public static function export(
+        AutowireResult $result,
+        string $path,
+        string $header = 'ZEF AOT autowire compilation',
+    ): void {
         $entries = '';
         foreach ($result->metadata as $serviceId => $metadata) {
             $entries .= '        ' . self::generateServiceEntry($metadata, $result->factoryCode[$serviceId]);
         }
         $code = "<?php\n\n/* {$header} — generated file, do not edit. */\n\nreturn [\n{$entries}];\n";
-        // @infection-ignore-all Concat,ConcatOperandRemoval — ekuivalen: nama tmp hanya terlihat sebelum rename atomik; komposisi tak terobservasi
+        // @infection-ignore-all Concat,ConcatOperandRemoval — ekuivalen: nama tmp hanya
+        // terlihat sebelum rename atomik; komposisi tak terobservasi
         $tmp = $path . '.tmp.' . getmypid();
         if (file_put_contents($tmp, $code, \LOCK_EX) === false) {
             throw new InvalidConfigurationException("Cannot write AOT export file '{$path}'.");
         }
         if (!rename($tmp, $path)) {
             // Cleanup of $tmp, a name this method generated itself
-            // ($path . '.tmp.' . getmypid(), line 95). No request input reaches the
+            // ($path . '.tmp.' . getmypid()). No request input reaches the
             // argument; this runs only when the rename immediately above failed.
             // Registered as an accepted suppression: docs/security/php-sast.md §7.
-            @unlink($tmp); // nosemgrep: php.lang.security.unlink-use
+            if (is_file($tmp)) {
+                unlink($tmp); // nosemgrep: php.lang.security.unlink-use
+            }
 
             throw new InvalidConfigurationException("Cannot finalise AOT export file '{$path}'.");
         }
@@ -117,20 +123,27 @@ final class AutowireAotCompiler
         if (!is_file($path)) {
             throw new InvalidConfigurationException("AOT file '{$path}' does not exist.");
         }
+        // Deliberately a plain require (not require_once): the AOT export is a
+        // side-effect-free `<?php return [...];` data artifact, and repeated
+        // in-process loads (e.g. booting a second container from the same
+        // export) must keep returning the definitions array — require_once
+        // would hand back true on the second load and break the array
+        // contract below (same rationale as RouteCache's include envelope).
         $services = require $path;
         if (!is_array($services)) {
             throw new InvalidConfigurationException("AOT file '{$path}' must return an array.");
         }
         $definitions = [];
         foreach ($services as $id => $entry) {
-            if (
-                !is_string($id)
-                || !is_array($entry)
-                || !isset($entry['factory']) || !is_callable($entry['factory'])
-                || !isset($entry['dependencies']) || !is_array($entry['dependencies'])
-                || !isset($entry['lifetime']) || !is_string($entry['lifetime'])
-            ) {
-                throw new InvalidConfigurationException("AOT file '{$path}' has a malformed entry for service '{$id}'.");
+            if (!is_string($id) || !is_array($entry)) {
+                throw self::malformedEntry($path, $id);
+            }
+            $shapeComplete = isset($entry['factory'], $entry['dependencies'], $entry['lifetime'])
+                && is_callable($entry['factory'])
+                && is_array($entry['dependencies'])
+                && is_string($entry['lifetime']);
+            if (!$shapeComplete) {
+                throw self::malformedEntry($path, $id);
             }
             $definitions[$id] = new ServiceDefinition(
                 id: $id,
@@ -170,5 +183,10 @@ final class AutowireAotCompiler
         }
 
         return $closure;
+    }
+
+    private static function malformedEntry(string $path, int|string $id): InvalidConfigurationException
+    {
+        return new InvalidConfigurationException("AOT file '{$path}' has a malformed entry for service '{$id}'.");
     }
 }

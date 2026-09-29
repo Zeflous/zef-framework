@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 namespace Zef\Framework\Security;
 
+use Psr\Http\Message\MessageInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -17,10 +18,16 @@ use Psr\Http\Server\RequestHandlerInterface;
 use Psr\Log\LoggerInterface;
 use Zef\Framework\Http\JsonResponse;
 
-final readonly class SecurityRuntimeMiddleware implements MiddlewareInterface
+final class SecurityRuntimeMiddleware implements MiddlewareInterface
 {
     private const array SAFE_METHODS = ['GET', 'HEAD', 'OPTIONS', 'TRACE'];
-    private ?CsrfTokenManager $csrf;
+
+    /**
+     * Lazily created on the first CSRF-enforcing request (php:S2830): the
+     * manager is a stateless secret/bytes/TTL holder, so deferring its
+     * construction out of the constructor has no observable effect.
+     */
+    private ?CsrfTokenManager $csrf = null;
 
     /**
      * @param list<string> $trustedProxies
@@ -31,143 +38,267 @@ final readonly class SecurityRuntimeMiddleware implements MiddlewareInterface
      * identical whether it was an attack or a limiter storage bug.
      */
     public function __construct(
-        private SecurityPolicy $policy,
-        private RateLimiterInterface $rateLimiter,
-        private array $trustedProxies = [],
-        private ?LoggerInterface $logger = null,
-    ) {
-        $this->csrf = $policy->csrfEnabled && $policy->csrfSecret !== ''
-            ? new CsrfTokenManager($policy->csrfSecret, $policy->csrfTokenBytes, $policy->csrfTokenTtlSeconds)
-            : null;
-    }
+        private readonly SecurityPolicy $policy,
+        private readonly RateLimiterInterface $rateLimiter,
+        private readonly array $trustedProxies = [],
+        private readonly ?LoggerInterface $logger = null,
+    ) {}
 
     #[\Override]
     public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
         $method = strtoupper($request->getMethod());
-        $requestId = $request->getHeaderLine('X-Request-ID');
+        $requestId = $this->sanitizeRequestId($request->getHeaderLine('X-Request-ID'));
+        $context = $this->buildSecurityContext($request, $requestId);
+        $request = $request->withAttribute('zef.security.context', $context);
+
+        $gate = $this->runSecurityGates($method, $request, $context, $requestId);
+        if ($gate['shortCircuit'] !== null) {
+            return $gate['shortCircuit'];
+        }
+
+        $response = $handler->handle($request)->withHeader('X-Request-ID', $requestId);
+        $response = $this->decorateWithRateHeaders($response, $gate['rateDecision']);
+
+        return $this->decorateWithCsrfCookie($response, $gate['csrfCookie']);
+    }
+
+    /**
+     * Sanitizes the inbound X-Request-ID header: an absent, oversized or
+     * malformed id is replaced with a fresh random one.
+     */
+    private function sanitizeRequestId(string $requestId): string
+    {
         if (
             $requestId === ''
             || strlen($requestId) > 128
             || preg_match('/^[A-Za-z0-9._:-]+$/', $requestId) !== 1
         ) {
-            $requestId = bin2hex(random_bytes(16));
+            return bin2hex(random_bytes(16));
         }
+
+        return $requestId;
+    }
+
+    private function buildSecurityContext(ServerRequestInterface $request, string $requestId): SecurityContext
+    {
         $requestTrustedProxies = $request->getAttribute('__zef_trusted_proxies', $this->trustedProxies);
         $trustedProxies = is_array($requestTrustedProxies)
             ? array_values(array_filter($requestTrustedProxies, is_string(...)))
             : $this->trustedProxies;
-        $context = new SecurityContext(
+
+        return new SecurityContext(
             $requestId,
             ClientAddressResolver::resolve($request, $trustedProxies),
             $request->getHeaderLine('Origin') !== '' ? $request->getHeaderLine('Origin') : null,
             strtolower($request->getUri()->getScheme()) === 'https',
         );
-        $request = $request->withAttribute('zef.security.context', $context);
+    }
 
-        $rateDecision = null;
-        if ($this->policy->rateLimitEnabled) {
-            try {
-                $rateDecision = $this->rateLimiter->check(
-                    $context->clientIp,
-                    $this->policy->rateLimitMaxRequests,
-                    $this->policy->rateLimitWindowSeconds,
-                );
-            } catch (RateLimiterCapacityException $e) {
-                // ZEF-DEEP-02: a full key store is not a storage failure — the
-                // request is served untracked rather than converting capacity
-                // into a global 503. Buckets that already exist keep counting.
-                $this->logSwallowedFailure(
-                    'capacity exhausted (untracked fail-open)',
-                    $context->clientIp,
-                    $requestId,
-                    $e,
-                );
-                $rateDecision = null;
-            } catch (\Throwable $e) {
-                // Regresi I-5 (issue #173): the swallowed failure is logged —
-                // a mass 503 (fail-closed) must be diagnosable as attack vs
-                // bug. Safe context only: client IP + request id, no headers.
-                $this->logSwallowedFailure('storage failure (fail-closed 503)', $context->clientIp, $requestId, $e);
+    /**
+     * Runs the rate-limit, origin and CSRF gates in order and returns the
+     * first short-circuiting error response (null when the request may
+     * proceed), together with the rate decision and the CSRF cookie that a
+     * successful response must carry.
+     *
+     * @return array{
+     *     shortCircuit: null|ResponseInterface,
+     *     rateDecision: null|RateLimitDecision,
+     *     csrfCookie: null|string
+     * }
+     */
+    private function runSecurityGates(
+        string $method,
+        ServerRequestInterface $request,
+        SecurityContext $context,
+        string $requestId,
+    ): array {
+        [$rateDecision, $rateResponse] = $this->enforceRateLimit($context, $requestId);
+        if ($rateResponse instanceof ResponseInterface) {
+            return ['shortCircuit' => $rateResponse, 'rateDecision' => $rateDecision, 'csrfCookie' => null];
+        }
+        $originResponse = $this->originDeniedResponse($context, $requestId);
+        if ($originResponse instanceof ResponseInterface) {
+            return ['shortCircuit' => $originResponse, 'rateDecision' => $rateDecision, 'csrfCookie' => null];
+        }
+        [$csrfCookie, $csrfResponse] = $this->enforceCsrf($method, $request, $requestId);
 
-                return JsonResponse::error(503, 'Service Unavailable', ['correlation_id' => $requestId], [
-                    'Retry-After' => '1',
-                    'X-Request-ID' => $requestId,
-                ]);
-            }
-            if ($rateDecision instanceof RateLimitDecision && !$rateDecision->allowed) {
-                return JsonResponse::error(429, 'Too Many Requests', ['correlation_id' => $requestId], [
-                    'Retry-After' => (string) $rateDecision->retryAfter,
-                    'X-RateLimit-Limit' => (string) $rateDecision->limit,
-                    'X-RateLimit-Remaining' => '0',
-                    'X-Request-ID' => $requestId,
-                ]);
-            }
+        return ['shortCircuit' => $csrfResponse, 'rateDecision' => $rateDecision, 'csrfCookie' => $csrfCookie];
+    }
+
+    /**
+     * @return array{0: null|RateLimitDecision, 1: null|ResponseInterface}
+     */
+    private function enforceRateLimit(SecurityContext $context, string $requestId): array
+    {
+        if (!$this->policy->rateLimitEnabled) {
+            return [null, null];
         }
 
-        if ($this->policy->originEnabled) {
-            try {
-                OriginPolicy::assertAllowed($context->origin, $this->policy->allowedOrigins);
-            } catch (\Throwable) {
-                return JsonResponse::error(403, 'Forbidden', ['reason' => 'Origin denied'], [
-                    'X-Request-ID' => $requestId,
-                ]);
-            }
+        try {
+            $decision = $this->rateLimiter->check(
+                $context->clientIp,
+                $this->policy->rateLimitMaxRequests,
+                $this->policy->rateLimitWindowSeconds,
+            );
+        } catch (RateLimiterCapacityException $e) {
+            // ZEF-DEEP-02: a full key store is not a storage failure — the
+            // request is served untracked rather than converting capacity
+            // into a global 503. Buckets that already exist keep counting.
+            $this->logSwallowedFailure('capacity exhausted (untracked fail-open)', $context->clientIp, $requestId, $e);
+
+            return [null, null];
+        } catch (\Throwable $e) {
+            // Regresi I-5 (issue #173): the swallowed failure is logged —
+            // a mass 503 (fail-closed) must be diagnosable as attack vs
+            // bug. Safe context only: client IP + request id, no headers.
+            $this->logSwallowedFailure('storage failure (fail-closed 503)', $context->clientIp, $requestId, $e);
+
+            return [null, $this->serviceUnavailableResponse($requestId)];
+        }
+        if ($decision->allowed) {
+            return [$decision, null];
         }
 
-        $setCookie = null;
-        if ($this->csrf instanceof CsrfTokenManager) {
-            $cookieToken = $this->cookieValue($request->getHeaderLine('Cookie'), $this->policy->csrfCookieName);
-            if (in_array($method, self::SAFE_METHODS, true)) {
-                // Re-issue not only when the cookie is absent but also when
-                // it is stale/invalid (secret rotation, tampering); the
-                // old code left browsers permanently locked out of unsafe
-                // requests with no recovery path.
-                if ($cookieToken === null || !$this->csrf->isValid($cookieToken)) {
-                    $setCookie = $this->csrf->issue();
-                }
-            } else {
-                $headerToken = $request->getHeaderLine($this->policy->csrfHeaderName);
-                if (
-                    $cookieToken === null
-                    || $headerToken === ''
-                    || !$this->csrf->isValid($cookieToken)
-                    || !hash_equals($cookieToken, $headerToken)
-                ) {
-                    return JsonResponse::error(403, 'Forbidden', ['reason' => 'CSRF validation failed'], [
-                        'X-Request-ID' => $requestId,
-                    ]);
-                }
-            }
+        return [$decision, $this->tooManyRequestsResponse($decision, $requestId)];
+    }
+
+    private function serviceUnavailableResponse(string $requestId): ResponseInterface
+    {
+        return JsonResponse::error(503, 'Service Unavailable', ['correlation_id' => $requestId], [
+            'Retry-After' => '1',
+            'X-Request-ID' => $requestId,
+        ]);
+    }
+
+    private function tooManyRequestsResponse(RateLimitDecision $decision, string $requestId): ResponseInterface
+    {
+        return JsonResponse::error(429, 'Too Many Requests', ['correlation_id' => $requestId], [
+            'Retry-After' => (string) $decision->retryAfter,
+            'X-RateLimit-Limit' => (string) $decision->limit,
+            'X-RateLimit-Remaining' => '0',
+            'X-Request-ID' => $requestId,
+        ]);
+    }
+
+    /**
+     * Returns a 403 response when the origin policy denies the request, or
+     * null when the policy is disabled or allows the origin.
+     */
+    private function originDeniedResponse(SecurityContext $context, string $requestId): ?ResponseInterface
+    {
+        if (!$this->policy->originEnabled) {
+            return null;
         }
 
-        $response = $handler->handle($request)->withHeader('X-Request-ID', $requestId);
-        if ($rateDecision instanceof RateLimitDecision) {
-            $response = $response
-                ->withHeader('X-RateLimit-Limit', (string) $rateDecision->limit)
-                ->withHeader('X-RateLimit-Remaining', (string) $rateDecision->remaining)
-            ;
-        }
-        if ($setCookie !== null) {
-            $attributes = [
-                $this->policy->csrfCookieName . '=' . $setCookie,
-                'Path=/',
-                'SameSite=' . $this->policy->csrfSameSite,
-            ];
-            if ($this->policy->csrfSecureCookie) {
-                // Emit Secure purely on policy: gating it on the URI scheme
-                // silently drops the flag behind TLS-terminating proxies,
-                // and SameSite=None + missing Secure makes browsers reject
-                // the cookie outright.
-                $attributes[] = 'Secure';
-            }
-            if ($this->policy->csrfHttpOnlyCookie) {
-                $attributes[] = 'HttpOnly';
-            }
-            $response = $response->withAddedHeader('Set-Cookie', implode('; ', $attributes));
+        try {
+            OriginPolicy::assertAllowed($context->origin, $this->policy->allowedOrigins);
+        } catch (\Throwable) {
+            return JsonResponse::error(403, 'Forbidden', ['reason' => 'Origin denied'], [
+                'X-Request-ID' => $requestId,
+            ]);
         }
 
-        return $response;
+        return null;
+    }
+
+    /**
+     * Runs the CSRF gate. Returns either the 403 response for an unsafe
+     * method carrying a missing, stale or mismatched token, or the Set-Cookie
+     * value that a safe-method response must re-issue; both are null when
+     * CSRF is disabled.
+     *
+     * @return array{0: null|string, 1: null|ResponseInterface}
+     */
+    private function enforceCsrf(string $method, ServerRequestInterface $request, string $requestId): array
+    {
+        $csrf = $this->csrf();
+        if (!$csrf instanceof CsrfTokenManager) {
+            return [null, null];
+        }
+        $cookieToken = $this->cookieValue($request->getHeaderLine('Cookie'), $this->policy->csrfCookieName);
+        if (!in_array($method, self::SAFE_METHODS, true)) {
+            return [null, $this->unsafeMethodCsrfResponse($csrf, $request, $cookieToken, $requestId)];
+        }
+        // Re-issue not only when the cookie is absent but also when it is
+        // stale/invalid (secret rotation, tampering); the old code left
+        // browsers permanently locked out of unsafe requests with no
+        // recovery path.
+        $needsReissue = $cookieToken === null || !$csrf->isValid($cookieToken);
+
+        return [$needsReissue ? $csrf->issue() : null, null];
+    }
+
+    private function unsafeMethodCsrfResponse(
+        CsrfTokenManager $csrf,
+        ServerRequestInterface $request,
+        ?string $cookieToken,
+        string $requestId,
+    ): ?ResponseInterface {
+        $headerToken = $request->getHeaderLine($this->policy->csrfHeaderName);
+        $tokenValid = $cookieToken !== null
+            && $headerToken !== ''
+            && $csrf->isValid($cookieToken)
+            && hash_equals($cookieToken, $headerToken);
+        if ($tokenValid) {
+            return null;
+        }
+
+        return JsonResponse::error(403, 'Forbidden', ['reason' => 'CSRF validation failed'], [
+            'X-Request-ID' => $requestId,
+        ]);
+    }
+
+    private function decorateWithRateHeaders(
+        MessageInterface $response,
+        ?RateLimitDecision $decision,
+    ): MessageInterface {
+        if (!$decision instanceof RateLimitDecision) {
+            return $response;
+        }
+
+        return $response
+            ->withHeader('X-RateLimit-Limit', (string) $decision->limit)
+            ->withHeader('X-RateLimit-Remaining', (string) $decision->remaining)
+        ;
+    }
+
+    private function decorateWithCsrfCookie(MessageInterface $response, ?string $setCookie): MessageInterface
+    {
+        if ($setCookie === null) {
+            return $response;
+        }
+        $attributes = [
+            $this->policy->csrfCookieName . '=' . $setCookie,
+            'Path=/',
+            'SameSite=' . $this->policy->csrfSameSite,
+        ];
+        if ($this->policy->csrfSecureCookie) {
+            // Emit Secure purely on policy: gating it on the URI scheme
+            // silently drops the flag behind TLS-terminating proxies,
+            // and SameSite=None + missing Secure makes browsers reject
+            // the cookie outright.
+            $attributes[] = 'Secure';
+        }
+        if ($this->policy->csrfHttpOnlyCookie) {
+            $attributes[] = 'HttpOnly';
+        }
+
+        return $response->withAddedHeader('Set-Cookie', implode('; ', $attributes));
+    }
+
+    private function csrf(): ?CsrfTokenManager
+    {
+        $csrfNotBuilt = !$this->csrf instanceof CsrfTokenManager;
+        if ($csrfNotBuilt && $this->policy->csrfEnabled && $this->policy->csrfSecret !== '') {
+            $this->csrf = new CsrfTokenManager(
+                $this->policy->csrfSecret,
+                $this->policy->csrfTokenBytes,
+                $this->policy->csrfTokenTtlSeconds,
+            );
+        }
+
+        return $this->csrf;
     }
 
     /**
