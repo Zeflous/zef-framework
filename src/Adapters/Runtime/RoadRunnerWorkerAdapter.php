@@ -50,7 +50,7 @@ final readonly class RoadRunnerWorkerAdapter implements WorkerInterface
 
             return;
         }
-        @error_log($message);
+        error_log($message);
     }
 
     #[\Override]

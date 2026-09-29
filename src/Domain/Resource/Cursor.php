@@ -61,7 +61,11 @@ final readonly class Cursor
         if (count($parts) !== 3 || $parts[0] !== self::VERSION) {
             throw new \InvalidArgumentException('Unsupported cursor version.');
         }
-        $offset = filter_var($parts[1], FILTER_VALIDATE_INT, ['options' => ['min_range' => 0, 'max_range' => self::MAX_OFFSET]]);
+        $offset = filter_var(
+            $parts[1],
+            FILTER_VALIDATE_INT,
+            ['options' => ['min_range' => 0, 'max_range' => self::MAX_OFFSET]],
+        );
         if ($offset === false) {
             throw new \InvalidArgumentException('Invalid cursor offset.');
         }

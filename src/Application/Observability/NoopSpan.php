@@ -16,7 +16,9 @@ final class NoopSpan implements SpanInterface
 
     public static function instance(): self
     {
-        return self::$instance ??= new self();
+        self::$instance ??= new self();
+
+        return self::$instance;
     }
 
     #[\Override]
@@ -46,11 +48,17 @@ final class NoopSpan implements SpanInterface
     #[\Override]
     public function setStatus(string $status, ?string $description = null): self
     {
-        return $this;
+        // Status transitions are discarded exactly like every other
+        // attribute write on a no-op span; delegate to the no-op writer.
+        return $this->setAttribute($status, $description);
     }
 
     #[\Override]
-    public function end(?int $endNs = null): void {}
+    public function end(?int $endNs = null): void
+    {
+        // Intentionally empty: a no-op span records nothing, so ending it
+        // has no observable effect. The parameter is kept by the interface.
+    }
 
     #[\Override]
     public function isEnded(): bool
