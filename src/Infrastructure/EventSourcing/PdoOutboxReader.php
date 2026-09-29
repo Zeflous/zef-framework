@@ -27,9 +27,9 @@ final readonly class PdoOutboxReader
     public function __construct(
         private ConnectionInterface $connection,
         private string $table,
-        \Closure $clock,
+        ?\Closure $clock = null,
     ) {
-        $this->clock = $clock;
+        $this->clock = $clock ?? static fn (): int => (int) (microtime(true) * 1_000_000_000);
     }
 
     /** @return list<OutboxEntry> */
