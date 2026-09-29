@@ -52,7 +52,7 @@ final class Stream implements StreamInterface
     {
         $resource = fopen('php://temp', 'w+b');
         if ($resource === false) {
-            throw new \RuntimeException('Unable to create memory stream.');
+            throw new StreamException('Unable to create memory stream.');
         }
         $stream = new self($resource);
         if ($content !== '') {
@@ -67,7 +67,7 @@ final class Stream implements StreamInterface
     public function close(): void
     {
         if (is_resource($this->resource)) {
-            @fclose($this->resource);
+            fclose($this->resource);
         }
         $this->resource = null;
     }
@@ -75,10 +75,10 @@ final class Stream implements StreamInterface
     #[\Override]
     public function detach(): mixed
     {
-        $resource = $this->resource;
+        $detached = $this->resource;
         $this->resource = null;
 
-        return $resource;
+        return $detached;
     }
 
     #[\Override]
@@ -96,11 +96,11 @@ final class Stream implements StreamInterface
     public function tell(): int
     {
         if (!is_resource($this->resource)) {
-            throw new \RuntimeException('Stream detached.');
+            throw new StreamException('Stream detached.');
         }
         $pos = ftell($this->resource);
         if ($pos === false) {
-            throw new \RuntimeException('Unable to determine stream position.');
+            throw new StreamException('Unable to determine stream position.');
         }
 
         return $pos;
@@ -126,7 +126,7 @@ final class Stream implements StreamInterface
             || !$this->isSeekable()
             || fseek($this->resource, $offset, $whence) !== 0
         ) {
-            throw new \RuntimeException('Stream is not seekable.');
+            throw new StreamException('Stream is not seekable.');
         }
     }
 
@@ -154,11 +154,11 @@ final class Stream implements StreamInterface
     public function write(string $string): int
     {
         if (!is_resource($this->resource) || !$this->isWritable()) {
-            throw new \RuntimeException('Stream is not writable.');
+            throw new StreamException('Stream is not writable.');
         }
         $written = fwrite($this->resource, $string);
         if ($written === false) {
-            throw new \RuntimeException('Unable to write to stream.');
+            throw new StreamException('Unable to write to stream.');
         }
 
         return $written;
@@ -185,14 +185,14 @@ final class Stream implements StreamInterface
             throw new \InvalidArgumentException('Length must be non-negative.');
         }
         if (!is_resource($this->resource) || !$this->isReadable()) {
-            throw new \RuntimeException('Stream is not readable.');
+            throw new StreamException('Stream is not readable.');
         }
         if ($length === 0) {
             return '';
         }
         $data = fread($this->resource, $length);
         if ($data === false) {
-            throw new \RuntimeException('Unable to read stream.');
+            throw new StreamException('Unable to read stream.');
         }
 
         return $data;
@@ -202,11 +202,11 @@ final class Stream implements StreamInterface
     public function getContents(): string
     {
         if (!is_resource($this->resource) || !$this->isReadable()) {
-            throw new \RuntimeException('Stream is not readable.');
+            throw new StreamException('Stream is not readable.');
         }
         $data = stream_get_contents($this->resource);
         if ($data === false) {
-            throw new \RuntimeException('Unable to read stream contents.');
+            throw new StreamException('Unable to read stream contents.');
         }
 
         return $data;
