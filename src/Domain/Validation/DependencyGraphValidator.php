@@ -45,22 +45,14 @@ final class DependencyGraphValidator
                         [],
                     );
                 }
-                if ($maxCrossModuleRefs > 0) {
-                    $from = $moduleOf[$id] ?? null;
-                    $to = $moduleOf[$canonical] ?? null;
-                    if ($from !== null && $to !== null && $from !== $to) {
-                        $key = $from . '->' . $to;
-                        $edgeKey = $key . '|' . $canonical;
-                        if (isset($edgeSeen[$edgeKey])) {
-                            continue;
-                        }
-                        $edgeSeen[$edgeKey] = true;
-                        $counts[$key] = ($counts[$key] ?? 0) + 1;
-                        if ($counts[$key] > $maxCrossModuleRefs) {
-                            throw new ModuleDependencyViolationException("Module '{$from}' exceeds cross-module reference limit ({$maxCrossModuleRefs}) towards '{$to}'.");
-                        }
-                    }
-                }
+                $this->trackCrossModuleRef(
+                    $moduleOf[$id] ?? null,
+                    $moduleOf[$canonical] ?? null,
+                    $canonical,
+                    $counts,
+                    $edgeSeen,
+                    $maxCrossModuleRefs,
+                );
             }
         }
         $state = [];
@@ -100,6 +92,43 @@ final class DependencyGraphValidator
         return $current;
     }
 
+    /**
+     * Counts one module-to-module reference edge against the budget: edges
+     * are de-duplicated per ("from->to" pair, target service) before the
+     * limit comparison, so N references to the same cross-module target
+     * count once per target.
+     *
+     * @param array<string, int>  $counts    running "from->to" edge-pair totals
+     * @param array<string, true> $edgeSeen  de-duplication set of "pair|target"
+     */
+    private function trackCrossModuleRef(
+        mixed $from,
+        mixed $to,
+        string $canonical,
+        array &$counts,
+        array &$edgeSeen,
+        int $maxCrossModuleRefs,
+    ): void {
+        if ($maxCrossModuleRefs <= 0) {
+            return; // cross-module reference budget disabled
+        }
+        if ($from === null || $to === null || $from === $to) {
+            return;
+        }
+        $key = $from . '->' . $to;
+        $edgeKey = $key . '|' . $canonical;
+        if (isset($edgeSeen[$edgeKey])) {
+            return;
+        }
+        $edgeSeen[$edgeKey] = true;
+        $counts[$key] = ($counts[$key] ?? 0) + 1;
+        if ($counts[$key] > $maxCrossModuleRefs) {
+            throw new ModuleDependencyViolationException(
+                "Module '{$from}' exceeds cross-module reference limit ({$maxCrossModuleRefs}) towards '{$to}'.",
+            );
+        }
+    }
+
     private function assertSingletonClosure(
         string $owner,
         string $current,
@@ -114,7 +143,9 @@ final class DependencyGraphValidator
         $seen[$current] = true;
         $life = (string) ($lifetimeOf[$current] ?? ServiceLifetime::SINGLETON);
         if ($life !== ServiceLifetime::SINGLETON) {
-            throw new InvalidConfigurationException("Singleton service '{$owner}' transitively depends on {$life} service '{$current}'.");
+            throw new InvalidConfigurationException(
+                "Singleton service '{$owner}' transitively depends on {$life} service '{$current}'.",
+            );
         }
         foreach ($depsOf[$current] ?? [] as $dep) {
             $canonical = $this->resolveAlias($dep, $aliases);

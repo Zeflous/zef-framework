@@ -100,19 +100,10 @@ final class Projector
             if ($events === []) {
                 break;
             }
-            foreach ($events as $event) {
-                if (isset($handled[$event->eventType])) {
-                    $projection->handle($event);
-                    ++$applied;
-                }
-                // Checkpoint advances past non-matching events too: they
-                // have been observed, replaying them would be waste.
-                $this->checkpoints->set($projectionId, $event->globalSequence);
-                $from = $event->globalSequence + 1;
-                if ($batchLimit !== null && $applied >= $batchLimit) {
-                    return $applied;
-                }
+            if ($this->deliverPage($projection, $projectionId, $handled, $events, $batchLimit, $applied)) {
+                return $applied;
             }
+            $from = $events[count($events) - 1]->globalSequence + 1;
             if (count($events) < EventGrammar::MAX_PAGE) {
                 break;
             }
@@ -127,5 +118,42 @@ final class Projector
     public function projectionIds(): array
     {
         return array_keys($this->projections);
+    }
+
+    /**
+     * Delivers one store page to the projection.
+     *
+     * Every observed event advances the checkpoint (matching or not: a
+     * replay of already-observed events would be pure waste), applied
+     * events count towards the optional batch limit.
+     *
+     * @param array<string, bool> $handled    event types the projection subscribes to
+     * @param list<StoredEvent>   $events     page read from the store
+     * @param null|int            $batchLimit stop after this many applied events
+     *
+     * @return bool true when the batch limit was reached and the run must stop
+     */
+    private function deliverPage(
+        ProjectionInterface $projection,
+        string $projectionId,
+        array $handled,
+        array $events,
+        ?int $batchLimit,
+        int &$applied,
+    ): bool {
+        foreach ($events as $event) {
+            if (isset($handled[$event->eventType])) {
+                $projection->handle($event);
+                ++$applied;
+            }
+            // Checkpoint advances past non-matching events too: they
+            // have been observed, replaying them would be waste.
+            $this->checkpoints->set($projectionId, $event->globalSequence);
+            if ($batchLimit !== null && $applied >= $batchLimit) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

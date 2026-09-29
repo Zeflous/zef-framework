@@ -119,6 +119,39 @@ final class ContainerResolver
         return $this->instantiate($canonical, $ctx, $definition, $dependencies, $scope);
     }
 
+    public function scopeHasPublic(RequestScope $scope, string $id): bool
+    {
+        return $this->scopeHas($scope, $id);
+    }
+
+    public function scopeGetPublic(RequestScope $scope, string $id): mixed
+    {
+        return $this->scopeGet($scope, $id);
+    }
+
+    public function scopeSetPublic(RequestScope $scope, string $id, mixed $value): void
+    {
+        $this->scopeSet($scope, $id, $value);
+    }
+
+    public function hasInContext(string $id): bool
+    {
+        try {
+            if ($this->plan instanceof CompiledContainerPlan) {
+                // @infection-ignore-all ReturnRemoval — ekuivalen: jalur validator memberi jawaban
+                // sama untuk id yang dikenal dan tidak dikenal; terverifikasi kurikulum freeze
+                return $this->plan->canonical($id) !== null;
+            }
+            $canonical = $this->graphValidator->resolveAlias($id, $this->registry->aliases());
+
+            // @infection-ignore-all LogicalAnd — ekuivalen: entri lifetime selalu datang dengan
+            // factory pada registry; hasil konjungsi dan disjungsi berimpit
+            return isset($this->registry->lifetimeOf()[$canonical]) && $this->registry->hasFactory($canonical);
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
     /**
      * Cached instance for the canonical id, if one is already materialized
      * for the definition's lifetime (singleton store or request scope).
@@ -191,6 +224,7 @@ final class ContainerResolver
         if (!$this->registry->hasResolvingListeners()) {
             return;
         }
+
         try {
             foreach ($this->registry->resolvingListeners() as $listener) {
                 $listener($canonical, $dependencies);
@@ -245,6 +279,7 @@ final class ContainerResolver
         if (!$this->registry->hasResolvedListeners()) {
             return $instance;
         }
+
         try {
             foreach ($this->registry->resolvedListeners() as $listener) {
                 $replacement = $listener($canonical, $instance);
@@ -273,42 +308,8 @@ final class ContainerResolver
             $this->registry->setInstance($canonical, $instance);
         } elseif ($definition->lifetime === ServiceLifetime::REQUEST && $scope instanceof RequestScope) {
             $this->scopeSet($scope, $canonical, $instance);
-        } else {
-            /* transient (or request-scoped with no active scope): never cached */
         }
-    }
-
-    public function scopeHasPublic(RequestScope $scope, string $id): bool
-    {
-        return $this->scopeHas($scope, $id);
-    }
-
-    public function scopeGetPublic(RequestScope $scope, string $id): mixed
-    {
-        return $this->scopeGet($scope, $id);
-    }
-
-    public function scopeSetPublic(RequestScope $scope, string $id, mixed $value): void
-    {
-        $this->scopeSet($scope, $id, $value);
-    }
-
-    public function hasInContext(string $id): bool
-    {
-        try {
-            if ($this->plan instanceof CompiledContainerPlan) {
-                // @infection-ignore-all ReturnRemoval — ekuivalen: jalur validator memberi jawaban
-                // sama untuk id yang dikenal dan tidak dikenal; terverifikasi kurikulum freeze
-                return $this->plan->canonical($id) !== null;
-            }
-            $canonical = $this->graphValidator->resolveAlias($id, $this->registry->aliases());
-
-            // @infection-ignore-all LogicalAnd — ekuivalen: entri lifetime selalu datang dengan
-            // factory pada registry; hasil konjungsi dan disjungsi berimpit
-            return isset($this->registry->lifetimeOf()[$canonical]) && $this->registry->hasFactory($canonical);
-        } catch (\Throwable) {
-            return false;
-        }
+        // transient (or request-scoped with no active scope): never cached
     }
 
     /** Bug fix #14: extracted helper to avoid 3x repeated inline expression. */

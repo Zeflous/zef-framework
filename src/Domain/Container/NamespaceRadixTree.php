@@ -78,7 +78,10 @@ final class NamespaceRadixTree
             throw new \LogicException('NamespaceRadixTree is sealed; annotate() is not allowed.');
         }
         if (!in_array($scope, self::SCOPES, true)) {
-            throw new \InvalidArgumentException("Unknown namespace scope '{$scope}' (expected one of: " . implode(', ', self::SCOPES) . ').');
+            throw new \InvalidArgumentException(
+                "Unknown namespace scope '{$scope}' (expected one of: "
+                . implode(', ', self::SCOPES) . ').',
+            );
         }
         $this->annotations[$this->normalizePrefix($prefix)] = $scope;
     }
@@ -107,10 +110,11 @@ final class NamespaceRadixTree
         $segments = explode('\\', $id);
         $node = $this->root;
         $remaining = $segments;
+        $descended = false;
         while ($remaining !== []) {
             $head = $remaining[0];
             if (!isset($node['children'][$head])) {
-                return false;
+                break;
             }
             $child = $node['children'][$head];
             $label = isset($child['label']) && $child['label'] !== ''
@@ -118,18 +122,17 @@ final class NamespaceRadixTree
                 : [$head];
             $labelCount = count($label);
             if (count($remaining) < $labelCount) {
-                return false; // query ends mid-edge
+                break; // query ends mid-edge
             }
-            for ($i = 0; $i < $labelCount; ++$i) {
-                if ($remaining[$i] !== $label[$i]) {
-                    return false;
-                }
+            if (!$this->segmentsMatch($remaining, $label, $labelCount)) {
+                break;
             }
             $node = $child;
             $remaining = array_slice($remaining, $labelCount);
+            $descended = true;
         }
 
-        return isset($node['ids'][$id]) && $node['ids'][$id];
+        return $descended && isset($node['ids'][$id]) && $node['ids'][$id];
     }
 
     /**
@@ -144,10 +147,13 @@ final class NamespaceRadixTree
         $segments = explode('\\', rtrim($normalized, '\\'));
         $node = $this->root;
         $remaining = $segments;
+        $found = true;
         while ($remaining !== []) {
             $head = $remaining[0];
             if (!isset($node['children'][$head])) {
-                return [];
+                $found = false;
+
+                break;
             }
             $child = $node['children'][$head];
             $label = isset($child['label']) && $child['label'] !== ''
@@ -155,26 +161,23 @@ final class NamespaceRadixTree
                 : [$head];
             $labelCount = count($label);
             if (count($remaining) < $labelCount) {
-                $counter = count($remaining);
                 // Prefix ends mid-edge: the whole edge subtree IS under the
                 // prefix, provided the query segments match the label so far.
-                for ($i = 0; $i < $counter; ++$i) {
-                    if ($remaining[$i] !== $label[$i]) {
-                        return [];
-                    }
-                }
+                $found = $this->segmentsMatch($remaining, $label, count($remaining));
                 $node = $child;
-                $remaining = [];
 
                 break;
             }
-            for ($i = 0; $i < $labelCount; ++$i) {
-                if ($remaining[$i] !== $label[$i]) {
-                    return [];
-                }
+            if (!$this->segmentsMatch($remaining, $label, $labelCount)) {
+                $found = false;
+
+                break;
             }
             $node = $child;
             $remaining = array_slice($remaining, $labelCount);
+        }
+        if (!$found) {
+            return [];
         }
         $out = [];
         $this->collect($node, $out);
@@ -210,7 +213,10 @@ final class NamespaceRadixTree
     }
 
     /**
-     * @return array{serviceIds:int,nodes:int,edges:int,maxDepth:int,rawSegments:int,compressionRatio:float,annotations:int,sealed:bool}
+     * @return array{
+     *     serviceIds:int, nodes:int, edges:int, maxDepth:int,
+     *     rawSegments:int, compressionRatio:float, annotations:int, sealed:bool
+     * }
      */
     public function stats(): array
     {
@@ -263,6 +269,23 @@ final class NamespaceRadixTree
     // ------------------------------------------------------------------
     // Internals
     // ------------------------------------------------------------------
+
+    /**
+     * Compares the first $count segments of $remaining against $label.
+     *
+     * @param list<string>           $remaining
+     * @param non-empty-list<string> $label
+     */
+    private function segmentsMatch(array $remaining, array $label, int $count): bool
+    {
+        for ($i = 0; $i < $count; ++$i) {
+            if ($remaining[$i] !== $label[$i]) {
+                return false;
+            }
+        }
+
+        return true;
+    }
 
     private function normalizePrefix(string $prefix): string
     {

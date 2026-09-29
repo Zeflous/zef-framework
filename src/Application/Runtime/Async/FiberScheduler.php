@@ -296,7 +296,7 @@ final class FiberScheduler
             throw new TaskCancelledException(sprintf('%s was cancelled while suspended', $current->name()));
         }
         $handle = new SuspensionHandle($this, $current);
-        $current->arm($handle);
+        $current->suspension()->arm($handle);
 
         return $handle;
     }
@@ -371,7 +371,7 @@ final class FiberScheduler
         }
 
         if ($fiber->isSuspended()) {
-            $armed = $task->armedHandle();
+            $armed = $task->suspension()->handle();
 
             if ($armed instanceof SuspensionHandle) {
                 $armed->fail(new TaskCancelledException(sprintf('%s was cancelled while suspended', $task->name())));
@@ -490,7 +490,6 @@ final class FiberScheduler
                 $fiber = new \Fiber(static fn (): mixed => $task->invoke());
                 $this->fiberToTask[$fiber] = $task;
                 $task->attach($fiber);
-                $task->markRunning();
                 $fiber->start();
             } else {
                 $fiber->resume($payload);

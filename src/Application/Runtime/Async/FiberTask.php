@@ -34,7 +34,8 @@ final class FiberTask implements TaskInterface
 
     private bool $observed = false;
 
-    private ?SuspensionHandle $armed = null;
+    /** Lazily created: only tasks that actually suspend pay for the slot. */
+    private ?TaskSuspensionSlot $suspension = null;
 
     /**
      * @var list<\Closure(): void>
@@ -144,33 +145,26 @@ final class FiberTask implements TaskInterface
         $this->observed = true;
     }
 
-    /** Transition Pending -> Running, committed right before the fiber starts. */
-    public function markRunning(): void
-    {
-        $this->state = TaskState::Running;
-    }
-
-    public function armedHandle(): ?SuspensionHandle
-    {
-        return $this->armed;
-    }
-
-    public function arm(SuspensionHandle $handle): void
-    {
-        $this->armed = $handle;
-    }
-
-    public function disarm(): void
-    {
-        $this->armed = null;
-    }
-
     /**
+     * Attaches the started fiber and commits the Pending -> Running
+     * transition (no user code runs between attach and fiber start).
+     *
      * @param \Fiber<mixed, mixed, mixed, mixed> $fiber
      */
     public function attach(\Fiber $fiber): void
     {
         $this->fiber = $fiber;
+        $this->state = TaskState::Running;
+    }
+
+    /** @internal scheduler-facing suspension slot (armed while parked) */
+    public function suspension(): TaskSuspensionSlot
+    {
+        if ($this->suspension === null) {
+            $this->suspension = new TaskSuspensionSlot();
+        }
+
+        return $this->suspension;
     }
 
     /** Runs the coroutine body; invoked as the fiber's entry point. */
@@ -202,7 +196,7 @@ final class FiberTask implements TaskInterface
         $this->state = $state;
         $this->result = $result;
         $this->throwable = $throwable;
-        $this->armed = null;
+        $this->suspension?->clear();
 
         $callbacks = $this->completionCallbacks;
         $this->completionCallbacks = [];
@@ -214,7 +208,9 @@ final class FiberTask implements TaskInterface
     public function requireThrowable(): \Throwable
     {
         if (!$this->throwable instanceof \Throwable) {
-            throw new \LogicException(sprintf('%s carries no failure reason (state: %s).', $this->name, $this->state->name));
+            throw new \LogicException(
+                sprintf('%s carries no failure reason (state: %s).', $this->name, $this->state->name),
+            );
         }
 
         return $this->throwable;

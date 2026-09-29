@@ -103,9 +103,8 @@ final class SlidingWindowRateLimiter implements CostAwareRateLimiterInterface
                 // Exactly one window old: its "current" counter becomes the
                 // weighted "previous" contribution for this window.
                 $prev = $bucket['curr'];
-            } else {
-                /* Older than one window: both counters are fully expired. */
             }
+            // Older than one window: both counters are fully expired.
         }
 
         $elapsedRatio = $elapsedNs / $windowNs;

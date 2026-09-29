@@ -67,7 +67,7 @@ final readonly class PdoJobQueue implements JobQueueInterface
         ?\Closure $clock = null,
         private ?int $maxSize = null,
     ) {
-        new QueryBuilder()->quoteIdentifier($table, 'table');
+        self::assertValidTableName($table);
         if ($maxSize !== null && $maxSize < 1) {
             throw new \InvalidArgumentException('Job queue capacity must be positive.');
         }
@@ -103,19 +103,7 @@ final readonly class PdoJobQueue implements JobQueueInterface
     public function createSchema(): void
     {
         $this->connection->execute(SqlQuery::raw(
-            'CREATE TABLE IF NOT EXISTS "' . $this->table . '" ('
-            . '"seq" BIGINT NOT NULL, '
-            . '"job_id" VARCHAR(128) NOT NULL, '
-            . '"job_type" VARCHAR(191) NOT NULL, '
-            . '"payload" TEXT NOT NULL, '
-            . '"available_at" BIGINT NOT NULL, '
-            . '"priority" INT NOT NULL, '
-            . '"attempt" INT NOT NULL, '
-            . '"correlation_id" VARCHAR(128) NULL, '
-            . '"trace_parent" VARCHAR(568) NULL, '
-            . '"headers" TEXT NOT NULL, '
-            . 'CONSTRAINT "uq_' . $this->table . '_job" UNIQUE ("job_id"), '
-            . 'CONSTRAINT "uq_' . $this->table . '_seq" UNIQUE ("seq"))',
+            'CREATE TABLE IF NOT EXISTS "' . $this->table . '" (' . $this->columnDefinition() . ')',
         ));
         $this->seq()->ensureUniqueIndex();
     }
@@ -211,6 +199,39 @@ final readonly class PdoJobQueue implements JobQueueInterface
     }
 
     /**
+     * Storage-boundary validation of the table name (same grammar the
+     * QueryBuilder enforces on identifiers): rejected here, at construction,
+     * instead of failing on the first INSERT with a cryptic SQL error.
+     */
+    private static function assertValidTableName(string $table): void
+    {
+        new QueryBuilder()->quoteIdentifier($table, 'table');
+    }
+
+    /**
+     * Portable column/constraint definition shared by every driver: the
+     * column widths follow the domain envelope contract documented on
+     * {@see createSchema()}.
+     */
+    private function columnDefinition(): string
+    {
+        return implode(', ', [
+            '"seq" BIGINT NOT NULL',
+            '"job_id" VARCHAR(128) NOT NULL',
+            '"job_type" VARCHAR(191) NOT NULL',
+            '"payload" TEXT NOT NULL',
+            '"available_at" BIGINT NOT NULL',
+            '"priority" INT NOT NULL',
+            '"attempt" INT NOT NULL',
+            '"correlation_id" VARCHAR(128) NULL',
+            '"trace_parent" VARCHAR(568) NULL',
+            '"headers" TEXT NOT NULL',
+            'CONSTRAINT "uq_' . $this->table . '_job" UNIQUE ("job_id")',
+            'CONSTRAINT "uq_' . $this->table . '_seq" UNIQUE ("seq")',
+        ]);
+    }
+
+    /**
      * The UNIQUE(seq) backstop collaborator: built lazily (not in the
      * constructor) so the queue's own construction stays side-effect
      * free; one tiny allocation per enqueue is noise against the INSERT
@@ -223,10 +244,17 @@ final readonly class PdoJobQueue implements JobQueueInterface
 
     private function doEnqueue(JobEnvelope $job, string $payload, string $headers): void
     {
+        $columns = implode(', ', [
+            '"seq"', '"job_id"', '"job_type"', '"payload"', '"available_at"',
+            '"priority"', '"attempt"', '"correlation_id"', '"trace_parent"', '"headers"',
+        ]);
         $insert = new SqlQuery(
-            'INSERT INTO "' . $this->table . '" ('
-            . '"seq", "job_id", "job_type", "payload", "available_at", "priority", "attempt", "correlation_id", "trace_parent", "headers"'
-            . ') SELECT COALESCE(MAX("seq"), 0) + 1, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM "' . $this->table . '"',
+            sprintf(
+                'INSERT INTO "%1$s" (%2$s) SELECT COALESCE(MAX("seq"), 0) + 1, %3$s FROM "%1$s"',
+                $this->table,
+                $columns,
+                '?, ?, ?, ?, ?, ?, ?, ?, ?',
+            ),
             [
                 $job->jobId,
                 $job->jobType,
@@ -267,13 +295,27 @@ final readonly class PdoJobQueue implements JobQueueInterface
     /** Row narrowing: PDO rows are array<string, mixed>; ids are strings. */
     private function str(mixed $value): string
     {
-        return is_string($value) ? $value : (is_scalar($value) ? (string) $value : '');
+        if (is_string($value)) {
+            return $value;
+        }
+        if (is_scalar($value)) {
+            return (string) $value;
+        }
+
+        return '';
     }
 
     /** Row narrowing: numeric columns (int on SQLite, string on MySQL PDO). */
     private function intVal(mixed $value): int
     {
-        return is_int($value) ? $value : (is_numeric($value) ? (int) $value : 0);
+        if (is_int($value)) {
+            return $value;
+        }
+        if (is_numeric($value)) {
+            return (int) $value;
+        }
+
+        return 0;
     }
 
     private function encodePayload(mixed $payload): string
