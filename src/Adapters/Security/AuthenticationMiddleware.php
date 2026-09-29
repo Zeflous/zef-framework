@@ -35,15 +35,11 @@ final readonly class AuthenticationMiddleware implements MiddlewareInterface
     public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
         $path = $request->getUri()->getPath();
-        // Authorization must see the complete resource used for routing.
-        if (strlen($path) > SecurityRequest::MAX_RESOURCE_BYTES) {
-            return $this->deny(414, 'URI Too Long', $request);
-        }
         $method = strtoupper($request->getMethod());
-        $safe = in_array($method, ['GET', 'HEAD', 'OPTIONS', 'TRACE'], true);
         $credential = $this->extractCredential($request);
-        if (!$safe && !$credential instanceof CredentialHandle) {
-            return $this->deny(401, 'Authentication required', $request);
+        $earlyDenial = $this->earlyDenial($path, $method, $credential, $request);
+        if ($earlyDenial !== null) {
+            return $earlyDenial;
         }
         $authentication = $this->credentialProvider->resolve(
             $credential ?? new CredentialHandle('anonymous', 'public', 0),
@@ -83,6 +79,28 @@ final readonly class AuthenticationMiddleware implements MiddlewareInterface
         }
 
         return $handler->handle($request);
+    }
+
+    /**
+     * Pre-admission guards (414 oversized URI, 401 missing credential on an
+     * unsafe method): returns the denial response, or null to continue.
+     */
+    private function earlyDenial(
+        string $path,
+        string $method,
+        ?CredentialHandle $credential,
+        ServerRequestInterface $request,
+    ): ?ResponseInterface {
+        // Authorization must see the complete resource used for routing.
+        if (strlen($path) > SecurityRequest::MAX_RESOURCE_BYTES) {
+            return $this->deny(414, 'URI Too Long', $request);
+        }
+        $safe = in_array($method, ['GET', 'HEAD', 'OPTIONS', 'TRACE'], true);
+        if ($safe || $credential instanceof CredentialHandle) {
+            return null;
+        }
+
+        return $this->deny(401, 'Authentication required', $request);
     }
 
     /** Truncates an attacker-controlled replay id to the security bound. */
