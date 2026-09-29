@@ -15,7 +15,7 @@ namespace Zef\Framework\EventSourcing;
  * {@see OutboxClaimInterface} semantics of the PDO adapter. Operates on the
  * store's shared {@see OutboxEntryBook} storage.
  */
-final class InMemoryOutboxClaims
+final readonly class InMemoryOutboxClaims
 {
     /**
      * @param (\Closure(): int) $clock now source shared with the store
