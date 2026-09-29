@@ -33,11 +33,19 @@ jobs:
       - name: Install dependencies
         run: composer install --prefer-dist --no-interaction --no-progress
 
+      # The detection path MUST match the directory PHPBench actually reads.
+      # It previously probed `tests/Benchmark`, which does not exist in this
+      # repository (the suite lives in `benchmarks/`, per phpbench.json
+      # `runner.path`). The probe therefore always reported "no benchmarks",
+      # the run step was always skipped, and this job — which is a REQUIRED
+      # status check on main — could never fail. A required check that cannot
+      # go red is not a gate. The path below is the one phpbench.json declares.
       - name: Detect benchmarks
         id: detect
         shell: bash
         run: |
-          if find tests/Benchmark -type f -name "*.php" -print -quit 2>/dev/null | grep -q .; then
+          set -euo pipefail
+          if find benchmarks -type f -name "*.php" -print -quit 2>/dev/null | grep -q .; then
             echo "has_benchmarks=true" >> "$GITHUB_OUTPUT"
           else
             echo "has_benchmarks=false" >> "$GITHUB_OUTPUT"
@@ -47,6 +55,12 @@ jobs:
         if: steps.detect.outputs.has_benchmarks == 'true'
         run: composer bench
 
-      - name: Skip until benchmarks exist
+      # Fail-closed: the suite is committed (benchmarks/ContainerBench.php), so
+      # "no benchmarks found" means the probe or the tree is broken — not that
+      # the gate may be skipped. A silent skip here is exactly how this required
+      # check stayed green while measuring nothing.
+      - name: No benchmarks found (fail-closed)
         if: steps.detect.outputs.has_benchmarks != 'true'
-        run: echo "No tests/Benchmark benchmarks yet; benchmark gate skipped."
+        run: |
+          echo "::error::No PHPBench benchmarks found under benchmarks/ — the benchmark gate cannot be skipped silently."
+          exit 1

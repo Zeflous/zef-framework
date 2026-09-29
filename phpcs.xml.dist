@@ -7,6 +7,7 @@
     <file>src</file>
     <file>modules</file>
     <file>plugins</file>
+    <file>app</file>
     <file>tests</file>
     <exclude-pattern>*/src/Compat/*</exclude-pattern>
 

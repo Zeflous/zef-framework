@@ -59,6 +59,11 @@ jobs:
         github.event.pull_request.user.login != 'dependabot[bot]'
       )
     runs-on: ubuntu-latest
+    # Every other job in this repository declares a timeout; this one did not,
+    # so a hung Snyk CLI (network stall, registry outage) would hold the
+    # required `snyk` status check open indefinitely. Three sequential scans
+    # plus SARIF upload fit comfortably in 30 minutes.
+    timeout-minutes: 30
     permissions:
       contents: read # actions/checkout to fetch code
       security-events: write # github/codeql-action/upload-sarif to upload SARIF results

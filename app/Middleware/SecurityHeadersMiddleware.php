@@ -10,18 +10,12 @@ declare(strict_types=1);
 
 namespace Zef\Middleware;
 
-use Zef\Framework\Config\ConfigProviderInterface;
-use Zef\Framework\Foundation\Env;
-use Zef\Framework\Http\JsonResponse;
-use Zef\Framework\Http\Response;
-use Zef\Framework\Security\InMemoryRateLimiter;
-use Zef\Framework\Security\OriginPolicy;
-use Zef\Framework\Security\SecurityPolicy;
-use Zef\Framework\Security\SecurityRuntimeMiddleware;
+use Psr\Http\Message\MessageInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
+use Zef\Framework\Http\Response;
 
 final class SecurityHeadersMiddleware implements MiddlewareInterface
 {
@@ -37,7 +31,8 @@ final class SecurityHeadersMiddleware implements MiddlewareInterface
             ->withHeader('Referrer-Policy', 'no-referrer')
             ->withHeader('X-Permitted-Cross-Domain-Policies', 'none')
             ->withHeader('Cross-Origin-Opener-Policy', 'same-origin')
-            ->withHeader('Cross-Origin-Resource-Policy', 'same-origin');
+            ->withHeader('Cross-Origin-Resource-Policy', 'same-origin')
+        ;
         if (($this->policy['permissionsPolicy'] ?? true) === true) {
             $response = $response->withHeader(
                 'Permissions-Policy',
@@ -59,6 +54,20 @@ final class SecurityHeadersMiddleware implements MiddlewareInterface
                 'max-age=31536000; includeSubDomains',
             );
         }
-        return $response;
+
+        return self::asResponse($response);
+    }
+
+    /**
+     * PSR-7 declares `withHeader()` as returning `MessageInterface`, so a
+     * fluent header chain loses the `ResponseInterface` type even though the
+     * runtime object is always the same immutable response. Narrow it back
+     * explicitly instead of widening this method's return type.
+     */
+    private static function asResponse(MessageInterface $message): ResponseInterface
+    {
+        assert($message instanceof ResponseInterface);
+
+        return $message;
     }
 }
