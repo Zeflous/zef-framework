@@ -161,15 +161,19 @@ final class ContainerResolver
 
     private function scopes(): RequestScopeStore
     {
-        return $this->scopeStore ??= new RequestScopeStore();
+        $this->scopeStore ??= new RequestScopeStore();
+
+        return $this->scopeStore;
     }
 
     private function activator(): ServiceInstantiator
     {
-        return $this->activator ??= new ServiceInstantiator(
+        $this->activator ??= new ServiceInstantiator(
             $this->registry,
             $this->scopes(),
             $this->initializationGuard ?? new FailFastInitializationGuard(),
         );
+
+        return $this->activator;
     }
 }

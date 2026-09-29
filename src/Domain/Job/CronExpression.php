@@ -173,6 +173,7 @@ final readonly class CronExpression implements ScheduleInterface
         if ($this->neverFires) {
             $message = "Cron expression '{$this->expression}' can never fire (the restricted day-of-month ";
             $message .= 'has no valid date in the restricted months).';
+
             throw new CronExpressionException($message);
         }
     }

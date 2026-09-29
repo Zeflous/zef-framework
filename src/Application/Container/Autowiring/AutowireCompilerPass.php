@@ -248,6 +248,8 @@ final class AutowireCompilerPass
     {
         // @infection-ignore-all Coalesce — ekuivalen: ReflectionMetadataExtractor final dan stateless;
         // instance injeksi perilakunya identik dengan default baru
-        return $this->extractor ??= new ReflectionMetadataExtractor();
+        $this->extractor ??= new ReflectionMetadataExtractor();
+
+        return $this->extractor;
     }
 }

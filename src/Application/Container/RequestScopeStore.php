@@ -40,32 +40,32 @@ final class RequestScopeStore
 
     public function has(RequestScope $scope, string $id): bool
     {
-        $instances = $this->instances;
+        $instancesMap = $this->instances;
 
-        return $instances instanceof \WeakMap
-            && isset($instances[$scope])
-            && array_key_exists($id, $instances[$scope]);
+        return $instancesMap instanceof \WeakMap
+            && isset($instancesMap[$scope])
+            && array_key_exists($id, $instancesMap[$scope]);
     }
 
     public function get(RequestScope $scope, string $id): mixed
     {
-        $instances = $this->instances;
-        if (!$instances instanceof \WeakMap
-            || !isset($instances[$scope])
-            || !array_key_exists($id, $instances[$scope])
+        $instancesMap = $this->instances;
+        if (!$instancesMap instanceof \WeakMap
+            || !isset($instancesMap[$scope])
+            || !array_key_exists($id, $instancesMap[$scope])
         ) {
             throw new \LogicException("No instance for '{$id}' in the active request scope.");
         }
 
-        return $instances[$scope][$id];
+        return $instancesMap[$scope][$id];
     }
 
     public function set(RequestScope $scope, string $id, mixed $value): void
     {
-        $instances = $this->instances();
-        $state = $instances[$scope] ?? [];
+        $instancesMap = $this->instances();
+        $state = $instancesMap[$scope] ?? [];
         $state[$id] = $value;
-        $instances[$scope] = $state;
+        $instancesMap[$scope] = $state;
     }
 
     /**
@@ -73,6 +73,8 @@ final class RequestScopeStore
      */
     private function instances(): \WeakMap
     {
-        return $this->instances ??= new \WeakMap();
+        $this->instances ??= new \WeakMap();
+
+        return $this->instances;
     }
 }

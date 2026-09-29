@@ -93,7 +93,7 @@ final class RouteCollection
             // Dynamic segment without a constraint: neither counter applies.
         }
 
-        $sequence = $this->sequence;
+        $registrationSequence = $this->sequence;
         ++$this->sequence;
         $this->routes[] = [
             'method' => $record['method'],
@@ -101,7 +101,7 @@ final class RouteCollection
             'handler' => $record['handler'],
             'module' => $record['module'],
             'priority' => $record['priority'],
-            'sequence' => $sequence,
+            'sequence' => $registrationSequence,
             'segments' => $record['segments'],
             'signature' => $signature,
             'staticCount' => $staticCount,
@@ -194,13 +194,13 @@ final class RouteCollection
         $records = array_values($rawRoutes);
         $this->routes = $records;
 
-        /** @var array<string,string> $signatureIndex */
-        $signatureIndex = is_array($data['signatureIndex'] ?? null) ? $data['signatureIndex'] : [];
-        $this->signatureIndex = $signatureIndex;
+        /** @var array<string,string> $restoredSignatureIndex */
+        $restoredSignatureIndex = is_array($data['signatureIndex'] ?? null) ? $data['signatureIndex'] : [];
+        $this->signatureIndex = $restoredSignatureIndex;
 
-        /** @var array<string,string> $nameIndex */
-        $nameIndex = is_array($data['nameIndex'] ?? null) ? $data['nameIndex'] : [];
-        $this->nameIndex = $nameIndex;
+        /** @var array<string,string> $restoredNameIndex */
+        $restoredNameIndex = is_array($data['nameIndex'] ?? null) ? $data['nameIndex'] : [];
+        $this->nameIndex = $restoredNameIndex;
 
         $rawSequence = $data['sequence'] ?? count($records);
         $this->sequence = is_numeric($rawSequence) ? (int) $rawSequence : count($records);

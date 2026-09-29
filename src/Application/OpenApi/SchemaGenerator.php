@@ -153,16 +153,22 @@ final class SchemaGenerator
 
     private function typeMapper(): TypeSchemaMapper
     {
-        return $this->typeMapper ??= new TypeSchemaMapper($this);
+        $this->typeMapper ??= new TypeSchemaMapper($this);
+
+        return $this->typeMapper;
     }
 
     private function builder(): ClassSchemaBuilder
     {
-        return $this->builder ??= new ClassSchemaBuilder($this);
+        $this->builder ??= new ClassSchemaBuilder($this);
+
+        return $this->builder;
     }
 
     private function fieldRulesMapper(): FieldRulesSchemaMapper
     {
-        return $this->fieldRulesMapper ??= new FieldRulesSchemaMapper();
+        $this->fieldRulesMapper ??= new FieldRulesSchemaMapper();
+
+        return $this->fieldRulesMapper;
     }
 }

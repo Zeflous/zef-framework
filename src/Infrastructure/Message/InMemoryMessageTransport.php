@@ -86,6 +86,8 @@ final class InMemoryMessageTransport implements MessageTransportInterface
      */
     private function queue(): \SplQueue
     {
-        return $this->queue ??= new \SplQueue();
+        $this->queue ??= new \SplQueue();
+
+        return $this->queue;
     }
 }
