@@ -38,22 +38,16 @@ use Zef\Framework\Runtime\SystemSleeper;
  *   suspends cannot be interrupted (cooperative, not preemptive).
  *
  * Since the sonar-zero campaign the timer bookkeeping lives in
- * AsyncTimerQueue, fiber stepping/settlement in FiberTaskRunner, and the
- * live-task registry in FiberTaskTable.
+ * AsyncTimerQueue, fiber stepping/settlement in FiberTaskRunner, the
+ * live-task registry in FiberTaskTable, and the suspension/cancellation
+ * machinery (ready queue, suspension handles, cooperative cancels) in
+ * FiberSuspensionCoordinator.
  */
 final class FiberScheduler
 {
     private const int NANOS_PER_MILLISECOND = 1_000_000;
 
     private const int NANOS_PER_SECOND = 1_000_000_000;
-
-    /**
-     * Ready queue of fiber steps (spawn starts, suspension resolutions),
-     * drained FIFO for deterministic, starvation-free round-robin order.
-     *
-     * @var list<\Closure(): mixed>
-     */
-    private array $ready = [];
 
     private bool $running = false;
 
@@ -63,10 +57,19 @@ final class FiberScheduler
 
     private ?FiberTaskTable $taskTable = null;
 
+    private ?FiberSuspensionCoordinator $suspensions = null;
+
+    private ?MonotonicClockInterface $clock = null;
+
+    private ?SleeperInterface $sleeper = null;
+
     public function __construct(
-        private readonly MonotonicClockInterface $clock = new HrMonotonicClock(),
-        private readonly SleeperInterface $sleeper = new SystemSleeper(),
-    ) {}
+        ?MonotonicClockInterface $clock = null,
+        ?SleeperInterface $sleeper = null,
+    ) {
+        $this->clock = $clock;
+        $this->sleeper = $sleeper;
+    }
 
     // ------------------------------------------------------------------
     // Public coroutine API
@@ -82,7 +85,7 @@ final class FiberScheduler
     public function spawn(callable $fn, string $name = ''): TaskInterface
     {
         $task = $this->taskTable()->create($this, $name, 'task', fn (): mixed => $fn());
-        $this->ready[] = fn (): mixed => $this->runner()->step($task, null);
+        $this->suspensions()->enqueue(fn (): mixed => $this->runner()->step($task, null));
 
         return $task;
     }
@@ -98,8 +101,9 @@ final class FiberScheduler
     {
         $this->assertNonNegative($seconds, 'delay()');
         $task = $this->taskTable()->create($this, $name, 'timer', fn (): mixed => $fn());
+        $clock = $this->clock ??= new HrMonotonicClock();
         $this->timers()->insert(
-            $this->clock->nowNano() + (int) round($seconds * self::NANOS_PER_SECOND),
+            $clock->nowNano() + (int) round($seconds * self::NANOS_PER_SECOND),
             $task,
             fn (): mixed => $this->runner()->step($task, null),
         );
@@ -209,8 +213,9 @@ final class FiberScheduler
         // Routing through beginSuspension() applies the deferred-cancel
         // entry guard: a cancel-requested task cannot park into a new timer.
         $handle = $this->beginSuspension('sleep()');
+        $clock = $this->clock ??= new HrMonotonicClock();
         $this->timers()->insert(
-            $this->clock->nowNano() + (int) round($seconds * self::NANOS_PER_SECOND),
+            $clock->nowNano() + (int) round($seconds * self::NANOS_PER_SECOND),
             $handle->owner(),
             static fn () => $handle->deliver(null),
         );
@@ -258,7 +263,7 @@ final class FiberScheduler
             return 0;
         } finally {
             $this->running = false;
-            $this->ready = [];
+            $this->suspensions()->clear();
             $this->timers()->clear();
             $this->taskTable()->clear();
         }
@@ -274,30 +279,7 @@ final class FiberScheduler
      */
     public function beginSuspension(string $context): SuspensionHandle
     {
-        $fiber = \Fiber::getCurrent();
-        $current = $fiber instanceof \Fiber ? $this->runner()->taskFor($fiber) : null;
-
-        if ($current === null) {
-            throw new \LogicException(sprintf(
-                '%s can only be called from inside a coroutine managed by this scheduler.',
-                $context,
-            ));
-        }
-
-        if ($current->isCancelRequested()) {
-            // Deferred-cancel (ZEF-DEEP-03): a task whose cancellation was
-            // requested while it ran (including a committed value returned
-            // after a delivery/cancel race) must not park again. Surfacing
-            // the cancellation HERE — before the calling primitive registers
-            // any wake-up — guarantees no dead waiter entries are left behind
-            // to swallow future permits or messages.
-            throw new TaskCancelledException(sprintf('%s was cancelled while suspended', $current->name()));
-        }
-
-        $handle = new SuspensionHandle($this, $current);
-        $current->suspension()->arm($handle);
-
-        return $handle;
+        return $this->suspensions()->begin($context);
     }
 
     /**
@@ -306,31 +288,7 @@ final class FiberScheduler
      */
     public function awaitSuspension(SuspensionHandle $handle): mixed
     {
-        $payload = \Fiber::suspend($handle);
-
-        // No disarm here on purpose: the armed slot is only ever read while
-        // the fiber is suspended, and the next suspension overwrites it.
-        if ($payload instanceof SuspendFail) {
-            throw $payload->throwable;
-        }
-
-        if (!$payload instanceof SuspendValue) {
-            // Defensive: enqueueResume() only delivers SuspendValue|SuspendFail
-            // and the SuspendFail arm throws above, so this is unreachable.
-            throw new \LogicException('unexpected suspension payload');
-        }
-
-        // A delivered value is COMMITTED (ZEF-DEEP-03, issue #157): the settle
-        // hooks already ran, queue entries were spliced, and the hand-over
-        // physically happened — the semaphore permit was transferred, the
-        // channel message left the sender, the awaited task finished. A
-        // cancellation that lands between delivery and resume must NOT
-        // discard it: that raced permanently with the old post-resume
-        // cancel check, leaking semaphore permits (every later acquire()
-        // deadlocked) and silently dropping delivered channel messages.
-        // Cancellation is deferred to the next suspension entry instead
-        // (beginSuspension rejects parking for cancel-requested tasks).
-        return $payload->value;
+        return $this->suspensions()->await($handle);
     }
 
     /**
@@ -340,7 +298,7 @@ final class FiberScheduler
      */
     public function enqueueResume(FiberTask $task, SuspendFail|SuspendValue $payload): void
     {
-        $this->ready[] = fn (): mixed => $this->runner()->step($task, $payload);
+        $this->suspensions()->resume($task, $payload);
     }
 
     /**
@@ -348,41 +306,7 @@ final class FiberScheduler
      */
     public function requestCancel(FiberTask $task): bool
     {
-        if ($task->isDone() || $task->isCancelRequested()) {
-            return false;
-        }
-
-        $task->requestCancellation();
-        $this->timers()->splice($task);
-
-        $fiber = $task->fiber();
-
-        if (!$fiber instanceof \Fiber) {
-            // Never started (spawn-queued or timer-pending): settle at once.
-            $this->runner()->finish(
-                $task,
-                TaskState::Cancelled,
-                null,
-                new TaskCancelledException(sprintf('%s was cancelled before it started', $task->name())),
-            );
-
-            return true;
-        }
-
-        if ($fiber->isSuspended()) {
-            $armed = $task->suspension()->handle();
-
-            if ($armed instanceof SuspensionHandle) {
-                $armed->fail(new TaskCancelledException(sprintf('%s was cancelled while suspended', $task->name())));
-            }
-            // No armed handle at a suspension point is impossible by
-            // construction; if state ever drifted, deadlock detection names
-            // the task on the next pump pass instead of guessing here.
-        }
-        // Running synchronously (self-cancel or cancel from a completion
-        // callback): the flag is honoured at the next suspension point.
-
-        return true;
+        return $this->suspensions()->requestCancel($task);
     }
 
     // ------------------------------------------------------------------
@@ -391,15 +315,13 @@ final class FiberScheduler
 
     private function pump(): void
     {
+        $clock = $this->clock ??= new HrMonotonicClock();
         while (true) {
-            while ($this->ready !== []) {
-                $step = array_shift($this->ready);
-                $step();
-            }
+            $this->suspensions()->drain();
 
-            $this->timers()->fireDue($this->clock->nowNano());
+            $this->timers()->fireDue($clock->nowNano());
 
-            if ($this->ready !== []) {
+            if ($this->suspensions()->hasPending()) {
                 continue;
             }
 
@@ -419,8 +341,9 @@ final class FiberScheduler
                 return;
             }
 
+            $this->sleeper ??= new SystemSleeper();
             $this->sleeper->sleepMilliseconds(
-                (int) ceil(($nextDue - $this->clock->nowNano()) / self::NANOS_PER_MILLISECOND)
+                (int) ceil(($nextDue - $clock->nowNano()) / self::NANOS_PER_MILLISECOND)
             );
         }
     }
@@ -456,5 +379,14 @@ final class FiberScheduler
     private function taskTable(): FiberTaskTable
     {
         return $this->taskTable ??= new FiberTaskTable();
+    }
+
+    private function suspensions(): FiberSuspensionCoordinator
+    {
+        return $this->suspensions ??= new FiberSuspensionCoordinator(
+            $this,
+            $this->runner(),
+            $this->timers(),
+        );
     }
 }

@@ -24,6 +24,9 @@ use Psr\Http\Message\UriFactoryInterface;
 use Psr\Http\Message\UriInterface;
 use Zef\Framework\Exception\StreamOpenException;
 
+/**
+ * PSR-17 factory for the framework's HTTP message implementations.
+ */
 final class Psr17Factory implements RequestFactoryInterface, ResponseFactoryInterface, ServerRequestFactoryInterface, StreamFactoryInterface, UploadedFileFactoryInterface, UriFactoryInterface
 {
     /**

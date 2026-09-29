@@ -117,8 +117,8 @@ final readonly class PdoJobQueue implements JobQueueInterface
         // past the envelope's own validation fails loudly here instead of
         // being silently truncated by a narrow column.
         Identifier::assertOpaqueId($job->jobId, 'job ID');
-        $payload = $this->encodePayload($job->payload);
-        $headers = $this->encodePayload($job->headers);
+        $payload = JobRowCodec::encodePayload($job->payload);
+        $headers = JobRowCodec::encodePayload($job->headers);
         if ($this->maxSize !== null && $this->size() >= $this->maxSize) {
             throw new \OverflowException('Job queue capacity exceeded.');
         }
@@ -183,7 +183,7 @@ final readonly class PdoJobQueue implements JobQueueInterface
                         ->build(),
                 );
 
-                return $deleted === 1 ? $this->hydrate($row) : null;
+                return $deleted === 1 ? JobRowCodec::hydrate($row) : null;
             });
             if ($claimed instanceof JobEnvelope) {
                 return $claimed;
@@ -285,84 +285,5 @@ final readonly class PdoJobQueue implements JobQueueInterface
         // non-collision failures, unchanged QueryException after the
         // attempt budget.
         $this->seq()->insertWithSeqRetry($insert);
-    }
-
-    /** @param array<string, mixed> $row */
-    private function hydrate(array $row): JobEnvelope
-    {
-        return new JobEnvelope(
-            $this->str($row['job_id'] ?? null),
-            $this->str($row['job_type'] ?? null),
-            $this->decodePayload($this->str($row['payload'] ?? null)),
-            $this->intVal($row['available_at'] ?? null),
-            $this->intVal($row['priority'] ?? null),
-            $this->intVal($row['attempt'] ?? null),
-            $row['correlation_id'] === null ? null : $this->str($row['correlation_id']),
-            $row['trace_parent'] === null ? null : $this->str($row['trace_parent']),
-            $this->decodeHeaders($this->str($row['headers'] ?? null)),
-        );
-    }
-
-    /** Row narrowing: PDO rows are array<string, mixed>; ids are strings. */
-    private function str(mixed $value): string
-    {
-        if (is_string($value)) {
-            return $value;
-        }
-        if (is_scalar($value)) {
-            return (string) $value;
-        }
-
-        return '';
-    }
-
-    /** Row narrowing: numeric columns (int on SQLite, string on MySQL PDO). */
-    private function intVal(mixed $value): int
-    {
-        if (is_int($value)) {
-            return $value;
-        }
-        if (is_numeric($value)) {
-            return (int) $value;
-        }
-
-        return 0;
-    }
-
-    private function encodePayload(mixed $payload): string
-    {
-        try {
-            return json_encode($payload, \JSON_THROW_ON_ERROR | \JSON_PRESERVE_ZERO_FRACTION);
-        } catch (\JsonException $error) {
-            throw new \InvalidArgumentException('Job payload must be JSON-serializable.', 0, $error);
-        }
-    }
-
-    private function decodePayload(string $payload): mixed
-    {
-        try {
-            return json_decode($payload, true, 512, \JSON_THROW_ON_ERROR);
-        } catch (\JsonException $error) {
-            throw JobExecutionException::corruptPayload($error);
-        }
-    }
-
-    /**
-     * Header round-trip narrowing: entries that lost their string type in
-     * storage cannot satisfy the envelope contract and are dropped.
-     *
-     * @return array<string, string>
-     */
-    private function decodeHeaders(string $payload): array
-    {
-        $decoded = $this->decodePayload($payload);
-        $headers = [];
-        foreach (is_array($decoded) ? $decoded : [] as $name => $value) {
-            if (is_string($name) && is_string($value)) {
-                $headers[$name] = $value;
-            }
-        }
-
-        return $headers;
     }
 }

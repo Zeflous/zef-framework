@@ -133,7 +133,10 @@ final class SchemaGenerator
     {
         // @phpstan-ignore argument.type (guarded by class_exists || enum_exists in schemaNameFor)
         $reflection = new \ReflectionClass($className);
-        $attribute = $reflection->getAttributes(Attribute\Schema::class, \ReflectionAttribute::IS_INSTANCEOF)[0] ?? null;
+        $attribute = $reflection->getAttributes(
+            Attribute\Schema::class,
+            \ReflectionAttribute::IS_INSTANCEOF,
+        )[0] ?? null;
         $declared = $attribute !== null ? $attribute->newInstance()->name : null;
 
         if (is_string($declared) && trim($declared) !== '') {

@@ -130,9 +130,9 @@ final class PrometheusRenderer
         if ($name === '') {
             return self::METRIC_NAME_DEFAULT;
         }
-        $clean = preg_replace('/[^a-zA-Z0-9_:]/', '_', $name);
+        $clean = preg_replace('/[^\w:]/', '_', $name);
         $clean = is_string($clean) ? $clean : self::METRIC_NAME_DEFAULT;
-        if (preg_match('/^[a-zA-Z_:]/', $clean) !== 1) {
+        if (preg_match('/^[[:alpha:]_:]/', $clean) !== 1) {
             return 'zef_' . $clean;
         }
 
@@ -174,9 +174,9 @@ final class PrometheusRenderer
 
     private function sanitizeLabelName(string $name): string
     {
-        $clean = preg_replace('/[^a-zA-Z0-9_]/', '_', $name);
+        $clean = preg_replace('/\W/', '_', $name);
         $clean = is_string($clean) ? $clean : self::LABEL_NAME_DEFAULT;
-        if ($clean === '' || preg_match('/^[a-zA-Z_]/', $clean) !== 1) {
+        if ($clean === '' || preg_match('/^[[:alpha:]_]/', $clean) !== 1) {
             return 'lbl_' . $clean;
         }
 

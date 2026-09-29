@@ -22,6 +22,7 @@ namespace Zef\Framework\Container;
  * segment-wise traversal stays O(1) per node hop.
  *
  * @internal data structure; see RadixTreeCompilerPass for construction
+ * (edge-label descent lives in RadixTreeNavigator)
  */
 final class NamespaceRadixTree
 {
@@ -107,32 +108,10 @@ final class NamespaceRadixTree
         if ($id === '') {
             return false;
         }
-        $segments = explode('\\', $id);
-        $node = $this->root;
-        $remaining = $segments;
-        $descended = false;
-        while ($remaining !== []) {
-            $head = $remaining[0];
-            if (!isset($node['children'][$head])) {
-                break;
-            }
-            $child = $node['children'][$head];
-            $label = isset($child['label']) && $child['label'] !== ''
-                ? explode('\\', $child['label'])
-                : [$head];
-            $labelCount = count($label);
-            if (count($remaining) < $labelCount) {
-                break; // query ends mid-edge
-            }
-            if (!$this->segmentsMatch($remaining, $label, $labelCount)) {
-                break;
-            }
-            $node = $child;
-            $remaining = array_slice($remaining, $labelCount);
-            $descended = true;
-        }
+        $result = RadixTreeNavigator::descendForLookup($this->root, explode('\\', $id));
+        $node = $result['node'];
 
-        return $descended && isset($node['ids'][$id]) && $node['ids'][$id];
+        return $result['descended'] && isset($node['ids'][$id]) && $node['ids'][$id];
     }
 
     /**
@@ -144,43 +123,15 @@ final class NamespaceRadixTree
     public function idsUnderPrefix(string $prefix): array
     {
         $normalized = $this->normalizePrefix($prefix);
-        $segments = explode('\\', rtrim($normalized, '\\'));
-        $node = $this->root;
-        $remaining = $segments;
-        $found = true;
-        while ($remaining !== []) {
-            $head = $remaining[0];
-            if (!isset($node['children'][$head])) {
-                $found = false;
-
-                break;
-            }
-            $child = $node['children'][$head];
-            $label = isset($child['label']) && $child['label'] !== ''
-                ? explode('\\', $child['label'])
-                : [$head];
-            $labelCount = count($label);
-            if (count($remaining) < $labelCount) {
-                // Prefix ends mid-edge: the whole edge subtree IS under the
-                // prefix, provided the query segments match the label so far.
-                $found = $this->segmentsMatch($remaining, $label, count($remaining));
-                $node = $child;
-
-                break;
-            }
-            if (!$this->segmentsMatch($remaining, $label, $labelCount)) {
-                $found = false;
-
-                break;
-            }
-            $node = $child;
-            $remaining = array_slice($remaining, $labelCount);
-        }
-        if (!$found) {
+        $result = RadixTreeNavigator::descendToPrefix(
+            $this->root,
+            explode('\\', rtrim($normalized, '\\')),
+        );
+        if (!$result['found'] || $result['node'] === null) {
             return [];
         }
         $out = [];
-        $this->collect($node, $out);
+        $this->collect($result['node'], $out);
         sort($out, SORT_STRING);
 
         return $out;
@@ -269,23 +220,6 @@ final class NamespaceRadixTree
     // ------------------------------------------------------------------
     // Internals
     // ------------------------------------------------------------------
-
-    /**
-     * Compares the first $count segments of $remaining against $label.
-     *
-     * @param list<string>           $remaining
-     * @param non-empty-list<string> $label
-     */
-    private function segmentsMatch(array $remaining, array $label, int $count): bool
-    {
-        for ($i = 0; $i < $count; ++$i) {
-            if ($remaining[$i] !== $label[$i]) {
-                return false;
-            }
-        }
-
-        return true;
-    }
 
     private function normalizePrefix(string $prefix): string
     {

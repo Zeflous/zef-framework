@@ -168,7 +168,7 @@ final class FieldSchemaConstraints
         $last = strrpos($regex, $delimiter);
         // $last === 0 means no pattern body; $last === false means no
         // closing delimiter at all. Both fall through verbatim.
-        $isRealDelimiter = preg_match('/^[A-Za-z0-9\\\]$/', $delimiter) !== 1 && $last !== false && $last > 0;
+        $isRealDelimiter = preg_match('/^[[:alnum:]\\\]$/', $delimiter) !== 1 && $last !== false && $last > 0;
 
         if (!$isRealDelimiter) {
             return $regex;
