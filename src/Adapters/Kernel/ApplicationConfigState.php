@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 namespace Zef\Framework\Kernel;
 
+use Zef\Framework\Application;
 use Zef\Framework\Config\Config;
 use Zef\Framework\Config\ConfigLoader;
 use Zef\Framework\Config\ConfigMigrator;
@@ -20,7 +21,7 @@ use Zef\Framework\Config\SecretsProviderInterface;
 /**
  * @internal
  *
- * Mutable pre-boot configuration state of {@see \Zef\Framework\Application}:
+ * Mutable pre-boot configuration state of {@see Application}:
  * the registered config sources, secrets provider, schema and migrator,
  * plus the memoized loaded {@see Config} bag.
  *

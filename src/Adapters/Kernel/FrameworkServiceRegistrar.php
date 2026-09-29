@@ -13,6 +13,7 @@ namespace Zef\Framework\Kernel;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use Zef\Framework\Application;
 use Zef\Framework\Cache\CacheClockInterface;
 use Zef\Framework\Cache\CacheInterface;
 use Zef\Framework\Cache\InMemoryCache;
@@ -34,7 +35,7 @@ use Zef\Framework\Foundation\EnvInterface;
  * @internal
  *
  * Default framework service registrations of the kernel composition root
- * (extracted from {@see \Zef\Framework\Application}).
+ * (extracted from {@see Application}).
  *
  * Pure container wiring: no state, no construction of the application graph
  * itself — every service is registered behind its factory closure, so the

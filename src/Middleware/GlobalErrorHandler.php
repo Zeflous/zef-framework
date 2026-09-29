@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 namespace Zef\Middleware;
 
+use Psr\Http\Message\MessageInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -75,7 +76,7 @@ final readonly class GlobalErrorHandler implements MiddlewareInterface
      * plain text response when the factory itself is unavailable (double
      * failure) so the client still receives a 500 with the correlation id.
      */
-    private function internalErrorResponse(\Throwable $e, string $correlationId): ResponseInterface
+    private function internalErrorResponse(\Throwable $e, string $correlationId): MessageInterface
     {
         try {
             return $this->factory->create(

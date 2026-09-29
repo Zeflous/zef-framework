@@ -88,8 +88,7 @@ final class AutowireAotCompiler
         AutowireResult $result,
         string $path,
         string $header = 'ZEF AOT autowire compilation',
-    ): void
-    {
+    ): void {
         $entries = '';
         foreach ($result->metadata as $serviceId => $metadata) {
             $entries .= '        ' . self::generateServiceEntry($metadata, $result->factoryCode[$serviceId]);
@@ -136,14 +135,15 @@ final class AutowireAotCompiler
         }
         $definitions = [];
         foreach ($services as $id => $entry) {
-            $shapeInvalid = !is_string($id) || !is_array($entry);
-            $factoryInvalid = !isset($entry['factory']) || !is_callable($entry['factory']);
-            $dependenciesInvalid = !isset($entry['dependencies']) || !is_array($entry['dependencies']);
-            $lifetimeInvalid = !isset($entry['lifetime']) || !is_string($entry['lifetime']);
-            if ($shapeInvalid || $factoryInvalid || $dependenciesInvalid || $lifetimeInvalid) {
-                throw new InvalidConfigurationException(
-                    "AOT file '{$path}' has a malformed entry for service '{$id}'.",
-                );
+            if (!is_string($id) || !is_array($entry)) {
+                throw self::malformedEntry($path, $id);
+            }
+            $shapeComplete = isset($entry['factory'], $entry['dependencies'], $entry['lifetime']);
+            if (!$shapeComplete) {
+                throw self::malformedEntry($path, $id);
+            }
+            if (!is_callable($entry['factory']) || !is_array($entry['dependencies']) || !is_string($entry['lifetime'])) {
+                throw self::malformedEntry($path, $id);
             }
             $definitions[$id] = new ServiceDefinition(
                 id: $id,
@@ -183,5 +183,10 @@ final class AutowireAotCompiler
         }
 
         return $closure;
+    }
+
+    private static function malformedEntry(string $path, int|string $id): InvalidConfigurationException
+    {
+        return new InvalidConfigurationException("AOT file '{$path}' has a malformed entry for service '{$id}'.");
     }
 }

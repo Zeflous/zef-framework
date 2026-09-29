@@ -12,6 +12,7 @@ namespace Zef\Framework\Kernel;
 
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
+use Zef\Framework\Application;
 use Zef\Framework\Config\ConfigMetricsInterface;
 use Zef\Framework\Config\MeterConfigMetrics;
 use Zef\Framework\Container\Container;
@@ -28,7 +29,7 @@ use Zef\Framework\Observability\TracerInterface;
  * @internal
  *
  * Observability service registrations of the kernel composition root
- * (extracted from {@see \Zef\Framework\Application}).
+ * (extracted from {@see Application}).
  *
  * Every service is registered behind its factory closure, so the wiring is
  * lazy and overridable by applications re-registering the same service ids.

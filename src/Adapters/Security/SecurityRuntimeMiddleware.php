@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 namespace Zef\Framework\Security;
 
+use Psr\Http\Message\MessageInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -101,9 +102,9 @@ final class SecurityRuntimeMiddleware implements MiddlewareInterface
      * successful response must carry.
      *
      * @return array{
-     *     shortCircuit: ResponseInterface|null,
-     *     rateDecision: RateLimitDecision|null,
-     *     csrfCookie: string|null
+     *     shortCircuit: null|ResponseInterface,
+     *     rateDecision: null|RateLimitDecision,
+     *     csrfCookie: null|string
      * }
      */
     private function runSecurityGates(
@@ -126,13 +127,14 @@ final class SecurityRuntimeMiddleware implements MiddlewareInterface
     }
 
     /**
-     * @return array{0: RateLimitDecision|null, 1: ResponseInterface|null}
+     * @return array{0: null|RateLimitDecision, 1: null|ResponseInterface}
      */
     private function enforceRateLimit(SecurityContext $context, string $requestId): array
     {
         if (!$this->policy->rateLimitEnabled) {
             return [null, null];
         }
+
         try {
             $decision = $this->rateLimiter->check(
                 $context->clientIp,
@@ -188,6 +190,7 @@ final class SecurityRuntimeMiddleware implements MiddlewareInterface
         if (!$this->policy->originEnabled) {
             return null;
         }
+
         try {
             OriginPolicy::assertAllowed($context->origin, $this->policy->allowedOrigins);
         } catch (\Throwable) {
@@ -205,7 +208,7 @@ final class SecurityRuntimeMiddleware implements MiddlewareInterface
      * value that a safe-method response must re-issue; both are null when
      * CSRF is disabled.
      *
-     * @return array{0: string|null, 1: ResponseInterface|null}
+     * @return array{0: null|string, 1: null|ResponseInterface}
      */
     private function enforceCsrf(string $method, ServerRequestInterface $request, string $requestId): array
     {
@@ -247,9 +250,9 @@ final class SecurityRuntimeMiddleware implements MiddlewareInterface
     }
 
     private function decorateWithRateHeaders(
-        ResponseInterface $response,
+        MessageInterface $response,
         ?RateLimitDecision $decision,
-    ): ResponseInterface {
+    ): MessageInterface {
         if ($decision === null) {
             return $response;
         }
@@ -260,7 +263,7 @@ final class SecurityRuntimeMiddleware implements MiddlewareInterface
         ;
     }
 
-    private function decorateWithCsrfCookie(ResponseInterface $response, ?string $setCookie): ResponseInterface
+    private function decorateWithCsrfCookie(MessageInterface $response, ?string $setCookie): MessageInterface
     {
         if ($setCookie === null) {
             return $response;

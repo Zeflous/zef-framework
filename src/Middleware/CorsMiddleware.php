@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 namespace Zef\Middleware;
 
+use Psr\Http\Message\MessageInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -127,7 +128,7 @@ final readonly class CorsMiddleware implements MiddlewareInterface
         return $origin;
     }
 
-    private function decorateWithCorsHeaders(ResponseInterface $response, string $origin): ResponseInterface
+    private function decorateWithCorsHeaders(MessageInterface $response, string $origin): MessageInterface
     {
         $response = $response
             ->withHeader('Access-Control-Allow-Origin', $origin)
@@ -141,7 +142,7 @@ final readonly class CorsMiddleware implements MiddlewareInterface
     /**
      * @return list<string>
      */
-    private function mergedVaryTokens(ResponseInterface $response): array
+    private function mergedVaryTokens(MessageInterface $response): array
     {
         $tokens = [];
         foreach ($response->getHeader('Vary') as $line) {
