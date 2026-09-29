@@ -156,7 +156,6 @@ if (!function_exists('zef_framework_autoload')) {
                 "Zef\\Framework\\Console\\ScaffoldCollisionException" => __DIR__ . '/../src/Infrastructure/Console/ScaffoldCollisionException.php',
                 "Zef\\Framework\\Console\\ScaffoldWriteException" => __DIR__ . '/../src/Infrastructure/Console/ScaffoldWriteException.php',
                 "Zef\\Framework\\Console\\ScaffoldWriter" => __DIR__ . '/../src/Infrastructure/Console/ScaffoldWriter.php',
-                "Zef\\Framework\\Console\\TemplateLoader" => __DIR__ . '/../src/Infrastructure/Console/TemplateLoader.php',
                 "Zef\\Framework\\Console\\ZefMaker" => __DIR__ . '/../src/Infrastructure/Console/ZefMaker.php',
                 "Zef\\Framework\\Constant\\HttpReasonPhrases" => __DIR__ . '/../src/Domain/Constant/HttpReasonPhrases.php',
                 "Zef\\Framework\\Container\\Autowiring\\AutowireAotCompiler" => __DIR__ . '/../src/Application/Container/Autowiring/AutowireAotCompiler.php',
