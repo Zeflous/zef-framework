@@ -56,9 +56,14 @@ final readonly class CoroutineLocal
         $this->store[$fiber] = $scope;
     }
 
-    /** WeakMap factory kept out of the constructor (S2830: no object creation there). */
+    /**
+     * WeakMap factory kept out of the constructor (S2830: no object creation there).
+     *
+     * @return \WeakMap<\Fiber<mixed, mixed, mixed, mixed>, array<string, mixed>>
+     */
     private static function emptyStore(): \WeakMap
     {
+        /** @var \WeakMap<\Fiber<mixed, mixed, mixed, mixed>, array<string, mixed>> $store */
         return new \WeakMap();
     }
 
