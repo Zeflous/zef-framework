@@ -40,6 +40,21 @@ use Zef\Framework\Policy\ArchitecturePolicy;
  */
 final class EdgeMatrixF10KernelTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        // F10LifecycleModule keeps process-wide static counters; with
+        // executionOrder="depends,defects" the class is not guaranteed to
+        // run first, so a prior boot in the same process would leave
+        // $bootCalls at 1 and "boot module wajib sekali" would see 2.
+        // Resetting here keeps the lifecycle assertions independent of
+        // test execution order (restores the fix lost in 75b43eb).
+        F10LifecycleModule::$bootCalls = 0;
+        F10LifecycleModule::$startCalls = 0;
+        F10LifecycleModule::$shutdownCalls = 0;
+        F10LifecycleModule::$warmFactoryRuns = 0;
+        F10LifecycleModule::$warmFactoryRan = false;
+    }
+
     // ------------------------------------------------------------- Construction
 
     /** Application:59 FalseValue (debug default) + :81 Coalesce (logger injeksi). */
