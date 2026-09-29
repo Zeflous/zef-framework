@@ -134,9 +134,13 @@ jobs:
           echo "Overlay ready: tainted-exec declared once, at ERROR, with union patterns."
 
       - name: Scan production PHP source (blocking)
-        # src/**/ is the merge-blocking set: the pinned baseline scan of main found
-        # zero findings here, so ERROR-level findings block without false-positive
-        # friction. No suppression is applied to make this pass.
+        # The merge-blocking set is every first-party production tree, not just
+        # src/: `modules/`, `plugins/` and `app/` are shipped ZEF code (the
+        # Module System and the application bootstrap) and were previously
+        # scanned by NO pass in this workflow, so a dangerous pattern there was
+        # structurally invisible to the gate. The pinned baseline scan of main
+        # found zero findings in src/, so ERROR-level findings block without
+        # false-positive friction. No suppression is applied to make this pass.
         #
         # This invocation is deliberately UNCHANGED by the warning-coverage step
         # below: same configs, same --severity ERROR --error. The blocking
@@ -158,7 +162,7 @@ jobs:
               --error \
               --sarif \
               --output=/out/sast-src.sarif \
-              /src/src
+              /src/src /src/modules /src/plugins /src/app
 
       - name: Scan production PHP source at WARNING severity (blocking)
         # Closes the severity coverage hole: before this step, src/**/ was evaluated
@@ -198,7 +202,7 @@ jobs:
               --error \
               --sarif \
               --output=/out/sast-src-warning.sarif \
-              /src/src
+              /src/src /src/modules /src/plugins /src/app
 
       - name: Scan tests and tooling PHP (blocking)
         # Analysed on purpose — this code runs with repository credentials on CI and
@@ -221,7 +225,7 @@ jobs:
         run: |
           set -euo pipefail
           targets=""
-          for d in tests scripts tools; do
+          for d in tests scripts tools autoload; do
             if [ -d "${PWD}/${d}" ]; then targets="${targets} /src/${d}"; fi
           done
           if [ -z "${targets}" ]; then
@@ -271,7 +275,7 @@ jobs:
         run: |
           set -euo pipefail
           targets=""
-          for d in tests scripts tools; do
+          for d in tests scripts tools autoload; do
             if [ -d "${PWD}/${d}" ]; then targets="${targets} /src/${d}"; fi
           done
           if [ -z "${targets}" ]; then

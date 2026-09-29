@@ -1,0 +1,38 @@
+# Build context exclusions for deploy/Dockerfile.
+#
+# Without this file `COPY . .` copied the entire working tree into the image:
+# the git history, the local vendor/ tree, build artifacts, test caches and any
+# developer-local file present at build time. That bloats the image, leaks
+# local state into a published artifact, and makes the build non-reproducible
+# (the image contents depend on what happened to be in the directory).
+#
+# The image installs its own dependencies, so vendor/ is excluded and rebuilt
+# inside the build.
+.git/
+.github/
+.gitattributes
+.gitignore
+
+# Local dependency tree and build output.
+vendor/
+build/
+
+# Tool caches.
+.phpunit.cache/
+.php-cs-fixer.cache/
+.deptrac.cache/
+
+# The RoadRunner worker binary is a ~62 MB downloaded release asset, not
+# source (see .gitignore).
+bin/rr
+
+# Local/dev-only material.
+docs/
+assets/
+node_modules/
+*.log
+
+# Editor and OS noise.
+.idea/
+.vscode/
+.DS_Store

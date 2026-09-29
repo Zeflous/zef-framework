@@ -73,7 +73,11 @@ jobs:
           # while the suite is in flight would trip the deadline instead of
           # waiting for the verdict. 10800s = 180 min covers them in sequence.
           deadline=$((SECONDS + 10800))
-          for workflow in "ci.yml" "mutation.yml" "secret-scan.yml" "phpbench.yml"; do
+          # php-sast.yml is in this list because the Semgrep gate is a
+          # required status check on main: a release must not be published
+          # from a commit whose SAST verdict was never read. Without this
+          # entry the release could ship while the SAST run was still red.
+          for workflow in "ci.yml" "mutation.yml" "secret-scan.yml" "phpbench.yml" "php-sast.yml"; do
             status=""
             conclusion=""
             while :; do

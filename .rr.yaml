@@ -16,11 +16,17 @@ http:
   pool:
     # Jumlah worker PHP; kalibrasi sesuai CPU.
     num_workers: 4
-    max_jobs: 0          # 0 = tanpa batas; selaras dengan ZEF_WORKER_MAX_JOBS
+    # Batas jumlah request per worker sebelum didaur ulang. `0` = tanpa batas,
+    # yang berarti kebocoran memori (atau state yang tidak sengaja tertahan di
+    # proses persistent-worker) menumpuk sampai worker mati sendiri. Nilai
+    # terbatas membuat daur ulang terjadi secara deterministik.
+    max_jobs: 500
     supervisor:
       max_worker_memory: 512   # MB per worker (0 = nonaktif)
 
 logs:
-  mode: development
+  # Mode produksi: log terstruktur (JSON) untuk agregasi, bukan console
+  # berwarna yang ditujukan untuk terminal pengembang.
+  mode: production
   level: info
-  encoding: console
+  encoding: json

@@ -49,36 +49,37 @@ final class CurlS3HttpTransport implements S3HttpTransport
         }
         $rawHeaders = [];
 
-        try {
-            $options = [
-                CURLOPT_CUSTOMREQUEST => $method,
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_FOLLOWLOCATION => false,
-                CURLOPT_CONNECTTIMEOUT => self::CONNECT_TIMEOUT_SECONDS,
-                CURLOPT_TIMEOUT => self::TOTAL_TIMEOUT_SECONDS,
-                CURLOPT_HTTPHEADER => self::headerLines($headers),
-                CURLOPT_HEADERFUNCTION => static function ($handle, string $line) use (&$rawHeaders): int {
-                    $rawHeaders[] = $line;
+        $options = [
+            CURLOPT_CUSTOMREQUEST => $method,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_CONNECTTIMEOUT => self::CONNECT_TIMEOUT_SECONDS,
+            CURLOPT_TIMEOUT => self::TOTAL_TIMEOUT_SECONDS,
+            CURLOPT_HTTPHEADER => self::headerLines($headers),
+            CURLOPT_HEADERFUNCTION => static function ($handle, string $line) use (&$rawHeaders): int {
+                $rawHeaders[] = $line;
 
-                    return strlen($line);
-                },
-            ];
-            if ($body !== '') {
-                $options[CURLOPT_POSTFIELDS] = $body;
-            }
-            // A HEAD Content-Length describes the object, not a response body.
-            if ($method === 'HEAD') {
-                $options[CURLOPT_NOBODY] = true;
-            }
-            curl_setopt_array($handle, $options);
-            $responseBody = curl_exec($handle);
-            if ($responseBody === false) {
-                throw new StorageException('Object storage transport error: ' . curl_error($handle));
-            }
-            $status = curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
-        } finally {
-            curl_close($handle);
+                return strlen($line);
+            },
+        ];
+        if ($body !== '') {
+            $options[CURLOPT_POSTFIELDS] = $body;
         }
+        // A HEAD Content-Length describes the object, not a response body.
+        if ($method === 'HEAD') {
+            $options[CURLOPT_NOBODY] = true;
+        }
+        curl_setopt_array($handle, $options);
+        $responseBody = curl_exec($handle);
+        if ($responseBody === false) {
+            throw new StorageException('Object storage transport error: ' . curl_error($handle));
+        }
+        $status = curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
+
+        // No curl_close() here: it has been a no-op since PHP 8.0 and is
+        // deprecated as of PHP 8.5, so the handle is simply released when it
+        // goes out of scope. The previous try/finally existed only to call it.
+        unset($handle);
         if (!is_string($responseBody)) {
             throw new StorageException('Object storage transport returned a non-string body.');
         }

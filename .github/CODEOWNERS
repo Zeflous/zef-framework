@@ -29,6 +29,13 @@
 /src/Adapters/Security/  @mbetixz
 /src/Infrastructure/Security/ @mbetixz
 
+# Deployment and runtime surfaces. A change here alters how the application
+# is built, what it runs as, and which ports/volumes it exposes — the same
+# blast radius as the release path, so it carries the same review requirement.
+/deploy/                 @mbetixz
+/bin/                    @mbetixz
+/.rr.yaml                @mbetixz
+
 # Dependency and supply-chain manifests.
 /composer.json           @mbetixz
 /composer.lock           @mbetixz

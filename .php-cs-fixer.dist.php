@@ -16,6 +16,7 @@ $finder = (new PhpCsFixer\Finder())
         __DIR__ . '/src',
         __DIR__ . '/modules',
         __DIR__ . '/plugins',
+        __DIR__ . '/app',
         __DIR__ . '/tests',
     ])
     ->exclude('Compat')

@@ -1,4 +1,4 @@
-# ZEF Framework v2.8.0 — local stack (app + optional Redis for distributed
+# ZEF Framework — local stack (app + optional Redis for distributed
 # rate limiting / future Redis cache adapters).
 #
 #   docker compose -f deploy/docker-compose.yml up --build
@@ -16,6 +16,23 @@ services:
     environment:
       ZEF_TRUSTED_HOSTS: "localhost,127.0.0.1,app"
       # ZEF_OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel:4318/v1/traces"
+    # Container hardening. The image already runs as a non-root user; these
+    # settings remove the remaining ways a compromised process could escalate
+    # or persist:
+    #   read_only          — the root filesystem is immutable, so nothing can
+    #                        be written outside the explicit tmpfs mounts;
+    #   cap_drop: ALL      — no Linux capability is retained (the app binds
+    #                        port 8080, which needs none);
+    #   no-new-privileges  — setuid binaries cannot raise privilege;
+    #   tmpfs              — the writable paths the runtime actually needs.
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+      - /app/var/cache
     healthcheck:
       test: ["CMD", "php", "-r", "exit((int)(@file_get_contents('http://127.0.0.1:8080/health/ready') === false));"]
       interval: 10s
@@ -30,6 +47,16 @@ services:
     command: ["redis-server", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
     ports:
       - "6379:6379"
+    # Same hardening posture as the app service: the cache holds no state that
+    # must survive a restart (appendonly is off), so it needs no writable root
+    # filesystem and no capabilities.
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s

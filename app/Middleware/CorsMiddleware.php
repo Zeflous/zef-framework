@@ -10,18 +10,13 @@ declare(strict_types=1);
 
 namespace Zef\Middleware;
 
-use Zef\Framework\Config\ConfigProviderInterface;
-use Zef\Framework\Foundation\Env;
-use Zef\Framework\Http\JsonResponse;
-use Zef\Framework\Http\Response;
-use Zef\Framework\Security\InMemoryRateLimiter;
-use Zef\Framework\Security\OriginPolicy;
-use Zef\Framework\Security\SecurityPolicy;
-use Zef\Framework\Security\SecurityRuntimeMiddleware;
+use Psr\Http\Message\MessageInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
+use Zef\Framework\Http\Response;
+use Zef\Framework\Security\OriginPolicy;
 
 final class CorsMiddleware implements MiddlewareInterface
 {
@@ -29,7 +24,7 @@ final class CorsMiddleware implements MiddlewareInterface
     private readonly array $allowedOrigins;
     private readonly bool $allowAll;
 
-    /** @param list<string>|string|null $allowOrigin */
+    /** @param null|list<string>|string $allowOrigin */
     public function __construct(
         array|string|null $allowOrigin = null,
         private readonly string $allowMethods = 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
@@ -48,6 +43,7 @@ final class CorsMiddleware implements MiddlewareInterface
             if ($origin === '*') {
                 $this->allowAll = true;
                 $this->allowedOrigins = ['*'];
+
                 return;
             }
             $normalized[] = $this->normalizeOrigin($origin);
@@ -73,26 +69,31 @@ final class CorsMiddleware implements MiddlewareInterface
                 if (strtoupper($request->getMethod()) === 'OPTIONS') {
                     return new Response(204, ['Vary' => 'Origin']);
                 }
+
                 return $handler->handle($request);
             }
         }
         $allowOrigin = $this->allowAll ? '*' : $requestOrigin;
         if (strtoupper($request->getMethod()) === 'OPTIONS') {
             return new Response(204, [
-                'Access-Control-Allow-Origin'  => $allowOrigin,
+                'Access-Control-Allow-Origin' => $allowOrigin,
                 'Access-Control-Allow-Methods' => $this->allowMethods,
                 'Access-Control-Allow-Headers' => $this->allowHeaders,
-                'Access-Control-Max-Age'       => '600',
-                'Vary'                         => 'Origin',
+                'Access-Control-Max-Age' => '600',
+                'Vary' => 'Origin',
             ]);
         }
         $response = $handler->handle($request)
             ->withHeader('Access-Control-Allow-Origin', $allowOrigin)
             ->withHeader('Access-Control-Allow-Methods', $this->allowMethods)
-            ->withHeader('Access-Control-Allow-Headers', $this->allowHeaders);
+            ->withHeader('Access-Control-Allow-Headers', $this->allowHeaders)
+        ;
         $vary = $response->getHeader('Vary');
         $tokens = [];
         foreach ($vary as $line) {
+            if (!is_string($line)) {
+                continue;
+            }
             foreach (explode(',', $line) as $token) {
                 $token = trim($token);
                 if ($token !== '') {
@@ -101,7 +102,21 @@ final class CorsMiddleware implements MiddlewareInterface
             }
         }
         $tokens['origin'] = 'Origin';
-        return $response->withHeader('Vary', implode(', ', array_values($tokens)));
+
+        return self::asResponse($response->withHeader('Vary', implode(', ', array_values($tokens))));
+    }
+
+    /**
+     * PSR-7 declares `withHeader()` as returning `MessageInterface`, so a
+     * fluent header chain loses the `ResponseInterface` type even though the
+     * runtime object is always the same immutable response. Narrow it back
+     * explicitly instead of widening this method's return type.
+     */
+    private static function asResponse(MessageInterface $message): ResponseInterface
+    {
+        assert($message instanceof ResponseInterface);
+
+        return $message;
     }
 
     private function originIsAllowed(string $origin): bool
@@ -111,6 +126,7 @@ final class CorsMiddleware implements MiddlewareInterface
         } catch (\InvalidArgumentException) {
             return false;
         }
+
         return in_array($normalized, $this->allowedOrigins, true);
     }
 
@@ -123,6 +139,4 @@ final class CorsMiddleware implements MiddlewareInterface
     }
 }
 
-/**
- * Retained for legacy modules; core now depends on Psr\Log\LoggerInterface.
- */
+// Retained for legacy modules; core now depends on Psr\Log\LoggerInterface.

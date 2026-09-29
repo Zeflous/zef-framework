@@ -1,0 +1,58 @@
+# ZEF Framework — default-deny network policy for the zef-app pods.
+#
+# WHY THIS EXISTS
+# ---------------
+# The Deployment declared no NetworkPolicy, so every pod in the cluster could
+# reach the application port and the application could reach anything. A
+# Kubernetes cluster without a default-deny policy is a flat network: a
+# compromised workload anywhere can talk to this service directly, bypassing
+# the ingress path and any authentication in front of it.
+#
+# This policy is default-deny for both directions and then re-opens only what
+# the application actually needs:
+#   * ingress on 8080 from pods carrying the ingress-controller label;
+#   * egress to DNS (kube-system) and to the Redis backend.
+#
+# Adjust the ingress selector to match the controller in use (the label below
+# is the common nginx-ingress one).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: zef-app
+  labels:
+    app.kubernetes.io/name: zef-app
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: zef-app
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Only the ingress controller may reach the HTTP port.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    # DNS resolution.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Redis backend (distributed rate limiter / cache adapter).
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: redis
+      ports:
+        - protocol: TCP
+          port: 6379
