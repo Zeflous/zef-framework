@@ -755,22 +755,22 @@ final class EdgeMatrixSecValTest extends TestCase
 
     public function testEmptyHostAndEmptyAllowListAreAlwaysAccepted(): void
     {
-        new TrustedHostValidator(['good.example'])->assert('');
-        new TrustedHostValidator()->assert('anything.example');
+        new TrustedHostValidator(['good.example'])->assertTrusted('');
+        new TrustedHostValidator()->assertTrusted('anything.example');
         self::expectNotToPerformAssertions();
     }
 
     public function testHostNormalizationTrimsLowersAndStripsBrackets(): void
     {
         $v = new TrustedHostValidator(['  Example.COM ']);
-        $v->assert('example.com');
-        $v->assert('  EXAMPLE.com');
+        $v->assertTrusted('example.com');
+        $v->assertTrusted('  EXAMPLE.com');
         $v6 = new TrustedHostValidator(['::1']);
-        $v6->assert('[::1]');
-        $v6->assert('::1');
+        $v6->assertTrusted('[::1]');
+        $v6->assertTrusted('::1');
 
         try {
-            $v6->assert('[::2]');
+            $v6->assertTrusted('[::2]');
             self::fail('unbracketed comparison must not let other IPv6 through.');
         } catch (\InvalidArgumentException $e) {
             self::assertStringContainsString('Untrusted host: [::2].', $e->getMessage());
@@ -780,7 +780,7 @@ final class EdgeMatrixSecValTest extends TestCase
     public function testSingleCharacterHostsAreNotBracketStripped(): void
     {
         $v = new TrustedHostValidator(['[']);
-        $v->assert('[');
+        $v->assertTrusted('[');
         self::expectNotToPerformAssertions();
     }
 

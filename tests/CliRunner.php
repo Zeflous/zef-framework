@@ -1158,7 +1158,9 @@ final class CliRunner
             $this->out("[PASS] {$name}");
         } catch (\Throwable $e) {
             ++$this->failed;
-            $this->out("[FAIL] {$name}: {$e->getMessage()}");
+            // Never echo the raw exception message: it can carry absolute
+            // paths and internal detail. Report the exception class only.
+            $this->out("[FAIL] {$name} (" . $e::class . ')');
         }
     }
 

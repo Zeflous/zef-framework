@@ -60,7 +60,7 @@ final class Uri implements UriInterface
         $this->path = $this->encodeComponent((string) ($parts['path'] ?? ''), self::PATH_ALLOWED);
         $this->query = $this->encodeComponent((string) ($parts['query'] ?? ''), self::QUERY_FRAGMENT_ALLOWED);
         $this->fragment = $this->encodeComponent((string) ($parts['fragment'] ?? ''), self::QUERY_FRAGMENT_ALLOWED);
-        new TrustedHostValidator($this->trustedHosts)->assert($this->host);
+        new TrustedHostValidator($this->trustedHosts)->assertTrusted($this->host);
     }
 
     /**
@@ -198,7 +198,7 @@ final class Uri implements UriInterface
         $this->assertHost($host);
         $n = clone $this;
         $n->host = strtolower($host);
-        new TrustedHostValidator($this->trustedHosts)->assert($n->host);
+        new TrustedHostValidator($this->trustedHosts)->assertTrusted($n->host);
 
         return $n;
     }
