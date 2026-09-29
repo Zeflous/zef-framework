@@ -160,8 +160,10 @@ final class Uri implements UriInterface
             UriGrammar::assertNoControls($password, 'URI user info');
         }
         $n = clone $this;
-        $n->userInfo = UriGrammar::encodeComponent($user, UriGrammar::USERINFO_ALLOWED)
-            . ($password !== null ? ':' . UriGrammar::encodeComponent($password, UriGrammar::PASSWORD_ALLOWED) : '');
+        $passPart = $password !== null
+            ? ':' . UriGrammar::encodeComponent($password, UriGrammar::USERINFO_PASS_ALLOWED)
+            : '';
+        $n->userInfo = UriGrammar::encodeComponent($user, UriGrammar::USERINFO_ALLOWED) . $passPart;
 
         return $n;
     }

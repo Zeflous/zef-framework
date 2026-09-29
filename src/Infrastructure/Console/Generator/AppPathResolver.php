@@ -113,23 +113,24 @@ final readonly class AppPathResolver
      */
     private function extractRootPrefix(string $path, bool $windows): array
     {
-        $prefix = '';
         if ($windows && preg_match('#^([[:alpha:]]:)(/|$)#', $path) === 1) {
             // Drive root (C:/): the `..` walk must never pop past it.
-            $prefix = substr($path, 0, 2);
-            $path = substr($path, 2);
-        } elseif ($windows && str_starts_with($path, '//') && strlen($path) > 2) {
+
+            return [substr($path, 0, 2), substr($path, 2)];
+        }
+        if ($windows && str_starts_with($path, '//') && strlen($path) > 2) {
             // UNC root (//server/share): the server+share pair is the root.
             $segments = explode('/', substr($path, 2), 3);
             if ($segments[0] !== '') {
                 $prefix = '//' . $segments[0]
                     . (isset($segments[1]) && $segments[1] !== '' ? '/' . $segments[1] : '');
-                $path = substr($path, strlen($prefix));
+
+                return [$prefix, substr($path, strlen($prefix))];
             }
         }
-        // Neither drive nor UNC root: nothing to strip (POSIX or relative).
+        // Neither drive nor UNC root (POSIX or relative): nothing to strip.
 
-        return [$prefix, $path];
+        return ['', $path];
     }
 
     /**
@@ -143,7 +144,10 @@ final readonly class AppPathResolver
     {
         if ($parts !== [] && end($parts) !== '..') {
             array_pop($parts);
-        } elseif (!$absolute) {
+
+            return;
+        }
+        if (!$absolute) {
             $parts[] = '..';
         }
         // Absolute: `..` at the root is dropped — it can never pop past

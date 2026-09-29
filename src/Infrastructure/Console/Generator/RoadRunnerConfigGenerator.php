@@ -121,27 +121,22 @@ final readonly class RoadRunnerConfigGenerator implements GeneratorInterface
 
     /**
      * First validation error of the resolved CLI/env knobs, or null when
-     * every knob is usable. Order matches the historical error precedence.
+     * every knob is usable. The match arms keep the historical error
+     * precedence (first match wins, top to bottom).
      */
     private function validationError(string $address, int $workers, int $maxJobs, int $memory): ?string
     {
-        if (
-            preg_match(self::ADDRESS_PATTERN, $address) !== 1
-            && preg_match(self::ADDRESS_PATTERN_V6, $address) !== 1
-        ) {
-            return "Invalid --address '{$address}'. Expected host:port (e.g. 0.0.0.0:8080).";
-        }
-        if ($workers < 1 || $workers > 1024) {
-            return "Invalid --workers '{$workers}'. Expected an integer between 1 and 1024.";
-        }
-        if ($maxJobs < 0) {
-            return "Invalid --max-jobs '{$maxJobs}'. Expected >= 0 (0 = unlimited).";
-        }
-        if ($memory < 0) {
-            return "Invalid --memory '{$memory}'. Expected >= 0 MB (0 = disabled).";
-        }
+        $addressInvalid = preg_match(self::ADDRESS_PATTERN, $address) !== 1
+            && preg_match(self::ADDRESS_PATTERN_V6, $address) !== 1;
+        $workersInvalid = $workers < 1 || $workers > 1024;
 
-        return null;
+        return match (true) {
+            $addressInvalid => "Invalid --address '{$address}'. Expected host:port (e.g. 0.0.0.0:8080).",
+            $workersInvalid => "Invalid --workers '{$workers}'. Expected an integer between 1 and 1024.",
+            $maxJobs < 0 => "Invalid --max-jobs '{$maxJobs}'. Expected >= 0 (0 = unlimited).",
+            $memory < 0 => "Invalid --memory '{$memory}'. Expected >= 0 MB (0 = disabled).",
+            default => null,
+        };
     }
 
     /** Non-empty string value of an environment knob, or null. */

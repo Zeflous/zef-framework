@@ -117,11 +117,12 @@ final class RadixTreeNavigator
         if (count($remaining) < $labelCount) {
             return ['mid', $child, $remaining, self::segmentsMatch($remaining, $label, count($remaining))];
         }
-        if (!self::segmentsMatch($remaining, $label, $labelCount)) {
-            return ['miss', $node, $remaining, false];
+        if (self::segmentsMatch($remaining, $label, $labelCount)) {
+            return ['descend', $child, array_slice($remaining, $labelCount), true];
         }
 
-        return ['descend', $child, array_slice($remaining, $labelCount), true];
+        // Full-length label mismatch: the shared miss shape (no edge taken).
+        return ['miss', $node, $remaining, false];
     }
 
     /**

@@ -67,22 +67,16 @@ final class YamlSpecificationSerializer
     private function emitEntry(int|string $key, mixed $item, int $depth): array
     {
         $keyLine = $this->emitKey($key) . ':';
-        if (!is_array($item)) {
-            return [$keyLine . ' ' . $this->emitScalar($item)];
-        }
-        if ($item === []) {
-            return [$keyLine . ' []'];
-        }
-        if (array_is_list($item)) {
-            return [$keyLine, ...$this->emitListItems($item, $depth)];
-        }
 
-        $lines = [$keyLine];
-        foreach ($this->emitArray($item, $depth + 1) as $child) {
-            $lines[] = '  ' . $child;
-        }
-
-        return $lines;
+        return match (true) {
+            !is_array($item) => [$keyLine . ' ' . $this->emitScalar($item)],
+            $item === [] => [$keyLine . ' []'],
+            array_is_list($item) => [$keyLine, ...$this->emitListItems($item, $depth)],
+            default => [$keyLine, ...array_map(
+                static fn (string $child): string => '  ' . $child,
+                $this->emitArray($item, $depth + 1),
+            )],
+        };
     }
 
     /**

@@ -72,7 +72,10 @@ final readonly class ClassSchemaBuilder
                 if (is_int($constant->value)) {
                     $isIntBacked = true;
                 }
-            } elseif ($constant instanceof \UnitEnum) {
+
+                continue;
+            }
+            if ($constant instanceof \UnitEnum) {
                 $values[] = $constant->name;
             }
             // Pure constants never appear here for real enums; kept as a

@@ -83,9 +83,10 @@ final readonly class AsyncRuleEngine implements AsyncRuleEngineInterface
         }
 
         if (!\Fiber::getCurrent() instanceof \Fiber) {
+            $detail = 'driven by its FiberScheduler; use AsyncRuleEngine::run() for a blocking top-level evaluation.';
+
             throw new \LogicException(
-                'AsyncRuleEngine::evaluate() must be called from inside a coroutine driven by '
-                . 'its FiberScheduler; use AsyncRuleEngine::run() for a blocking top-level evaluation.',
+                "AsyncRuleEngine::evaluate() must be called from inside a coroutine {$detail}",
             );
         }
 

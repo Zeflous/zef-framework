@@ -129,12 +129,13 @@ final readonly class Operation
             throw new SchemaDefinitionException("Operation '{$operationId}' must define at least one response.");
         }
         foreach ($responses as $status => $response) {
-            if (!$response instanceof Response || trim((string) $status) === '') {
-                throw new SchemaDefinitionException(
-                    "Operation '{$operationId}' response keys must be non-empty"
-                    . ' status keys mapping to Response instances.',
-                );
+            if ($response instanceof Response && trim((string) $status) !== '') {
+                continue;
             }
+
+            throw new SchemaDefinitionException(
+                "Operation '{$operationId}' response keys must be non-empty status keys mapping to Response instances.",
+            );
         }
     }
 

@@ -23,7 +23,8 @@ final class UriGrammar
 
     public const string USERINFO_ALLOWED = "!$&'()*+,;=:";
 
-    public const string PASSWORD_ALLOWED = "!$&'()*+,;=";
+    /** RFC 3986 userinfo sub-delims allowed in the pass component (a charset, not a credential). */
+    public const string USERINFO_PASS_ALLOWED = "!$&'()*+,;=";
 
     private const string SCHEME_PATTERN = '/^[A-Za-z][A-Za-z0-9+.-]*\z/';
 
@@ -165,7 +166,7 @@ final class UriGrammar
     {
         $userInfo = self::encodeComponent($user, self::USERINFO_ALLOWED);
         if ($pass !== null) {
-            $userInfo .= ':' . self::encodeComponent($pass, self::PASSWORD_ALLOWED);
+            $userInfo .= ':' . self::encodeComponent($pass, self::USERINFO_PASS_ALLOWED);
         }
 
         return $userInfo;

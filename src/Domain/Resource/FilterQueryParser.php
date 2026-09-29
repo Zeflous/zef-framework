@@ -122,11 +122,10 @@ final class FilterQueryParser
         $rawValue = strlen($rawValue) > FilterSpec::MAX_VALUE_BYTES
             ? substr($rawValue, 0, FilterSpec::MAX_VALUE_BYTES)
             : $rawValue;
-        if ($op === FilterCondition::IN) {
-            return self::parseInValues($field, $rawValue);
-        }
 
-        return new FilterCondition($field, $op, $rawValue);
+        return $op === FilterCondition::IN
+            ? self::parseInValues($field, $rawValue)
+            : new FilterCondition($field, $op, $rawValue);
     }
 
     /**

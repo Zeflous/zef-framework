@@ -229,15 +229,6 @@ final class OpenApiSpecValidator
     }
 
     /**
-     * @param array<mixed, mixed> $operation
-     * @param list<string> $errors
-     */
-    private function validateOperationSecurity(string $where, array $operation, array &$errors): void
-    {
-        OpenApiSecurityValidator::validateOperationSecurity($where, $operation, $errors);
-    }
-
-    /**
      * @param array<mixed, mixed> $components
      * @param list<string> $errors
      */

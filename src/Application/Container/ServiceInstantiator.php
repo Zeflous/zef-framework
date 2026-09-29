@@ -182,8 +182,13 @@ final readonly class ServiceInstantiator
     ): void {
         if ($definition->lifetime === ServiceLifetime::SINGLETON && $definition->shared) {
             $this->registry->setInstance($canonical, $instance);
-        } elseif ($definition->lifetime === ServiceLifetime::REQUEST && $scope instanceof RequestScope) {
+
+            return;
+        }
+        if ($definition->lifetime === ServiceLifetime::REQUEST && $scope instanceof RequestScope) {
             $this->scopes->set($scope, $canonical, $instance);
+
+            return;
         }
         // Transient (or request-scoped with no active scope): never cached.
     }

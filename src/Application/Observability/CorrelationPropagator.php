@@ -65,17 +65,15 @@ final class CorrelationPropagator
      */
     private static function normalizedTraceParent(?string $traceParent, ?string $traceState): ?string
     {
-        if ($traceParent === null || strlen($traceParent) > CorrelationContext::MAX_TRACEPARENT_BYTES) {
-            return null;
-        }
-        if ($traceState !== null && strlen($traceState) > CorrelationContext::MAX_TRACESTATE_BYTES) {
+        if ($traceParent === null) {
             return null;
         }
         $value = trim($traceParent);
-        if (strlen($value) !== CorrelationContext::MAX_TRACEPARENT_BYTES) {
-            return null;
-        }
+        $traceParentRejected = strlen($traceParent) > CorrelationContext::MAX_TRACEPARENT_BYTES
+            || strlen($value) !== CorrelationContext::MAX_TRACEPARENT_BYTES;
+        $traceStateRejected = $traceState !== null
+            && strlen($traceState) > CorrelationContext::MAX_TRACESTATE_BYTES;
 
-        return $value;
+        return $traceParentRejected || $traceStateRejected ? null : $value;
     }
 }

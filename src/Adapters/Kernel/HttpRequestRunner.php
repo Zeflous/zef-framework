@@ -125,11 +125,9 @@ final readonly class HttpRequestRunner
             );
             $this->recordLifecycle($telemetry, 'request.completed', $traceId);
 
-            if ($telemetry->isEnabled()) {
-                $response = $this->withTraceparent($response, $span->getContext()->traceParent());
-            }
-
-            return $response;
+            return $telemetry->isEnabled()
+                ? $this->withTraceparent($response, $span->getContext()->traceParent())
+                : $response;
         } catch (\Throwable $e) {
             $span->setStatus('ERROR', $e::class);
             $span->addEvent('exception', [

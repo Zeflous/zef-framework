@@ -67,7 +67,10 @@ final class TelemetrySanitizer
         // first: raw bytes would make the preg_* call fail and skip redaction.
         $value = self::ensureUtf8($value);
         $value = self::redactSensitivePairs($value);
-        $value = preg_replace('/\bBearer\s+[a-z0-9._~+\/-]+=*/i', 'Bearer [REDACTED]', $value) ?? $value;
+        // The pattern is Unicode-aware ('u' flag over UTF-8-scrubbed input,
+        // mirroring redactSensitivePairs); the token charset stays the RFC
+        // 6750 b64token ASCII grammar BY DESIGN (hex/base64 credentials).
+        $value = preg_replace('/\bBearer\s+[a-z0-9._~+\/-]+=*/iu', 'Bearer [REDACTED]', $value) ?? $value;
 
         return self::string($value, $limit);
     }

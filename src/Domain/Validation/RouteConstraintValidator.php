@@ -42,10 +42,9 @@ final class RouteConstraintValidator
             );
         }
         if (preg_match('/\((?:\?:|\?>|\?<[^>]+>)?[^)]*[+*][^)]*\)[+*](?:[?+])?/', $regex) === 1) {
-            throw new InvalidConfigurationException(
-                "Invalid route constraint regex '{$name}': nested quantified groups are not permitted "
-                . 'by the ReDoS safety policy.',
-            );
+            $reason = 'nested quantified groups are not permitted by the ReDoS safety policy.';
+
+            throw new InvalidConfigurationException("Invalid route constraint regex '{$name}': {$reason}");
         }
         set_error_handler(
             static function (int $severity, string $message, string $file, int $line): bool {
