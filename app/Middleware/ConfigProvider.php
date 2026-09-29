@@ -68,7 +68,9 @@ final class ConfigProvider implements ConfigProviderInterface
                     'deps' => [],
                 ],
                 'middleware.security.runtime' => [
-                    'factory' => static fn (ContainerInterface $c): SecurityRuntimeMiddleware => self::buildSecurityRuntime($c),
+                    'factory' => static fn (
+                        ContainerInterface $c,
+                    ): SecurityRuntimeMiddleware => self::buildSecurityRuntime($c),
                     'deps' => [LoggerInterface::class],
                 ],
             ],
@@ -161,6 +163,16 @@ final class ConfigProvider implements ConfigProviderInterface
      */
     private static function connectRedis(): \Redis
     {
+        $dsn = self::parseRedisDsn();
+        $redis = self::openRedisConnection($dsn);
+        self::authenticateAndSelectDatabase($redis, $dsn);
+
+        return $redis;
+    }
+
+    /** @return array{host: string, port: int, password: ?string, username: ?string, database: ?string} */
+    private static function parseRedisDsn(): array
+    {
         if (!class_exists(\Redis::class)) {
             throw new InvalidConfigurationException('The phpredis extension is not installed.');
         }
@@ -172,19 +184,40 @@ final class ConfigProvider implements ConfigProviderInterface
         if ($parts === false || !isset($parts['host']) || $parts['host'] === '') {
             throw new InvalidConfigurationException('Invalid ZEF_REDIS_URL DSN.');
         }
+        $port = $parts['port'] ?? 6379;
+
+        return [
+            'host' => $parts['host'],
+            'port' => is_int($port) ? $port : 6379,
+            'password' => isset($parts['pass']) && is_string($parts['pass']) ? $parts['pass'] : null,
+            'username' => isset($parts['user']) && is_string($parts['user']) ? $parts['user'] : null,
+            'database' => isset($parts['path']) && is_string($parts['path']) ? trim($parts['path'], '/') : null,
+        ];
+    }
+
+    /** @param array{host: string, port: int, password: ?string, username: ?string, database: ?string} $dsn */
+    private static function openRedisConnection(array $dsn): \Redis
+    {
         $redis = new \Redis();
         $timeout = (float) (Env::int('ZEF_REDIS_TIMEOUT_MS', 2000, 100, 10000) / 1000);
-        if (!$redis->pconnect((string) $parts['host'], (int) ($parts['port'] ?? 6379), $timeout)) {
+        if (!$redis->pconnect($dsn['host'], $dsn['port'], $timeout)) {
             throw new InvalidConfigurationException('Unable to connect to Redis.');
         }
-        $password = $parts['pass'] ?? null;
+
+        return $redis;
+    }
+
+    /** @param array{host: string, port: int, password: ?string, username: ?string, database: ?string} $dsn */
+    private static function authenticateAndSelectDatabase(\Redis $redis, array $dsn): void
+    {
+        $password = $dsn['password'];
         if ($password !== null) {
-            $username = $parts['user'] ?? null;
+            $username = $dsn['username'];
             if (!$redis->auth($username !== null && $username !== '' ? [$username, $password] : $password)) {
                 throw new InvalidConfigurationException('Redis authentication failed.');
             }
         }
-        $db = isset($parts['path']) ? trim((string) $parts['path'], '/') : '';
+        $db = $dsn['database'] ?? '';
         if ($db !== '') {
             // "redis://h/abc" previously (int)-cast to 0 and SILENTLY selected db 0 —
             // a wrong-database isolation bug.
@@ -200,8 +233,6 @@ final class ConfigProvider implements ConfigProviderInterface
                 throw new InvalidConfigurationException('Redis SELECT failed.');
             }
         }
-
-        return $redis;
     }
 
     private static function buildCors(): CorsMiddleware

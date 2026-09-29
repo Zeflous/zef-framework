@@ -61,8 +61,11 @@ final class GlobalErrorHandler implements MiddlewareInterface
         );
     }
 
-    private function unhandledErrorResponse(\Throwable $e, ServerRequestInterface $request, string $correlationId): ResponseInterface
-    {
+    private function unhandledErrorResponse(
+        \Throwable $e,
+        ServerRequestInterface $request,
+        string $correlationId,
+    ): ResponseInterface {
         try {
             $this->logger->error('Unhandled application exception', [
                 'exception' => $e,

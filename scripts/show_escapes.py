@@ -76,11 +76,18 @@ def main() -> int:
         return 2
     log, substr, maxn = parsed
     text = open(log, encoding="utf-8", errors="replace").read()
-    m = re.search(r"^Escaped mutants:\s*=+\s*(.*?)(?=(?:^\w[\w ]* mutants?:)|\Z)", text, flags=re.M | re.S)
+    m = re.search(r"^Escaped mutants:\s*=+\s*(.*)", text, flags=re.M | re.S)
     if not m:
         print("(tidak ada escape)", file=sys.stderr)
         return 0
-    entries = re.split(r"\n(?=\d+\) )", m.group(1))
+    # The block runs to the end of the log; the next section header ("Killed
+    # mutants:" etc.) ends the escaped block. Cut it here instead of encoding
+    # the boundary as a lookahead in the regex above.
+    block = m.group(1)
+    boundary = re.search(r"^\w[\w ]* mutants?:", block, flags=re.M)
+    if boundary is not None:
+        block = block[: boundary.start()]
+    entries = re.split(r"\n(?=\d+\) )", block)
     n = 0
     for e in entries:
         hm = re.match(r"\d+\) (.+?):(\d+)\s+\[M\] (\S+)", e)

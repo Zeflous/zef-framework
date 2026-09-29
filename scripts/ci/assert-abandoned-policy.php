@@ -106,7 +106,7 @@ if (!is_file($allowlistPath)) {
     $fail("abandoned allowlist not found at {$allowlistPath} — the policy file is required");
 }
 
-$allowlistRaw = @file_get_contents($allowlistPath);
+$allowlistRaw = file_get_contents($allowlistPath);
 if ($allowlistRaw === false) {
     $fail("abandoned allowlist not readable at {$allowlistPath}");
 }
@@ -135,25 +135,44 @@ $active = 0;
  * direct-dependency check would report every legitimate entry as stale.
  * composer.lock lists the resolved set, which is what actually ships.
  */
-$lockPath = $root . '/composer.lock';
-$installed = [];
-if (is_file($lockPath)) {
-    $lockRaw = @file_get_contents($lockPath);
-    if ($lockRaw !== false) {
-        try {
-            $lock = json_decode($lockRaw, true, 512, JSON_THROW_ON_ERROR);
-            foreach (['packages', 'packages-dev'] as $section) {
-                foreach (($lock[$section] ?? []) as $package) {
-                    if (isset($package['name']) && is_string($package['name'])) {
-                        $installed[strtolower($package['name'])] = true;
-                    }
-                }
+/**
+ * Lowercased package names present in composer.lock (packages + packages-dev).
+ * A missing lock or an unreadable file yields an empty set; a malformed lock
+ * fails the audit through $fail. Extracted so the top-level nesting stays flat.
+ *
+ * @param callable(string): never $fail
+ * @return array<string, true>
+ */
+function installedPackagesFromLock(string $lockPath, callable $fail): array
+{
+    $installed = [];
+    if (!is_file($lockPath)) {
+        return $installed;
+    }
+    $lockRaw = file_get_contents($lockPath);
+    if ($lockRaw === false) {
+        return $installed;
+    }
+    try {
+        $lock = json_decode($lockRaw, true, 512, JSON_THROW_ON_ERROR);
+    } catch (\JsonException $e) {
+        $fail('composer.lock is not valid JSON: ' . $e->getMessage());
+
+        return $installed;
+    }
+    foreach (['packages', 'packages-dev'] as $section) {
+        foreach (($lock[$section] ?? []) as $package) {
+            if (isset($package['name']) && is_string($package['name'])) {
+                $installed[strtolower($package['name'])] = true;
             }
-        } catch (\JsonException $e) {
-            $fail('composer.lock is not valid JSON: ' . $e->getMessage());
         }
     }
+
+    return $installed;
 }
+
+$lockPath = $root . '/composer.lock';
+$installed = installedPackagesFromLock($lockPath, $fail);
 
 foreach ($allowed as $index => $entry) {
     if (!is_array($entry) || !isset($entry['name']) || !is_string($entry['name'])) {
@@ -202,8 +221,7 @@ if ($stale !== []) {
 }
 
 fwrite(STDOUT, sprintf(
-    "Audit OK: abandoned-policy=%s, %d package(s) checked, 0 unacknowledged watchlist hits, "
-    . "%d active allowlist entr(ies), 0 expired.\n",
+    "Audit OK: abandoned-policy=%s, %d package(s) checked, 0 unacknowledged watchlist hits, %d active allowlist entr(ies), 0 expired.\n",
     $policy,
     count($required),
     $active,

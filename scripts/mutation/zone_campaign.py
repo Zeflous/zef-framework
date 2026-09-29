@@ -62,12 +62,12 @@ def load_results() -> dict:
 
 
 def save_results(data: dict) -> None:
-    # S2083 containment: RESULTS is a repo-relative constant, but resolve it
-    # and assert it stays inside the checkout so the write target can never
-    # escape the repository even if this file is relocated or symlinked.
-    repo = REPO.resolve()
-    target = RESULTS.resolve()
-    if repo != target and repo not in target.parents:
+    # S2083 (SonarCloud): RESULTS is a repo-relative module constant, but the
+    # scanner's taint engine cannot prove that, so assert containment with
+    # the commonpath form Sonar recognises as sanitisation before writing.
+    repo = str(REPO.resolve())
+    target = str(RESULTS.resolve())
+    if os.path.commonpath([repo, target]) != repo:
         raise RuntimeError("zone-campaign results path escapes the repository")
     RESULTS.parent.mkdir(parents=True, exist_ok=True)
     tmp = RESULTS.with_suffix(".tmp")

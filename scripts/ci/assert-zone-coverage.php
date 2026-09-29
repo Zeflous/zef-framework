@@ -240,10 +240,9 @@ if ($belowTarget !== []) {
 if ($regressions !== []) {
     fwrite(
         STDERR,
-        "ZONE-COVERAGE FAIL: mutation score regressed below the frozen baseline for "
-        . count($regressions) . " zone(s):\n  - " . implode("\n  - ", $regressions) . "\n"
-        . "Either restore the score, or raise the baseline in docs/mutation/baseline.tsv "
-        . "deliberately (a visible, reviewable edit).\n",
+        "ZONE-COVERAGE FAIL: mutation score regressed below the frozen baseline for " . count($regressions) . " zone(s):\n  - "
+        . implode("\n  - ", $regressions)
+        . "\nEither restore the score, or raise the baseline in docs/mutation/baseline.tsv deliberately (a visible, reviewable edit).\n",
     );
     exit(1);
 }
