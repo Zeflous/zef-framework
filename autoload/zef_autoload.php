@@ -254,6 +254,10 @@ if (!function_exists('zef_framework_autoload')) {
                 "Zef\\Framework\\Exception\\ServiceCircularDependencyException" => __DIR__ . '/../src/Domain/Exception/ServiceCircularDependencyException.php',
                 "Zef\\Framework\\Exception\\ServiceNotFoundException" => __DIR__ . '/../src/Domain/Exception/ServiceNotFoundException.php',
                 "Zef\\Framework\\Exception\\ServiceResolutionException" => __DIR__ . '/../src/Domain/Exception/ServiceResolutionException.php',
+                "Zef\\Framework\\Exception\\StreamNotWritableException"
+                    => __DIR__ . '/../src/Domain/Exception/StreamNotWritableException.php',
+                "Zef\\Framework\\Exception\\UploadedFileException"
+                    => __DIR__ . '/../src/Domain/Exception/UploadedFileException.php',
                 "Zef\\Framework\\Foundation\\Env" => __DIR__ . '/../src/Domain/Foundation/Env.php',
                 "Zef\\Framework\\Foundation\\EnvInterface" => __DIR__ . '/../src/Domain/Foundation/EnvInterface.php',
                 "Zef\\Framework\\Foundation\\ZefVersion" => __DIR__ . '/../src/Domain/Foundation/ZefVersion.php',
@@ -305,6 +309,8 @@ if (!function_exists('zef_framework_autoload')) {
                 "Zef\\Framework\\Message\\JsonMessageSerializer" => __DIR__ . '/../src/Application/Message/JsonMessageSerializer.php',
                 "Zef\\Framework\\Message\\MessageBusInterface" => __DIR__ . '/../src/Domain/Message/MessageBusInterface.php',
                 "Zef\\Framework\\Message\\MessageContext" => __DIR__ . '/../src/Domain/Message/MessageContext.php',
+                "Zef\\Framework\\Message\\MessageDispatchException"
+                    => __DIR__ . '/../src/Domain/Message/MessageDispatchException.php',
                 "Zef\\Framework\\Message\\MessageEnvelope" => __DIR__ . '/../src/Domain/Message/MessageEnvelope.php',
                 "Zef\\Framework\\Message\\MessageHandlerInterface" => __DIR__ . '/../src/Domain/Message/MessageHandlerInterface.php',
                 "Zef\\Framework\\Message\\MessageMiddlewareInterface" => __DIR__ . '/../src/Domain/Message/MessageMiddlewareInterface.php',
@@ -344,6 +350,8 @@ if (!function_exists('zef_framework_autoload')) {
                 "Zef\\Framework\\Observability\\SpanInterface" => __DIR__ . '/../src/Domain/Observability/SpanInterface.php',
                 "Zef\\Framework\\Observability\\Telemetry" => __DIR__ . '/../src/Application/Observability/Telemetry.php',
                 "Zef\\Framework\\Observability\\TelemetryClock" => __DIR__ . '/../src/Application/Observability/TelemetryClock.php',
+                "Zef\\Framework\\Observability\\TelemetryFactory"
+                    => __DIR__ . '/../src/Application/Observability/TelemetryFactory.php',
                 "Zef\\Framework\\Observability\\TelemetryLogger" => __DIR__ . '/../src/Application/Observability/TelemetryLogger.php',
                 "Zef\\Framework\\Observability\\TelemetrySanitizer" => __DIR__ . '/../src/Application/Observability/TelemetrySanitizer.php',
                 "Zef\\Framework\\Observability\\TraceContextPropagator" => __DIR__ . '/../src/Application/Observability/TraceContextPropagator.php',
@@ -478,6 +486,8 @@ if (!function_exists('zef_framework_autoload')) {
                 "Zef\\Framework\\Security\\Distributed\\SecurityRequest" => __DIR__ . '/../src/Domain/Security/Distributed/SecurityRequest.php',
                 "Zef\\Framework\\Security\\Distributed\\SecurityVerdict" => __DIR__ . '/../src/Domain/Security/Distributed/SecurityVerdict.php',
                 "Zef\\Framework\\Security\\Distributed\\StaticCredentialProvider" => __DIR__ . '/../src/Application/Security/Distributed/StaticCredentialProvider.php',
+                "Zef\\Framework\\Security\\EncryptionException"
+                    => __DIR__ . '/../src/Domain/Security/EncryptionException.php',
                 "Zef\\Framework\\Security\\EncryptionInterface" => __DIR__ . '/../src/Domain/Security/EncryptionInterface.php',
                 "Zef\\Framework\\Security\\HrTimeClock" => __DIR__ . '/../src/Application/Security/HrTimeClock.php',
                 "Zef\\Framework\\Security\\InMemoryRateLimiter" => __DIR__ . '/../src/Application/Security/InMemoryRateLimiter.php',
