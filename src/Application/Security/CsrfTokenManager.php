@@ -67,45 +67,59 @@ final readonly class CsrfTokenManager
      */
     public function isValid(string $token): bool
     {
+        return $this->ttlSeconds > 0
+            ? $this->isValidWithinTtlWindow($token)
+            : $this->isValidLegacy($token);
+    }
+
+    private function isValidWithinTtlWindow(string $token): bool
+    {
         $parts = explode('.', $token);
-        if ($this->ttlSeconds > 0) {
-            if (count($parts) !== 3) {
-                return false;
-            }
-            [$issuedAtRaw, $value, $signature] = $parts;
-            if (
-                $value === ''
-                || $signature === ''
-                || preg_match('/^\d{1,12}$/', $issuedAtRaw) !== 1
-                || preg_match('/^[A-Za-z0-9_-]+$/', $value) !== 1
-                || preg_match('/^[a-f0-9]{64}$/', $signature) !== 1
-            ) {
-                return false;
-            }
-            $now = ($this->clock)();
-            $issuedAt = (int) $issuedAtRaw;
-            if ($issuedAt > $now || $now - $issuedAt > $this->ttlSeconds) {
-                return false; // future-dated stamp or expired token
-            }
-            $expected = hash_hmac('sha256', $issuedAtRaw . '|' . $value, $this->secret);
-
-            return hash_equals($expected, $signature);
+        if (count($parts) !== 3) {
+            return false;
         }
+        [$issuedAtRaw, $value, $signature] = $parts;
+        if (!$this->hasWellFormedBody($value, $signature)) {
+            return false;
+        }
+        if (preg_match('/^\d{1,12}$/', $issuedAtRaw) !== 1) {
+            return false;
+        }
+        $now = ($this->clock)();
+        $issuedAt = (int) $issuedAtRaw;
+        $inWindow = $issuedAt <= $now && $now - $issuedAt <= $this->ttlSeconds;
+        $expected = hash_hmac('sha256', $issuedAtRaw . '|' . $value, $this->secret);
 
+        return $inWindow && hash_equals($expected, $signature);
+    }
+
+    private function isValidLegacy(string $token): bool
+    {
+        $parts = explode('.', $token);
         if (count($parts) !== 2) {
             return false;
         }
         [$value, $signature] = $parts;
-        if (
-            $value === ''
-            || $signature === ''
-            || preg_match('/^[A-Za-z0-9_-]+$/', $value) !== 1
-            || preg_match('/^[a-f0-9]{64}$/', $signature) !== 1
-        ) {
+        if (!$this->hasWellFormedBody($value, $signature)) {
             return false;
         }
         $expected = hash_hmac('sha256', $value, $this->secret);
 
         return hash_equals($expected, $signature);
+    }
+
+    /**
+     * Shared shape check: non-empty base64url token body + 64-char lowercase
+     * hex MAC. Both are produced by ASCII-only encoders (base64_encode /
+     * hash_hmac), so the explicit ASCII classes are the contract.
+     */
+    private function hasWellFormedBody(string $value, string $signature): bool
+    {
+        if ($value === '' || $signature === '') {
+            return false;
+        }
+
+        return preg_match('/^[A-Za-z0-9_-]+$/', $value) === 1
+            && preg_match('/^[a-f0-9]{64}$/', $signature) === 1;
     }
 }

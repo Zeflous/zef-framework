@@ -42,9 +42,13 @@ final readonly class DeduplicatingMiddleware implements MessageMiddlewareInterfa
         $key = 'dedup-' . hash('sha256', $message->messageId, false);
 
         /** @var MessageResult $result */
-        $result = $this->idempotency->remember($key, static fn (): MessageResult => $next($message, $context), $this->ttlSeconds);
+        $result = $this->idempotency->remember(
+            $key,
+            static fn (): MessageResult => $next($message, $context),
+            $this->ttlSeconds,
+        );
         if (!$result instanceof MessageResult) {
-            throw new \RuntimeException('Dedup store returned a non-MessageResult entry.');
+            throw new DeduplicationException('Dedup store returned a non-MessageResult entry.');
         }
 
         return $result;

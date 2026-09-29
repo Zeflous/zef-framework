@@ -37,7 +37,15 @@ final readonly class Parameter
     }
 
     /**
-     * @return array{name: string, in: string, schema?: array<string, mixed>, description?: string, required?: true, deprecated?: true, example?: mixed}
+     * @return array{
+     *     name: string,
+     *     in: string,
+     *     schema?: array<string, mixed>,
+     *     description?: string,
+     *     required?: true,
+     *     deprecated?: true,
+     *     example?: mixed,
+     * }
      */
     public function toArray(): array
     {

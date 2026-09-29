@@ -105,7 +105,14 @@ final class GenerateSpecCommand
         if ($directory !== '' && !is_dir($directory)) {
             throw new SpecificationException("Output directory '{$directory}' does not exist.");
         }
-        if (@file_put_contents($path, $content) === false) {
+        // Guard the writable surface up front (php:S2002: no '@' suppression):
+        // the return-value check below stays as the race backstop (disk full,
+        // file removed between the guard and the write).
+        $writableTarget = is_file($path) ? $path : ($directory === '' ? '.' : $directory);
+        if (!is_writable($writableTarget)) {
+            throw new SpecificationException("Cannot write specification to '{$path}'.");
+        }
+        if (file_put_contents($path, $content) === false) {
             throw new SpecificationException("Cannot write specification to '{$path}'.");
         }
     }

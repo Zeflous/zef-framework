@@ -126,9 +126,9 @@ abstract class AggregateRoot
     protected function recordEvent(string $eventType, array $payload = [], array $metadata = []): void
     {
         // Validate first: a grammar failure must not advance the version.
-        $pending = new PendingEvent($eventType, $payload, $metadata);
+        $event = new PendingEvent($eventType, $payload, $metadata);
         ++$this->version;
-        $this->pending[] = $pending;
+        $this->pending[] = $event;
         $this->apply($eventType, $payload);
     }
 

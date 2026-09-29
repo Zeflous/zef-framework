@@ -81,12 +81,15 @@ final readonly class TransactionalCommandBus implements CommandBusInterface
             );
         }
 
-        return $this->transactions->withTransaction(function (ConnectionInterface $connection) use ($command, $context): mixed {
-            $result = $this->inner->dispatch($command, $context);
-            $this->flushWithRetry($connection);
+        return $this->transactions->withTransaction(
+            function (ConnectionInterface $connection) use ($command, $context): mixed {
+                $result = $this->inner->dispatch($command, $context);
+                $this->flushWithRetry($connection);
 
-            return $result;
-        }, $this->isolation);
+                return $result;
+            },
+            $this->isolation,
+        );
     }
 
     #[\Override]
