@@ -56,8 +56,14 @@ final readonly class PdoOutbox implements OutboxStoreInterface, OutboxClaimInter
         ?\Closure $clock = null,
     ) {
         $this->table = $table;
-        $this->quotedTable = new QueryBuilder()->quoteIdentifier($table, 'table');
+        $this->quotedTable = self::quoteTable($table);
         $this->clock = $clock ?? static fn (): int => (int) (microtime(true) * 1_000_000_000);
+    }
+
+    /** Quoting the table name once up front keeps every later query builder call short. */
+    private static function quoteTable(string $table): string
+    {
+        return (new QueryBuilder())->quoteIdentifier($table, 'table');
     }
 
     /**
