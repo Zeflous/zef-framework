@@ -8,6 +8,7 @@ use PHPUnit\Framework\TestCase;
 use Zef\Framework\Database\ConnectionConfig;
 use Zef\Framework\Database\ConnectionInterface;
 use Zef\Framework\Database\MigrationInterface;
+use Zef\Framework\Database\MigrationLock;
 use Zef\Framework\Database\Migrator;
 use Zef\Framework\Database\PdoConnection;
 use Zef\Framework\Database\QueryBuilder;
@@ -220,8 +221,8 @@ final class DatabaseMigratorTest extends TestCase
         ));
 
         $m = $this->migrator();
-        $r = new \ReflectionProperty(Migrator::class, 'lockDepth');
-        $r->setValue($m, 1);
+        $lock = (new \ReflectionProperty(Migrator::class, 'lock'))->getValue($m);
+        (new \ReflectionProperty(MigrationLock::class, 'depth'))->setValue($lock, 1);
 
         $this->expectException(TransactionException::class);
         $this->expectExceptionMessage('Migration lock is already held by this Migrator instance.');
