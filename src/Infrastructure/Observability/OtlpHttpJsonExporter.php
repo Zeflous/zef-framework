@@ -186,35 +186,43 @@ final class OtlpHttpJsonExporter implements SpanExporterInterface, MetricExporte
     /** @return array<string,mixed> */
     private function anyValue(mixed $value): array
     {
-        if (is_bool($value)) {
-            return ['boolValue' => $value];
-        }
-        if (is_int($value)) {
-            return ['intValue' => (string) $value];
-        }
-        if (is_float($value)) {
-            return ['doubleValue' => $value];
-        }
-        if (is_array($value)) {
-            return ['arrayValue' => ['values' => array_map($this->anyValue(...), array_values($value))]];
-        }
+        return match (true) {
+            is_bool($value) => ['boolValue' => $value],
+            is_int($value) => ['intValue' => (string) $value],
+            is_float($value) => ['doubleValue' => $value],
+            is_array($value) => $this->arrayValue($value),
+            default => $this->scalarValue($value),
+        };
+    }
 
+    /** @param array<mixed> $value @return array<string,mixed> */
+    private function arrayValue(array $value): array
+    {
+        return ['arrayValue' => ['values' => array_map($this->anyValue(...), array_values($value))]];
+    }
+
+    /** @return array<string,mixed> */
+    private function scalarValue(mixed $value): array
+    {
         return ['stringValue' => TelemetrySanitizer::string(is_string($value) ? $value : get_debug_type($value))];
     }
 
     /**
      * Bug fix #9: replaced @file_get_contents with scoped set_error_handler;
-     * transport error message included in RuntimeException.
+     * transport error message included in OtlpExporterException.
      *
      * @param array<string,mixed> $payload
      */
     private function postJson(string $url, array $payload): void
     {
         $json = json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+        $headers = "Content-Type: application/json\r\n"
+            . "Accept: application/json\r\n"
+            . 'Content-Length: ' . strlen($json) . "\r\n";
         $context = stream_context_create([
             'http' => [
                 'method' => 'POST',
-                'header' => "Content-Type: application/json\r\nAccept: application/json\r\nContent-Length: " . strlen($json) . "\r\n",
+                'header' => $headers,
                 'content' => $json,
                 'timeout' => max(.01, $this->timeoutMs / 1000),
                 'ignore_errors' => true,
@@ -241,13 +249,14 @@ final class OtlpHttpJsonExporter implements SpanExporterInterface, MetricExporte
             }
         }
         if ($result === false) {
-            throw new \RuntimeException('OTLP exporter transport failure' . ($transportError !== null ? ': ' . TelemetrySanitizer::redact($transportError) : '.'));
+            $reason = $transportError !== null ? ': ' . TelemetrySanitizer::redact($transportError) : '.';
+            throw new OtlpExporterException('OTLP exporter transport failure' . $reason);
         }
         if ($status >= 400 && $status < 500) {
             throw new \InvalidArgumentException('OTLP exporter permanent rejection.');
         }
         if ($status >= 500) {
-            throw new \RuntimeException('OTLP exporter transient rejection.');
+            throw new OtlpExporterException('OTLP exporter transient rejection.');
         }
     }
 }
