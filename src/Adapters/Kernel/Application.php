@@ -33,6 +33,7 @@ use Zef\Framework\Http\Response;
 use Zef\Framework\Http\Stream;
 use Zef\Framework\Kernel\ApplicationConfigState;
 use Zef\Framework\Kernel\FrameworkServiceRegistrar;
+use Zef\Framework\Kernel\KernelGraphFactory;
 use Zef\Framework\Observability\Telemetry;
 use Zef\Framework\Router\Router;
 
@@ -70,18 +71,17 @@ final class Application
         ?Policy\ArchitecturePolicy $architecturePolicy = null,
         ?InitializationGuard $initializationGuard = null,
     ) {
-        $this->config = new ConfigAggregator();
-        $this->architecturePolicy = $architecturePolicy ?? new Policy\ArchitecturePolicy();
-        $this->container = new Container($debug, $this->architecturePolicy, $initializationGuard);
-        $this->router = new Router(
-            new Validation\RouteConstraintValidator(),
-            $this->architecturePolicy,
-        );
-        $this->bootstrapper = new ModuleBootstrapper($this->container, $this->router);
-        $this->modules = new ModuleRegistry();
-        $this->dispatcher = new Dispatcher($this->router, $this->container);
-        $this->emitter = new ResponseEmitter();
-        $this->bodyPolicy = $bodyPolicy ?? new Http\RequestBodyPolicy();
+        // php:S2830: the graph is assembled through named factories
+        // (KernelGraphFactory) in the historical construction order.
+        $this->config = KernelGraphFactory::configAggregator();
+        $this->architecturePolicy = KernelGraphFactory::architecturePolicy($architecturePolicy);
+        $this->container = KernelGraphFactory::container($debug, $this->architecturePolicy, $initializationGuard);
+        $this->router = KernelGraphFactory::router($this->architecturePolicy);
+        $this->bootstrapper = KernelGraphFactory::moduleBootstrapper($this->container, $this->router);
+        $this->modules = KernelGraphFactory::moduleRegistry();
+        $this->dispatcher = KernelGraphFactory::dispatcher($this->router, $this->container);
+        $this->emitter = KernelGraphFactory::responseEmitter();
+        $this->bodyPolicy = KernelGraphFactory::bodyPolicy($bodyPolicy);
         FrameworkServiceRegistrar::registerDefaults($this->container, $logger);
     }
 

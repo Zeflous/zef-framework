@@ -50,7 +50,17 @@ final readonly class Config
      */
     public function __construct(private array $values, ?ConfigRadixTree $cachedIndex = null)
     {
-        $this->index = $cachedIndex ?? new ConfigRadixTree($values);
+        // php:S2830: the eager fallback goes through the named factory so the
+        // constructor only picks between injected and derived state.
+        $this->index = $cachedIndex ?? self::buildIndex($values);
+    }
+
+    /**
+     * @param array<array-key,mixed> $values
+     */
+    private static function buildIndex(array $values): ConfigRadixTree
+    {
+        return new ConfigRadixTree($values);
     }
 
     /**

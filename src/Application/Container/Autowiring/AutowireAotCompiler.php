@@ -138,11 +138,11 @@ final class AutowireAotCompiler
             if (!is_string($id) || !is_array($entry)) {
                 throw self::malformedEntry($path, $id);
             }
-            $shapeComplete = isset($entry['factory'], $entry['dependencies'], $entry['lifetime']);
+            $shapeComplete = isset($entry['factory'], $entry['dependencies'], $entry['lifetime'])
+                && is_callable($entry['factory'])
+                && is_array($entry['dependencies'])
+                && is_string($entry['lifetime']);
             if (!$shapeComplete) {
-                throw self::malformedEntry($path, $id);
-            }
-            if (!is_callable($entry['factory']) || !is_array($entry['dependencies']) || !is_string($entry['lifetime'])) {
                 throw self::malformedEntry($path, $id);
             }
             $definitions[$id] = new ServiceDefinition(
