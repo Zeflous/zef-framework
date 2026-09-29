@@ -195,7 +195,11 @@ final class OtlpHttpJsonExporter implements SpanExporterInterface, MetricExporte
         };
     }
 
-    /** @param array<mixed> $value @return array<string,mixed> */
+    /**
+     * @param array<mixed> $value
+     *
+     * @return array<string,mixed>
+     */
     private function arrayValue(array $value): array
     {
         return ['arrayValue' => ['values' => array_map($this->anyValue(...), array_values($value))]];
