@@ -10,18 +10,7 @@ declare(strict_types=1);
 
 namespace Zef\Middleware;
 
-use Zef\Framework\Config\ConfigProviderInterface;
-use Zef\Framework\Foundation\Env;
-use Zef\Framework\Http\JsonResponse;
 use Zef\Framework\Http\Response;
-use Zef\Framework\Security\InMemoryRateLimiter;
-use Zef\Framework\Security\OriginPolicy;
-use Zef\Framework\Security\SecurityPolicy;
-use Zef\Framework\Security\SecurityRuntimeMiddleware;
-use Psr\Http\Message\ResponseInterface;
-use Psr\Http\Message\ServerRequestInterface;
-use Psr\Http\Server\MiddlewareInterface;
-use Psr\Http\Server\RequestHandlerInterface;
 
 final class ErrorResponseFactory
 {
@@ -39,13 +28,13 @@ final class ErrorResponseFactory
             ['Content-Type' => 'application/json'],
             json_encode(
                 [
-                    'error'          => true,
-                    'status'         => $status,
+                    'error' => true,
+                    'status' => $status,
                     // Dev-mode diagnostics intentionally expose the
                     // exception message — but never credential material
                     // that a handler happened to embed in it (v2.7.0:
                     // raw messages leaked "password=..." to clients).
-                    'message'        => $this->devMode ? $this->redactSecrets($message) : 'An error occurred',
+                    'message' => $this->devMode ? $this->redactSecrets($message) : 'An error occurred',
                     'correlation_id' => $correlationId,
                 ],
                 JSON_THROW_ON_ERROR,
@@ -66,6 +55,7 @@ final class ErrorResponseFactory
             '$1$2$3[REDACTED]$3',
             $message,
         );
+
         return $redacted ?? $message;
     }
 }

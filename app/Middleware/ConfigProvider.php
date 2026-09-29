@@ -10,18 +10,17 @@ declare(strict_types=1);
 
 namespace Zef\Middleware;
 
+use Psr\Container\ContainerInterface;
+use Psr\Log\LoggerInterface;
 use Zef\Framework\Config\ConfigProviderInterface;
 use Zef\Framework\Foundation\Env;
-use Zef\Framework\Http\JsonResponse;
-use Zef\Framework\Http\Response;
+use Zef\Framework\Security\ApcuRateLimiter;
 use Zef\Framework\Security\InMemoryRateLimiter;
-use Zef\Framework\Security\OriginPolicy;
+use Zef\Framework\Security\RateLimiterInterface;
+use Zef\Framework\Security\RedisRateLimiter;
+use Zef\Framework\Security\RedisSharedRateLimitStore;
 use Zef\Framework\Security\SecurityPolicy;
 use Zef\Framework\Security\SecurityRuntimeMiddleware;
-use Psr\Http\Message\ResponseInterface;
-use Psr\Http\Message\ServerRequestInterface;
-use Psr\Http\Server\MiddlewareInterface;
-use Psr\Http\Server\RequestHandlerInterface;
 
 final class ConfigProvider implements ConfigProviderInterface
 {
@@ -33,48 +32,55 @@ final class ConfigProvider implements ConfigProviderInterface
         return 'middleware';
     }
 
+    /**
+     * @return array<string, mixed>
+     */
     #[\Override]
     public function getConfig(): array
     {
         $devMode = $this->devMode;
+
         return [
             'services' => [
                 'middleware.error' => [
-                    'factory' => static fn(\Psr\Container\ContainerInterface $c): GlobalErrorHandler =>
-                        new GlobalErrorHandler(
-                            $c->get(\Psr\Log\LoggerInterface::class),
-                            new ErrorResponseFactory($devMode),
-                        ),
-                    'deps' => [\Psr\Log\LoggerInterface::class],
+                    'factory' => static fn (ContainerInterface $c): GlobalErrorHandler => new GlobalErrorHandler(
+                        self::loggerFrom($c),
+                        new ErrorResponseFactory($devMode),
+                    ),
+                    'deps' => [LoggerInterface::class],
                 ],
                 'middleware.timing' => [
-                    'factory' => static fn(): TimingMiddleware => new TimingMiddleware(),
-                    'deps'    => [],
+                    'factory' => static fn (): TimingMiddleware => new TimingMiddleware(),
+                    'deps' => [],
                 ],
                 'middleware.cors' => [
-                    'factory' => static fn(): CorsMiddleware => self::buildCors(),
-                    'deps'    => [],
+                    'factory' => static fn (): CorsMiddleware => self::buildCors(),
+                    'deps' => [],
                 ],
                 'middleware.security' => [
                     'factory' => static function (): SecurityHeadersMiddleware {
                         return new SecurityHeadersMiddleware([
                             'hsts' => Env::bool('ZEF_SECURITY_HSTS'),
-                            'csp'  => Env::bool('ZEF_SECURITY_CSP'),
+                            'csp' => Env::bool('ZEF_SECURITY_CSP'),
                         ]);
                     },
                     'deps' => [],
                 ],
                 'middleware.security.runtime' => [
-                    'factory' => static function (\Psr\Container\ContainerInterface $c): SecurityRuntimeMiddleware {
+                    'factory' => static function (ContainerInterface $c): SecurityRuntimeMiddleware {
                         $logger = null;
+
                         try {
-                            $logger = $c->get(\Psr\Log\LoggerInterface::class);
-                        } catch (\Throwable) {}
+                            $resolved = $c->get(LoggerInterface::class);
+                            $logger = $resolved instanceof LoggerInterface ? $resolved : null;
+                        } catch (\Throwable) {
+                        }
                         $policy = SecurityPolicy::fromEnvironment($logger);
                         $rateLimiter = self::buildRateLimiter($policy, $logger);
+
                         return new SecurityRuntimeMiddleware($policy, $rateLimiter);
                     },
-                    'deps' => [\Psr\Log\LoggerInterface::class],
+                    'deps' => [LoggerInterface::class],
                 ],
             ],
             'stack' => [
@@ -88,6 +94,19 @@ final class ConfigProvider implements ConfigProviderInterface
     }
 
     /**
+     * Resolves the PSR-3 sink from the container and narrows it to the
+     * interface the consumers declare. `ContainerInterface::get()` is typed
+     * `mixed`, so the narrowing is what keeps the wiring type-safe.
+     */
+    private static function loggerFrom(ContainerInterface $c): LoggerInterface
+    {
+        $logger = $c->get(LoggerInterface::class);
+        \assert($logger instanceof LoggerInterface);
+
+        return $logger;
+    }
+
+    /**
      * Bug fix #17: logger passed to buildRateLimiter for fallback warning.
      *
      * v2.6.0: the 'redis' option now REQUIRES ZEF_REDIS_URL and actually
@@ -98,14 +117,15 @@ final class ConfigProvider implements ConfigProviderInterface
      */
     private static function buildRateLimiter(
         SecurityPolicy $policy,
-        ?\Psr\Log\LoggerInterface $logger = null,
-    ): \Zef\Framework\Security\RateLimiterInterface {
+        ?LoggerInterface $logger = null,
+    ): RateLimiterInterface {
         $store = strtolower(trim(Env::string('ZEF_RATE_LIMIT_STORE', 'memory')));
+
         try {
             return match ($store) {
-                'apcu'  => new \Zef\Framework\Security\ApcuRateLimiter($policy->rateLimitMaxKeys),
-                'redis' => new \Zef\Framework\Security\RedisRateLimiter(
-                    new \Zef\Framework\Security\RedisSharedRateLimitStore(self::connectRedis()),
+                'apcu' => new ApcuRateLimiter($policy->rateLimitMaxKeys),
+                'redis' => new RedisRateLimiter(
+                    new RedisSharedRateLimitStore(self::connectRedis()),
                     $policy->rateLimitMaxKeys,
                 ),
                 default => new InMemoryRateLimiter($policy->rateLimitMaxKeys),
@@ -117,6 +137,7 @@ final class ConfigProvider implements ConfigProviderInterface
             } else {
                 error_log($msg);
             }
+
             return new InMemoryRateLimiter($policy->rateLimitMaxKeys);
         }
     }
@@ -165,6 +186,7 @@ final class ConfigProvider implements ConfigProviderInterface
                 throw new \RuntimeException('Redis SELECT failed.');
             }
         }
+
         return $redis;
     }
 
@@ -174,6 +196,7 @@ final class ConfigProvider implements ConfigProviderInterface
             return new CorsMiddleware(['*']);
         }
         $origins = Env::csv('ZEF_CORS_ORIGIN');
+
         return new CorsMiddleware($origins);
     }
 }
