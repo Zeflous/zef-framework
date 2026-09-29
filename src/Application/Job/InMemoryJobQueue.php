@@ -32,9 +32,9 @@ final class InMemoryJobQueue implements JobQueueInterface
         if ($this->queue()->count() >= $this->maxSize) {
             throw new \OverflowException('Job queue capacity exceeded.');
         }
-        $sequence = $this->sequence;
+        $currentSequence = $this->sequence;
         ++$this->sequence;
-        $priority = [-$job->availableAtUnixNano, $job->priority, -$sequence];
+        $priority = [-$job->availableAtUnixNano, $job->priority, -$currentSequence];
         $this->queue()->insert($job, $priority);
     }
 

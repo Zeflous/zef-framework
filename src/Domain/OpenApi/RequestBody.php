@@ -27,8 +27,7 @@ final readonly class RequestBody
         foreach ($content as $mediaType => $schema) {
             if (!is_string($mediaType) || trim($mediaType) === '' || !$schema instanceof Schema) {
                 throw new SchemaDefinitionException(
-                    'RequestBody content keys must be non-empty media type strings'
-                    . ' mapping to Schema instances.',
+                    'RequestBody content keys must be non-empty media type strings mapping to Schema instances.',
                 );
             }
         }

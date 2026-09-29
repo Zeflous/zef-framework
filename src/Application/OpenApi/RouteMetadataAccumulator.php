@@ -9,8 +9,9 @@ namespace Zef\Framework\OpenApi;
 /**
  * Mutable collector used while one handler class's attributes are read.
  * Each apply*() method ports one attribute family from the former
- * RouteSpecExtractor::collectMethodAttributes() body verbatim; tags are
- * deduplicated once by toMetadata(), exactly as before.
+ * RouteSpecExtractor::collectMethodAttributes() body (schema construction
+ * delegated to SchemaContentBuilder); tags are deduplicated once by
+ * toMetadata(), exactly as before.
  */
 final class RouteMetadataAccumulator
 {
@@ -41,6 +42,8 @@ final class RouteMetadataAccumulator
     public ?array $methodSecurity = null;
 
     public ?string $operationIdOverride = null;
+
+    private ?SchemaContentBuilder $schemaContent = null;
 
     public function applyClassTag(Attribute\Tag $meta): void
     {
@@ -75,7 +78,7 @@ final class RouteMetadataAccumulator
         $this->parameters[] = new Parameter(
             name: $meta->name,
             in: $meta->in,
-            schema: new Schema(type: $meta->type, format: $meta->format),
+            schema: $this->schemaContent()->parameterSchema($meta),
             description: $meta->description,
             required: $meta->required,
             deprecated: $meta->deprecated,
@@ -94,20 +97,13 @@ final class RouteMetadataAccumulator
         string $sourceName,
     ): void {
         if ($this->requestBody instanceof RequestBody) {
+            $method = "{$handlerClass}::{$sourceName}()";
             throw new SpecificationException(
-                "Handler {$handlerClass}::{$sourceName}() declares more than one #[RequestBody]; "
-                . 'at most one is allowed per operation.',
-            );
-        }
-        $content = [];
-        if ($meta->schema !== null && (class_exists($meta->schema) || enum_exists($meta->schema))) {
-            $generator->generateFromClass($meta->schema);
-            $content[$meta->mediaType->value] = new Schema(
-                ref: '#/components/schemas/' . $generator->schemaNameFor($meta->schema),
+                "Handler {$method} declares more than one #[RequestBody]; at most one is allowed per operation."
             );
         }
         $this->requestBody = new RequestBody(
-            content: $content !== [] ? $content : [MediaType::Json->value => new Schema(type: SchemaType::Object)],
+            content: $this->schemaContent()->requestBodyContent($meta, $generator),
             description: $meta->description,
             required: $meta->required,
         );
@@ -116,24 +112,17 @@ final class RouteMetadataAccumulator
     public function applyResponse(Attribute\Response $meta, SchemaGenerator $generator): void
     {
         $statusKey = (string) $meta->status;
-        $content = [];
-        if ($meta->schema !== null && (class_exists($meta->schema) || enum_exists($meta->schema))) {
-            $generator->generateFromClass($meta->schema);
-            $content[$meta->mediaType] = new Schema(
-                ref: '#/components/schemas/' . $generator->schemaNameFor($meta->schema),
-            );
-        }
         $this->responses[$statusKey] = new Response(
             description: $meta->description !== '' ? $meta->description : 'Response.',
-            content: $content,
+            content: $this->schemaContent()->responseContent($meta, $generator),
         );
     }
 
     public function applyMethodSecurity(Attribute\Security $meta): void
     {
-        $methodSecurity = $this->methodSecurity ?? [];
-        $methodSecurity[] = new SecurityRequirement([$meta->scheme => $meta->scopes]);
-        $this->methodSecurity = $methodSecurity;
+        $requirements = $this->methodSecurity ?? [];
+        $requirements[] = new SecurityRequirement([$meta->scheme => $meta->scopes]);
+        $this->methodSecurity = $requirements;
     }
 
     public function applyMethodTag(Attribute\Tag $meta): void
@@ -144,6 +133,14 @@ final class RouteMetadataAccumulator
     public function markDeprecated(): void
     {
         $this->deprecated = true;
+    }
+
+    /** The schema/content collaborator (php:S1200 extraction), built on first use. */
+    private function schemaContent(): SchemaContentBuilder
+    {
+        $this->schemaContent ??= new SchemaContentBuilder();
+
+        return $this->schemaContent;
     }
 
     public function toMetadata(): RouteHandlerMetadata

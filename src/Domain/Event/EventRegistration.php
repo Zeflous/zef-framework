@@ -27,7 +27,8 @@ final readonly class EventRegistration
             throw new \InvalidArgumentException('Event listener must be callable.');
         }
         $reflection = $this->reflectListener($listener);
-        $this->acceptsContext = $reflection instanceof \ReflectionFunctionAbstract && $reflection->getNumberOfParameters() >= 2;
+        $this->acceptsContext = $reflection instanceof \ReflectionFunctionAbstract
+            && $reflection->getNumberOfParameters() >= 2;
     }
 
     /**

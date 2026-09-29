@@ -43,10 +43,10 @@ final class FieldSchemaConstraints
 
         switch ($definition['rule']) {
             case 'type':
-                $kind = $params['kind'] ?? null;
+                $ruleKind = $params['kind'] ?? null;
 
-                if (is_string($kind)) {
-                    $this->kind = $kind;
+                if (is_string($ruleKind)) {
+                    $this->kind = $ruleKind;
                 }
 
                 break;
@@ -81,10 +81,10 @@ final class FieldSchemaConstraints
 
             case 'email':
             case 'uuid':
-                $format = $params['format'] ?? null;
+                $ruleFormat = $params['format'] ?? null;
 
-                if (is_string($format)) {
-                    $this->format = $format;
+                if (is_string($ruleFormat)) {
+                    $this->format = $ruleFormat;
                 }
 
                 break;

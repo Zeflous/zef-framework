@@ -56,10 +56,11 @@ final class ConfigAggregator
         // getConfig() re-entered merge() with $merged still empty and
         // recursed until memory exhaustion (OOM fatal, uncatchable).
         if ($this->merging) {
-            throw new \LogicException(
-                'Reentrant configuration read: a provider called ConfigAggregator::get()/all()/merge() '
-                . 'while configuration is being merged.'
-            );
+            // Message stays byte-identical: the literal pair was merged into
+            // a variable so no line exceeds 120 columns without adjacent
+            // string-literal concatenation.
+            $reason = 'a provider called ConfigAggregator::get()/all()/merge() while configuration is being merged.';
+            throw new \LogicException('Reentrant configuration read: ' . $reason);
         }
         $this->merging = true;
 

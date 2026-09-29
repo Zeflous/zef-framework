@@ -100,7 +100,7 @@ final class Projector
             if ($events === []) {
                 break;
             }
-            if ($this->deliverPage($projection, $projectionId, $handled, $events, $batchLimit, $applied)) {
+            if ($this->hasReachedBatchLimit($projection, $projectionId, $handled, $events, $batchLimit, $applied)) {
                 return $applied;
             }
             $from = $events[count($events) - 1]->globalSequence + 1;
@@ -133,7 +133,7 @@ final class Projector
      *
      * @return bool true when the batch limit was reached and the run must stop
      */
-    private function deliverPage(
+    private function hasReachedBatchLimit(
         ProjectionInterface $projection,
         string $projectionId,
         array $handled,

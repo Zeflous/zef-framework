@@ -89,7 +89,8 @@ final readonly class ConfigProvider implements ConfigProviderInterface
                     'deps' => [LoggerInterface::class],
                 ],
                 'middleware.security.rate_limit' => [
-                    'factory' => static fn (?ContainerInterface $c = null): RateLimitMiddleware => SecurityRateLimitWiring::rateLimitMiddleware($env, $c),
+                    'factory' => static fn (?ContainerInterface $c = null): RateLimitMiddleware
+                        => SecurityRateLimitWiring::rateLimitMiddleware($env, $c),
                     'deps' => [],
                 ],
             ],

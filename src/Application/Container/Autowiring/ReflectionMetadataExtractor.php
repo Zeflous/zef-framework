@@ -90,14 +90,15 @@ final class ReflectionMetadataExtractor
         if ($type instanceof \ReflectionNamedType) {
             return $this->resolveNamedType($owner, $type);
         }
-        if ($type instanceof \ReflectionUnionType) {
-            return [null, false, $this->unionReason($type)];
-        }
-        if ($type instanceof \ReflectionIntersectionType) {
-            return [null, false, 'intersection type is not autowireable'];
-        }
 
-        return [null, false, 'unsupported type declaration'];
+        // Union, intersection and any future composite type stays manual.
+        $reason = match (true) {
+            $type instanceof \ReflectionUnionType => $this->unionReason($type),
+            $type instanceof \ReflectionIntersectionType => 'intersection type is not autowireable',
+            default => 'unsupported type declaration',
+        };
+
+        return [null, false, $reason];
     }
 
     /**

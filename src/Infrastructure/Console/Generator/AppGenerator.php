@@ -118,6 +118,22 @@ final readonly class AppGenerator implements GeneratorInterface
      */
     private function validatedPlan(?string $rawName, array $argv): ?array
     {
+        $target = $this->resolveTargetArgument($rawName, $argv);
+        if ($target === null) {
+            return null;
+        }
+
+        return $this->resolvePlanPayload($argv, $target);
+    }
+
+    /**
+     * The scaffold target path (--path option or the bare name argument);
+     * null means "error already reported".
+     *
+     * @param array<int, mixed> $argv
+     */
+    private function resolveTargetArgument(?string $rawName, array $argv): ?string
+    {
         $targetArg = $this->stringOption($argv, 'path') ?? $rawName;
         if ($targetArg === null || trim($targetArg) === '') {
             $this->io->err('Usage: bin/zef make:app <path> [--name=<project>] [--address=host:port]');
@@ -125,11 +141,20 @@ final readonly class AppGenerator implements GeneratorInterface
             return null;
         }
 
-        $target = $this->resolveTarget(rtrim($targetArg, '/'));
-        if ($target === null) {
-            return null;
-        }
+        return $this->resolveTarget(rtrim($targetArg, '/'));
+    }
 
+    /**
+     * Project naming (--name or the target basename) plus the --address
+     * option, assembled into the final plan; null means "error already
+     * reported".
+     *
+     * @param array<int, mixed> $argv
+     *
+     * @return null|array{target: string, kebab: string, pascal: string, address: string, frameworkRef: string}
+     */
+    private function resolvePlanPayload(array $argv, string $target): ?array
+    {
         $kebab = $this->stringOption($argv, 'name') ?? basename($target);
 
         try {

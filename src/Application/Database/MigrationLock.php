@@ -64,10 +64,14 @@ final class MigrationLock
         if ($this->depth > 0) {
             throw new TransactionException('Migration lock is already held by this Migrator instance.');
         }
+        $columns = [
+            '"id" INTEGER NOT NULL PRIMARY KEY',
+            '"locked_at" INTEGER NOT NULL',
+            '"ttl" REAL NOT NULL',
+            '"holder" VARCHAR(64) NOT NULL DEFAULT \'\'',
+        ];
         $this->connection->execute(SqlQuery::raw(
-            'CREATE TABLE IF NOT EXISTS "' . self::LOCK_TABLE . '" ('
-            . '"id" INTEGER NOT NULL PRIMARY KEY, "locked_at" INTEGER NOT NULL, "ttl" REAL NOT NULL, '
-            . '"holder" VARCHAR(64) NOT NULL DEFAULT \'\')',
+            'CREATE TABLE IF NOT EXISTS "' . self::LOCK_TABLE . '" (' . implode(', ', $columns) . ')',
         ));
         $this->ensureHolderColumn();
         // (int) hardening: the now stamp is inlined into the steal statement

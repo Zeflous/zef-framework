@@ -93,23 +93,34 @@ final readonly class PdoEventStore implements EventStoreInterface
 
     /**
      * Create the events table (portable DDL, safe to run repeatedly).
+     *
+     * The DDL is assembled from column/constraint fragments (php:S2005: no
+     * adjacent string-literal concatenation, php:S103: no overlong lines);
+     * the resulting statement is byte-identical to the former inline chain.
      */
     public function createSchema(): void
     {
-        $this->connection->execute(SqlQuery::raw(
-            'CREATE TABLE IF NOT EXISTS "' . $this->table . '" ("global_sequence" BIGINT NOT NULL, '
-            . '"event_id" VARCHAR(64) NOT NULL, '
-            . '"aggregate_type" VARCHAR(128) NOT NULL, '
-            . '"aggregate_id" VARCHAR(128) NOT NULL, '
-            . '"version" BIGINT NOT NULL, '
-            . '"event_type" VARCHAR(191) NOT NULL, '
-            . '"payload" TEXT NOT NULL, '
-            . '"metadata" TEXT NOT NULL, '
-            . '"recorded_at" BIGINT NOT NULL, '
-            . self::UNIQUE_CONSTRAINT_PREFIX . $this->table . '_stream" UNIQUE ("aggregate_type", "aggregate_id", "version"), '
-            . self::UNIQUE_CONSTRAINT_PREFIX . $this->table . '_event_id" UNIQUE ("event_id"), '
-            . self::UNIQUE_CONSTRAINT_PREFIX . $this->table . '_global" UNIQUE ("global_sequence"))',
-        ));
+        $columns = [
+            '"global_sequence" BIGINT NOT NULL',
+            '"event_id" VARCHAR(64) NOT NULL',
+            '"aggregate_type" VARCHAR(128) NOT NULL',
+            '"aggregate_id" VARCHAR(128) NOT NULL',
+            '"version" BIGINT NOT NULL',
+            '"event_type" VARCHAR(191) NOT NULL',
+            '"payload" TEXT NOT NULL',
+            '"metadata" TEXT NOT NULL',
+            '"recorded_at" BIGINT NOT NULL',
+        ];
+        $constraints = [
+            self::UNIQUE_CONSTRAINT_PREFIX . $this->table
+                . '_stream" UNIQUE ("aggregate_type", "aggregate_id", "version")',
+            self::UNIQUE_CONSTRAINT_PREFIX . $this->table . '_event_id" UNIQUE ("event_id")',
+            self::UNIQUE_CONSTRAINT_PREFIX . $this->table . '_global" UNIQUE ("global_sequence")',
+        ];
+        $ddl = 'CREATE TABLE IF NOT EXISTS "' . $this->table . '" ('
+            . implode(', ', [...$columns, ...$constraints])
+            . ')';
+        $this->connection->execute(SqlQuery::raw($ddl));
     }
 
     #[\Override]

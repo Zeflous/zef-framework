@@ -47,14 +47,13 @@ final readonly class ServiceInstantiator
         ) {
             return [true, $this->registry->instance($canonical)];
         }
-        if ($definition->lifetime !== ServiceLifetime::REQUEST) {
-            return [false, null];
-        }
-        if (!$scope instanceof RequestScope || $scope->isClosed()) {
-            throw new \LogicException("Request-scoped service '{$canonical}' resolved outside a request scope.");
-        }
-        if ($this->scopes->has($scope, $canonical)) {
-            return [true, $this->scopes->get($scope, $canonical)];
+        if ($definition->lifetime === ServiceLifetime::REQUEST) {
+            if (!$scope instanceof RequestScope || $scope->isClosed()) {
+                throw new \LogicException("Request-scoped service '{$canonical}' resolved outside a request scope.");
+            }
+            if ($this->scopes->has($scope, $canonical)) {
+                return [true, $this->scopes->get($scope, $canonical)];
+            }
         }
 
         return [false, null];
@@ -185,7 +184,8 @@ final readonly class ServiceInstantiator
             $this->registry->setInstance($canonical, $instance);
         } elseif ($definition->lifetime === ServiceLifetime::REQUEST && $scope instanceof RequestScope) {
             $this->scopes->set($scope, $canonical, $instance);
+        } else {
+            // Transient (or request-scoped with no active scope): never cached.
         }
-        // transient (or request-scoped with no active scope): never cached
     }
 }

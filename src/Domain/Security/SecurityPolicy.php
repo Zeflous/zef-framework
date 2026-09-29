@@ -43,7 +43,11 @@ final readonly class SecurityPolicy
         if ($this->csrfTokenBytes < 16) {
             throw new \InvalidArgumentException('csrfTokenBytes must be >= 16.');
         }
-        $this->assertRateLimitBounds($this->rateLimitMaxRequests, $this->rateLimitWindowSeconds, $this->rateLimitMaxKeys);
+        $this->assertRateLimitBounds(
+            $this->rateLimitMaxRequests,
+            $this->rateLimitWindowSeconds,
+            $this->rateLimitMaxKeys,
+        );
         $this->assertCsrfSecretStrength($this->csrfEnabled, $this->csrfSecret);
         $this->assertCsrfTokenNames($this->csrfCookieName, $this->csrfHeaderName);
         $this->assertCsrfCookiePolicy($this->csrfSameSite, $this->csrfSecureCookie, $this->csrfTokenTtlSeconds);
