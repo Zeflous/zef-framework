@@ -30,16 +30,13 @@ final class ContainerResolver
 
     private ?ServiceInstantiator $activator = null;
 
-    private ?InitializationGuard $initializationGuard = null;
-
     public function __construct(
         private readonly ServiceRegistry $registry,
         private readonly DependencyGraphValidator $graphValidator,
-        ?InitializationGuard $guard = null,
+        private readonly ?InitializationGuard $initializationGuard = null,
         int $resolutionDepthLimit = 256,
     ) {
         $this->resolutionDepthLimit = max(1, $resolutionDepthLimit);
-        $this->initializationGuard = $guard;
     }
 
     public function bind(ContainerInterface $container): void

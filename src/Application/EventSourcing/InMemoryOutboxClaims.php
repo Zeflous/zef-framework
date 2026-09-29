@@ -21,8 +21,8 @@ final readonly class InMemoryOutboxClaims
      * @param (\Closure(): int) $clock now source shared with the store
      */
     public function __construct(
-        private readonly OutboxEntryBook $book,
-        private readonly \Closure $clock,
+        private OutboxEntryBook $book,
+        private \Closure $clock,
     ) {}
 
     /**

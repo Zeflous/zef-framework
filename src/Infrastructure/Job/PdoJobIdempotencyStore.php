@@ -58,7 +58,7 @@ final readonly class PdoJobIdempotencyStore implements JobIdempotencyStoreInterf
         string $table = 'zef_job_idempotency',
         ?\Closure $clock = null,
     ) {
-        self::assertValidTableName($table);
+        $this->assertValidTableName($table);
         $this->table = $table;
         $this->clock = $clock ?? time(...);
     }
@@ -126,7 +126,7 @@ final readonly class PdoJobIdempotencyStore implements JobIdempotencyStoreInterf
      * quoting doubles as the grammar check (it throws on invalid
      * identifiers), keeping the store's SQL fully quoted from the start.
      */
-    private static function assertValidTableName(string $table): void
+    private function assertValidTableName(string $table): void
     {
         new QueryBuilder()->quoteIdentifier($table, 'table');
     }

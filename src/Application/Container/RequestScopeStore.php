@@ -33,7 +33,7 @@ final class RequestScopeStore
     /** Drops a released scope (and its instances) from the store. */
     public function release(RequestScope $scope): void
     {
-        if ($this->instances !== null) {
+        if ($this->instances instanceof \WeakMap) {
             unset($this->instances[$scope]);
         }
     }
@@ -42,7 +42,7 @@ final class RequestScopeStore
     {
         $instances = $this->instances;
 
-        return $instances !== null
+        return $instances instanceof \WeakMap
             && isset($instances[$scope])
             && array_key_exists($id, $instances[$scope]);
     }
@@ -50,7 +50,7 @@ final class RequestScopeStore
     public function get(RequestScope $scope, string $id): mixed
     {
         $instances = $this->instances;
-        if ($instances === null
+        if (!$instances instanceof \WeakMap
             || !isset($instances[$scope])
             || !array_key_exists($id, $instances[$scope])
         ) {

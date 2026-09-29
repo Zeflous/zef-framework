@@ -160,9 +160,7 @@ final class FiberTask implements TaskInterface
     /** @internal scheduler-facing suspension slot (armed while parked) */
     public function suspension(): TaskSuspensionSlot
     {
-        if ($this->suspension === null) {
-            $this->suspension = new TaskSuspensionSlot();
-        }
+        $this->suspension ??= new TaskSuspensionSlot();
 
         return $this->suspension;
     }

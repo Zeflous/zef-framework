@@ -26,8 +26,8 @@ final readonly class EventRegistration
         if (!is_callable($listener)) {
             throw new \InvalidArgumentException('Event listener must be callable.');
         }
-        $reflection = self::reflectListener($listener);
-        $this->acceptsContext = $reflection !== null && $reflection->getNumberOfParameters() >= 2;
+        $reflection = $this->reflectListener($listener);
+        $this->acceptsContext = $reflection instanceof \ReflectionFunctionAbstract && $reflection->getNumberOfParameters() >= 2;
     }
 
     /**
@@ -35,10 +35,10 @@ final readonly class EventRegistration
      * callable cannot be reflected (an object relying on __call() — the safe
      * default is a single, context-less argument).
      */
-    private static function reflectListener(mixed $listener): ?\ReflectionFunctionAbstract
+    private function reflectListener(mixed $listener): ?\ReflectionFunctionAbstract
     {
         if (is_array($listener)) {
-            return self::reflectArrayListener($listener);
+            return $this->reflectArrayListener($listener);
         }
         if (!is_callable($listener)) {
             // Unreachable: the constructor already rejected non-callables.
@@ -57,13 +57,13 @@ final readonly class EventRegistration
      *
      * @param array<mixed, mixed> $listener
      */
-    private static function reflectArrayListener(array $listener): ?\ReflectionFunctionAbstract
+    private function reflectArrayListener(array $listener): ?\ReflectionFunctionAbstract
     {
         $target = $listener[0] ?? null;
         $method = $listener[1] ?? null;
         if ((is_object($target) || is_string($target)) && is_string($method)) {
             try {
-                return new \ReflectionMethod($target, (string) $method);
+                return new \ReflectionMethod($target, $method);
             } catch (\ReflectionException) {
                 // Object relying on __call(): is_callable() passes but no
                 // real method exists. Invoke single-argument (context-less)

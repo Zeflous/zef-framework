@@ -67,7 +67,7 @@ final readonly class PdoJobQueue implements JobQueueInterface
         ?\Closure $clock = null,
         private ?int $maxSize = null,
     ) {
-        self::assertValidTableName($table);
+        $this->assertValidTableName($table);
         if ($maxSize !== null && $maxSize < 1) {
             throw new \InvalidArgumentException('Job queue capacity must be positive.');
         }
@@ -214,7 +214,7 @@ final readonly class PdoJobQueue implements JobQueueInterface
      * QueryBuilder enforces on identifiers): rejected here, at construction,
      * instead of failing on the first INSERT with a cryptic SQL error.
      */
-    private static function assertValidTableName(string $table): void
+    private function assertValidTableName(string $table): void
     {
         new QueryBuilder()->quoteIdentifier($table, 'table');
     }

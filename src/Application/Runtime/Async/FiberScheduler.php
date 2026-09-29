@@ -59,17 +59,7 @@ final class FiberScheduler
 
     private ?FiberSuspensionCoordinator $suspensions = null;
 
-    private ?MonotonicClockInterface $clock = null;
-
-    private ?SleeperInterface $sleeper = null;
-
-    public function __construct(
-        ?MonotonicClockInterface $clock = null,
-        ?SleeperInterface $sleeper = null,
-    ) {
-        $this->clock = $clock;
-        $this->sleeper = $sleeper;
-    }
+    public function __construct(private ?MonotonicClockInterface $clock = null, private ?SleeperInterface $sleeper = null) {}
 
     // ------------------------------------------------------------------
     // Public coroutine API

@@ -38,20 +38,17 @@ final class AutowireCompilerPass
 {
     public const string VALUE_SERVICE_PREFIX = '@value:';
 
-    private ?ReflectionMetadataExtractor $extractor = null;
-
     /**
      * @param array<string,mixed> $configValues source for #[Value('key')] lookups
      * @param null|string         $module       module attributed to every generated definition
      * @param string              $lifetime     lifetime for every generated definition
      */
     public function __construct(
-        ?ReflectionMetadataExtractor $extractor = null,
+        private ?ReflectionMetadataExtractor $extractor = null,
         private readonly array $configValues = [],
         private readonly ?string $module = null,
         private readonly string $lifetime = ServiceLifetime::SINGLETON,
     ) {
-        $this->extractor = $extractor;
         ServiceLifetime::assert($lifetime);
     }
 

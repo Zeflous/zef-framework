@@ -31,13 +31,8 @@ final class TrustedProxyMatcher
         if ($ip === '' || filter_var($ip, FILTER_VALIDATE_IP) === false) {
             return false;
         }
-        foreach ($trusted as $entry) {
-            if (self::entryMatchesIp(trim((string) $entry), $ip)) {
-                return true;
-            }
-        }
 
-        return false;
+        return array_any($trusted, fn (string $entry): bool => self::entryMatchesIp(trim($entry), $ip));
     }
 
     public static function ipInCidr(string $ip, string $network, int $prefix): bool

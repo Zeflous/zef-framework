@@ -96,21 +96,14 @@ final class HttpRequestRunner
             $response = $this->pipeline?->handle($request)
                 ?? new Response(500, ['Content-Type' => 'text/plain'], 'Application pipeline unavailable.');
             if (strtoupper($request->getMethod()) === 'HEAD') {
-                $response = $response->withBody(Stream::fromString(''));
                 // ZEF-DEEP-05: the body is now empty, so the handler's
                 // GET-representation Content-Length no longer matches the
                 // response object. Drop it to keep the object internally
                 // consistent — the SAPI emitter has always reconciled this
                 // lying header away; the RoadRunner path forwards verbatim
                 // and would otherwise ship a stale framing header.
-                $response = $response->withoutHeader('Content-Length');
+                $response = $this->headView($response);
             }
-            // The PSR-7 with*() mutators are declared on MessageInterface
-            // and typed to return it, but the immutable implementations
-            // return a clone of the same concrete class — the response is
-            // still a ResponseInterface here (the PSR-7 contract for the
-            // mutators), so narrow back before reading the status code.
-            \assert($response instanceof ResponseInterface);
             $elapsed = (hrtime(true) - $startNs) / 1_000_000_000;
             $span
                 ->setAttribute('http.response.status_code', $response->getStatusCode())
@@ -133,8 +126,7 @@ final class HttpRequestRunner
             $this->recordLifecycle($telemetry, 'request.completed', $traceId);
 
             if ($telemetry->isEnabled()) {
-                $response = $response->withHeader('traceparent', $span->getContext()->traceParent());
-                \assert($response instanceof ResponseInterface);
+                return $this->withTraceparent($response, $span->getContext()->traceParent());
             }
 
             return $response;
@@ -201,5 +193,28 @@ final class HttpRequestRunner
         }
         $telemetry->recordLog('INFO', $event, $attributes);
         $telemetry->meter()->increment('zef.lifecycle.events.total', 1, ['event.name' => $event]);
+    }
+
+    /**
+     * HEAD view of a response: same object semantics as the historical
+     * withBody()+withoutHeader() pair, but keeps the static analyser's view
+     * pinned to ResponseInterface (the PSR-7 interface signatures declare
+     * the with*() fluent returns as MessageInterface; every concrete
+     * implementation — including this framework's — returns `static`).
+     */
+    private function headView(ResponseInterface $response): ResponseInterface
+    {
+        /** @var ResponseInterface $bodyless */
+        $bodyless = $response->withBody(Stream::fromString(''));
+
+        /** @var ResponseInterface $headerless */
+        return $bodyless->withoutHeader('Content-Length');
+    }
+
+    /** Same rationale as {@see headView()}: one withHeader() hop. */
+    private function withTraceparent(ResponseInterface $response, string $traceparent): ResponseInterface
+    {
+        /** @var ResponseInterface $decorated */
+        return $response->withHeader('traceparent', $traceparent);
     }
 }

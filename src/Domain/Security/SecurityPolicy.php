@@ -43,17 +43,13 @@ final readonly class SecurityPolicy
         if ($this->csrfTokenBytes < 16) {
             throw new \InvalidArgumentException('csrfTokenBytes must be >= 16.');
         }
-        self::assertRateLimitBounds(
-            $this->rateLimitMaxRequests,
-            $this->rateLimitWindowSeconds,
-            $this->rateLimitMaxKeys,
-        );
-        self::assertCsrfSecretStrength($this->csrfEnabled, $this->csrfSecret);
-        self::assertCsrfTokenNames($this->csrfCookieName, $this->csrfHeaderName);
-        self::assertCsrfCookiePolicy($this->csrfSameSite, $this->csrfSecureCookie, $this->csrfTokenTtlSeconds);
-        self::assertCsrfSpaMode($this->csrfSpaMode, $this->csrfEnabled, $this->csrfHttpOnlyCookie);
-        $this->allowedOrigins = self::normalizeOrigins($allowedOrigins);
-        self::assertOriginPolicy($this->originEnabled, $this->allowedOrigins);
+        $this->assertRateLimitBounds($this->rateLimitMaxRequests, $this->rateLimitWindowSeconds, $this->rateLimitMaxKeys);
+        $this->assertCsrfSecretStrength($this->csrfEnabled, $this->csrfSecret);
+        $this->assertCsrfTokenNames($this->csrfCookieName, $this->csrfHeaderName);
+        $this->assertCsrfCookiePolicy($this->csrfSameSite, $this->csrfSecureCookie, $this->csrfTokenTtlSeconds);
+        $this->assertCsrfSpaMode($this->csrfSpaMode, $this->csrfEnabled, $this->csrfHttpOnlyCookie);
+        $this->allowedOrigins = $this->normalizeOrigins($allowedOrigins);
+        $this->assertOriginPolicy($this->originEnabled, $this->allowedOrigins);
     }
 
     /**
@@ -119,7 +115,7 @@ final readonly class SecurityPolicy
         );
     }
 
-    private static function assertRateLimitBounds(int $maxRequests, int $windowSeconds, int $maxKeys): void
+    private function assertRateLimitBounds(int $maxRequests, int $windowSeconds, int $maxKeys): void
     {
         if ($maxRequests < 1) {
             throw new \InvalidArgumentException('rateLimitMaxRequests must be >= 1.');
@@ -132,7 +128,7 @@ final readonly class SecurityPolicy
         }
     }
 
-    private static function assertCsrfSecretStrength(bool $csrfEnabled, string $csrfSecret): void
+    private function assertCsrfSecretStrength(bool $csrfEnabled, string $csrfSecret): void
     {
         if ($csrfEnabled && $csrfSecret !== '' && strlen($csrfSecret) < 32) {
             throw new \InvalidArgumentException('CSRF secret must be at least 32 bytes when CSRF is enabled.');
@@ -144,7 +140,7 @@ final readonly class SecurityPolicy
      * deliberate (HTTP field names cannot carry non-ASCII code points), so
      * the ranges stay explicit instead of going Unicode-aware.
      */
-    private static function assertCsrfTokenNames(string $cookieName, string $headerName): void
+    private function assertCsrfTokenNames(string $cookieName, string $headerName): void
     {
         if (preg_match('/^[A-Za-z0-9!#$%&\'*+.^_`|~-]+$/', $cookieName) !== 1) {
             throw new \InvalidArgumentException('Invalid CSRF cookie name.');
@@ -154,7 +150,7 @@ final readonly class SecurityPolicy
         }
     }
 
-    private static function assertCsrfCookiePolicy(string $sameSite, bool $secureCookie, int $tokenTtlSeconds): void
+    private function assertCsrfCookiePolicy(string $sameSite, bool $secureCookie, int $tokenTtlSeconds): void
     {
         if (!in_array($sameSite, ['Strict', 'Lax', 'None'], true)) {
             throw new \InvalidArgumentException('Invalid CSRF SameSite policy.');
@@ -167,7 +163,7 @@ final readonly class SecurityPolicy
         }
     }
 
-    private static function assertCsrfSpaMode(bool $spaMode, bool $csrfEnabled, bool $httpOnlyCookie): void
+    private function assertCsrfSpaMode(bool $spaMode, bool $csrfEnabled, bool $httpOnlyCookie): void
     {
         if (!$spaMode) {
             return;
@@ -191,7 +187,7 @@ final readonly class SecurityPolicy
      *
      * @return list<string>
      */
-    private static function normalizeOrigins(array $allowedOrigins): array
+    private function normalizeOrigins(array $allowedOrigins): array
     {
         $normalized = [];
         foreach ($allowedOrigins as $origin) {
@@ -202,7 +198,7 @@ final readonly class SecurityPolicy
     }
 
     /** @param list<string> $allowedOrigins */
-    private static function assertOriginPolicy(bool $originEnabled, array $allowedOrigins): void
+    private function assertOriginPolicy(bool $originEnabled, array $allowedOrigins): void
     {
         if ($originEnabled && $allowedOrigins === []) {
             throw new \InvalidArgumentException('Origin policy enabled without allowed origins.');

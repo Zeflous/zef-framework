@@ -7,6 +7,8 @@ declare(strict_types=1);
 
 namespace Zef\Framework\OpenApi;
 
+use Zef\Framework\OpenApi\Attribute\Property;
+
 /**
  * Builds the object/enum Schema for a concrete class or enum.
  *
@@ -114,20 +116,20 @@ final class ClassSchemaBuilder
         return [$properties, $required];
     }
 
-    private function propertySchema(?\ReflectionType $type, ?Attribute\Property $meta): Schema
+    private function propertySchema(?\ReflectionType $type, ?Property $meta): Schema
     {
-        if ($meta !== null && $meta->ref !== null) {
+        if ($meta instanceof Property && $meta->ref !== null) {
             $schema = $this->resolveRef($meta->ref);
-        } elseif ($type !== null) {
+        } elseif ($type instanceof \ReflectionType) {
             $schema = $this->generator->generateFromType($type);
-        } elseif ($meta !== null) {
+        } elseif ($meta instanceof Property) {
             $schema = new Schema(type: $meta->type);
         } else {
             $schema = new Schema(type: SchemaType::String);
         }
 
-        if ($meta !== null) {
-            $schema = $this->applyPropertyMeta($schema, $meta);
+        if ($meta instanceof Property) {
+            return $this->applyPropertyMeta($schema, $meta);
         }
 
         return $schema;
@@ -136,17 +138,17 @@ final class ClassSchemaBuilder
     private function propertyIsRequired(
         \ReflectionProperty $property,
         ?\ReflectionType $type,
-        ?Attribute\Property $meta,
+        ?Property $meta,
     ): bool {
-        $explicitlyRequired = $meta !== null && $meta->required === true;
-        $allowsNull = $type !== null && $type->allowsNull();
-        $metaAllowsNullable = $meta !== null && $meta->nullable;
+        $explicitlyRequired = $meta instanceof Property && $meta->required === true;
+        $allowsNull = $type instanceof \ReflectionType && $type->allowsNull();
+        $metaAllowsNullable = $meta instanceof Property && $meta->nullable;
         $implicitlyRequired = !$allowsNull && !$property->hasDefaultValue() && !$metaAllowsNullable;
 
         return $explicitlyRequired || $implicitlyRequired;
     }
 
-    private function applyPropertyMeta(Schema $schema, Attribute\Property $meta): Schema
+    private function applyPropertyMeta(Schema $schema, Property $meta): Schema
     {
         if ($schema->ref !== null) {
             return $schema;
@@ -177,7 +179,7 @@ final class ClassSchemaBuilder
         );
     }
 
-    private function itemsFromMeta(Attribute\Property $meta): ?Schema
+    private function itemsFromMeta(Property $meta): ?Schema
     {
         if ($meta->itemsRef !== null) {
             return $this->resolveRef($meta->itemsRef);
@@ -210,22 +212,22 @@ final class ClassSchemaBuilder
         return $attribute !== null ? $attribute->newInstance() : null;
     }
 
-    private function propertyAttribute(\ReflectionProperty $property): ?Attribute\Property
+    private function propertyAttribute(\ReflectionProperty $property): ?Property
     {
-        $attribute = $property->getAttributes(Attribute\Property::class, \ReflectionAttribute::IS_INSTANCEOF)[0] ?? null;
+        $attribute = $property->getAttributes(Property::class, \ReflectionAttribute::IS_INSTANCEOF)[0] ?? null;
 
         return $attribute !== null ? $attribute->newInstance() : null;
     }
 
     private function classDescription(?Attribute\Schema $meta): string
     {
-        return $meta !== null ? $meta->description : '';
+        return $meta instanceof Attribute\Schema ? $meta->description : '';
     }
 
     /** @param \ReflectionClass<object> $reflection */
     private function classTitle(?Attribute\Schema $meta, \ReflectionClass $reflection): string
     {
-        if ($meta !== null && $meta->name !== null) {
+        if ($meta instanceof Attribute\Schema && $meta->name !== null) {
             return $meta->name;
         }
 
@@ -234,6 +236,6 @@ final class ClassSchemaBuilder
 
     private function classDeprecated(?Attribute\Schema $meta): ?bool
     {
-        return $meta !== null && $meta->deprecated ? true : null;
+        return $meta instanceof Attribute\Schema && $meta->deprecated ? true : null;
     }
 }

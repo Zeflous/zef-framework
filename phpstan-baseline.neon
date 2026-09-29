@@ -481,6 +481,30 @@ parameters:
 			path: src/Adapters/Kernel/Application.php
 
 		-
+			message: '#^Method Zef\\Framework\\Kernel\\HttpRequestRunner\:\:headView\(\) should return Psr\\Http\\Message\\ResponseInterface but returns Psr\\Http\\Message\\MessageInterface\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Adapters/Kernel/HttpRequestRunner.php
+
+		-
+			message: '#^Method Zef\\Framework\\Kernel\\HttpRequestRunner\:\:withTraceparent\(\) should return Psr\\Http\\Message\\ResponseInterface but returns Psr\\Http\\Message\\MessageInterface\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Adapters/Kernel/HttpRequestRunner.php
+
+		-
+			message: '#^Variable \$decorated in PHPDoc tag @var does not exist\.$#'
+			identifier: varTag.variableNotFound
+			count: 1
+			path: src/Adapters/Kernel/HttpRequestRunner.php
+
+		-
+			message: '#^Variable \$headerless in PHPDoc tag @var does not exist\.$#'
+			identifier: varTag.variableNotFound
+			count: 1
+			path: src/Adapters/Kernel/HttpRequestRunner.php
+
+		-
 			message: '#^Method Zef\\Framework\\MiddlewareDefinition\:\:__construct\(\) has parameter \$tags with no value type specified in iterable type array\.$#'
 			identifier: missingType.iterableValue
 			count: 1
@@ -1061,12 +1085,6 @@ parameters:
 			identifier: argument.type
 			count: 1
 			path: src/Domain/Container/ServiceDefinition.php
-
-		-
-			message: '#^Casting to string something that''s already string\.$#'
-			identifier: cast.useless
-			count: 1
-			path: src/Domain/Event/EventRegistration.php
 
 		-
 			message: '#^Method Zef\\Framework\\Exception\\CircularAliasException\:\:__construct\(\) has parameter \$chain with no value type specified in iterable type array\.$#'

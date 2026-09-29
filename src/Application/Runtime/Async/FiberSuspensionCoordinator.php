@@ -70,7 +70,7 @@ final class FiberSuspensionCoordinator
         $fiber = \Fiber::getCurrent();
         $current = $fiber instanceof \Fiber ? $this->runner->taskFor($fiber) : null;
 
-        if ($current === null) {
+        if (!$current instanceof FiberTask) {
             throw new \LogicException(sprintf(
                 '%s can only be called from inside a coroutine managed by this scheduler.',
                 $context,

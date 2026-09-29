@@ -57,7 +57,7 @@ final class ContextualBindingStore
         // Synthetic alias (collision-checked by the registrar) plus a rewritten
         // consumer definition whose dependency graph now flows through $via —
         // so graph validation, cycles and cross-module budgets still apply.
-        $registrar->alias($via, $target, null);
+        $registrar->alias($via, $target);
         $newDeps = array_map(
             static fn (string $d): string => $d === $dep ? $via : $d,
             $definition->dependencies,

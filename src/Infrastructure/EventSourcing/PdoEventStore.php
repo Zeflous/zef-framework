@@ -56,10 +56,10 @@ use Zef\Framework\Database\SqlState;
 final readonly class PdoEventStore implements EventStoreInterface
 {
     /** DDL prefix shared by the three store-wide unique constraints. */
-    private const UNIQUE_CONSTRAINT_PREFIX = 'CONSTRAINT "uq_';
+    private const string UNIQUE_CONSTRAINT_PREFIX = 'CONSTRAINT "uq_';
 
     /** Every stored-event column, in storage order. */
-    private const STORED_EVENT_COLUMNS = [
+    private const array STORED_EVENT_COLUMNS = [
         'global_sequence',
         'event_id',
         'aggregate_type',
@@ -86,7 +86,7 @@ final readonly class PdoEventStore implements EventStoreInterface
         string $table = 'zef_events',
         ?\Closure $clock = null,
     ) {
-        self::assertValidTableName($table);
+        $this->assertValidTableName($table);
         $this->table = $table;
         $this->clock = $clock ?? static fn (): int => (int) (microtime(true) * 1_000_000_000);
     }
@@ -199,7 +199,7 @@ final readonly class PdoEventStore implements EventStoreInterface
      * quoting doubles as the grammar check (it throws on invalid
      * identifiers), keeping the store's SQL fully quoted from the start.
      */
-    private static function assertValidTableName(string $table): void
+    private function assertValidTableName(string $table): void
     {
         new QueryBuilder()->quoteIdentifier($table, 'table');
     }
