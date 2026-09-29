@@ -163,7 +163,13 @@ abstract class MessageBase implements MessageInterface
             }
 
             return $s;
-        } catch (\Throwable) {
+        } catch (\RuntimeException) {
+            // N-10 (issue #176): PSR-7 streams signal I/O failures through
+            // RuntimeException (Stream itself and PayloadTooLargeException
+            // both extend it), so those still degrade to ''. Narrowed from
+            // \Throwable: programming errors (TypeError, invalid arguments)
+            // now propagate instead of silently masquerading as empty
+            // bodies.
             return '';
         }
     }

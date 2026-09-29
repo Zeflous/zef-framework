@@ -175,10 +175,12 @@ final class ObservabilityEdgeTest extends TestCase
 
     public function testUriParsesUserInfoAndNormalizesPercentEscapes(): void
     {
+        // Regresi N-7 (issue #176): https:443 is the scheme default, so
+        // getPort() normalizes it to null (PSR-7 "SHOULD omit").
         $uri = new Uri('https://user:pass@Example.TEST:443/a%2fb?x=%20');
         self::assertSame('user:pass', $uri->getUserInfo());
         self::assertSame('example.test', $uri->getHost());
-        self::assertSame(443, $uri->getPort());
+        self::assertNull($uri->getPort());
         self::assertSame('/a%2Fb', $uri->getPath());
 
         $mutated = $uri->withUserInfo('u2');

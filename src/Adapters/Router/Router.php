@@ -570,19 +570,34 @@ final class Router
         return $candidates;
     }
 
-    /** @return list<string> */
+    /**
+     * N-9 (issue #176): duplicate slashes are collapsed — an empty
+     * segment is never a distinct route segment, so "/a//b" matches
+     * "/a/b" exactly like the pre-existing leading/trailing slash
+     * tolerance of trim(). Patterns go through the same normalization in
+     * {@see parsePattern()}, so a pattern containing "//" is equivalent
+     * to its single-slash form instead of being unmatchable. Percent-
+     * encoded slashes (%2F) stay inside ONE segment: the split happens on
+     * the raw path before any decoding.
+     *
+     * @return list<string>
+     */
     private function splitPath(string $path): array
     {
         if ($path === '/') {
             return [];
         }
+        $parts = explode('/', trim($path, '/'));
 
-        return explode('/', trim($path, '/'));
+        return array_values(array_filter($parts, static fn (string $part): bool => $part !== ''));
     }
 
     private function parsePattern(string $pattern): array
     {
+        // N-9 (issue #176): same empty-segment collapse as splitPath() so
+        // patterns and request paths agree on "//".
         $parts = $pattern === '/' ? [] : explode('/', trim($pattern, '/'));
+        $parts = array_values(array_filter($parts, static fn (string $part): bool => $part !== ''));
 
         return array_map(
             static function (string $segment): array {

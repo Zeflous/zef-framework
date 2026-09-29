@@ -152,8 +152,12 @@ final class Scheduler
         }
         $enqueued = 0;
         foreach ($this->registrations as $jobType => $state) {
+            // N-18 (issue #176): clamp the "compute first due" seed to 0 —
+            // tick(0) previously passed -1 to nextRunAfter(), which
+            // CronExpression rejects, making the epoch-origin tick throw
+            // instead of being a well-defined zero-enqueue pass.
             $next = $state['nextRunUnixNano']
-                ?? $state['schedule']->nextRunAfter($nowUnixNano - 1);
+                ?? $state['schedule']->nextRunAfter(max(0, $nowUnixNano - 1));
             $produced = 0;
             while ($next <= $nowUnixNano && $produced < $this->maxCatchUpPerTick) {
                 $this->queue->enqueue(new JobEnvelope(

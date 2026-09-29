@@ -108,7 +108,7 @@ final class Uri implements UriInterface
             ? '[' . $this->host . ']'
             : $this->host;
         $authority = ($this->userInfo !== '' ? $this->userInfo . '@' : '') . $displayHost;
-        if ($this->port !== null) {
+        if ($this->port !== null && !$this->isDefaultPortForScheme($this->port)) {
             $authority .= ':' . $this->port;
         }
 
@@ -127,9 +127,21 @@ final class Uri implements UriInterface
         return $this->host;
     }
 
+    /**
+     * N-7 (issue #176): PSR-7 recommends omitting a port that is the
+     * scheme's default — this getter reports null for http:80 and
+     * https:443, aligning Uri with RequestFactory's own buildUri(),
+     * which already drops default SERVER_PORT values. The property keeps
+     * the explicitly-parsed port so a later withScheme() flip re-exposes
+     * a now non-default port.
+     */
     #[\Override]
     public function getPort(): ?int
     {
+        if ($this->port === null || $this->isDefaultPortForScheme($this->port)) {
+            return null;
+        }
+
         return $this->port;
     }
 
@@ -279,6 +291,16 @@ final class Uri implements UriInterface
         return $result;
     }
 
+    /**
+     * A port equal to the scheme's default (http:80, https:443) is
+     * indistinguishable from no port at all per PSR-7 "SHOULD omit".
+     */
+    private function isDefaultPortForScheme(int $port): bool
+    {
+        return ($this->scheme === 'http' && $port === 80)
+            || ($this->scheme === 'https' && $port === 443);
+    }
+
     private function assertHost(string $host): void
     {
         if ($host === '') {
@@ -308,9 +330,3 @@ final class Uri implements UriInterface
         }
     }
 }
-
-/*
- * Shared request-line behaviour extracted from Request and ServerRequest.
- * Eliminates the duplicate deriveRequestTarget / getRequestTarget /
- * withRequestTarget / getMethod / withMethod / getUri / withUri / Host logic.
- */

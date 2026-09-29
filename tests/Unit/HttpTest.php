@@ -152,12 +152,24 @@ final class HttpTest extends TestCase
 
     public function testUriDefaultPortsAreOmittedAndTrustedHostsEnforced(): void
     {
+        // Regresi N-7 (issue #176): PSR-7 "SHOULD omit" — an explicit
+        // scheme-default port is indistinguishable from no port, so
+        // getPort() reports null and the authority/serialisation drop it
+        // (aligned with RequestFactory's own default-port handling).
         $http = new Uri('http://localhost:80/');
-        self::assertSame(80, $http->getPort(), 'explicit default ports are preserved verbatim');
+        self::assertNull($http->getPort(), 'explicit default port http:80 is omitted');
+        self::assertSame('localhost', $http->getAuthority());
+        self::assertSame('http://localhost/', (string) $http);
         $implicit = new Uri('http://localhost/');
         self::assertNull($implicit->getPort());
         $https = new Uri('https://localhost:443/');
-        self::assertSame(443, $https->getPort());
+        self::assertNull($https->getPort(), 'explicit default port https:443 is omitted');
+        self::assertSame('https://localhost/', (string) $https);
+        // The stored port re-exposes itself once it stops being the
+        // scheme default: 80 is non-default under https.
+        $flipped = $http->withScheme('https');
+        self::assertSame(80, $flipped->getPort());
+        self::assertSame('https://localhost:80/', (string) $flipped);
 
         $ok = new Uri('http://localhost/', ['localhost']);
         self::assertSame('localhost', $ok->getHost());
