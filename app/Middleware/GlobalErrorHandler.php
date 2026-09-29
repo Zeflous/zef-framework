@@ -46,38 +46,54 @@ final class GlobalErrorHandler implements MiddlewareInterface
         try {
             return self::asResponse($handler->handle($request)->withHeader('X-Request-ID', $correlationId));
         } catch (MethodNotAllowedException $e) {
-            return self::asResponse(
-                $this->factory->create(405, 'Method Not Allowed', $correlationId)
-                    ->withHeader('Allow', implode(', ', $e->allowedMethods))
-                    ->withHeader('X-Request-ID', $correlationId),
-            );
+            return $this->methodNotAllowedResponse($e, $correlationId);
         } catch (\Throwable $e) {
-            try {
-                $this->logger->error('Unhandled application exception', [
-                    'exception' => $e,
-                    'exception.message' => TelemetrySanitizer::redact($e->getMessage()),
-                    'request_id' => $correlationId,
-                    'method' => $request->getMethod(),
-                    'path' => $request->getUri()->getPath(),
-                ]);
-            } catch (\Throwable $loggingFailure) {
-                @error_log('ZEF logging failure: ' . get_class($loggingFailure));
-            }
+            return $this->unhandledErrorResponse($e, $request, $correlationId);
+        }
+    }
 
-            try {
-                return self::asResponse(
-                    $this->factory->create(
-                        500,
-                        $this->factory->isDebug() ? $e->getMessage() : 'Internal Server Error',
-                        $correlationId,
-                    )->withHeader('X-Request-ID', $correlationId),
-                );
-            } catch (\Throwable) {
-                return new Response(500, [
-                    'Content-Type' => 'text/plain',
-                    'X-Request-ID' => $correlationId,
-                ], 'Internal Server Error');
-            }
+    private function methodNotAllowedResponse(MethodNotAllowedException $e, string $correlationId): ResponseInterface
+    {
+        return self::asResponse(
+            $this->factory->create(405, 'Method Not Allowed', $correlationId)
+                ->withHeader('Allow', implode(', ', $e->allowedMethods))
+                ->withHeader('X-Request-ID', $correlationId),
+        );
+    }
+
+    private function unhandledErrorResponse(
+        \Throwable $e,
+        ServerRequestInterface $request,
+        string $correlationId,
+    ): ResponseInterface {
+        try {
+            $this->logger->error('Unhandled application exception', [
+                'exception' => $e,
+                'exception.message' => TelemetrySanitizer::redact($e->getMessage()),
+                'request_id' => $correlationId,
+                'method' => $request->getMethod(),
+                'path' => $request->getUri()->getPath(),
+            ]);
+        } catch (\Throwable $loggingFailure) {
+            // error_log is the last-resort sink when the logger itself is the
+            // failure: its own diagnostic errors must not abort the response
+            // path, hence the silencer (kept deliberately).
+            @error_log('ZEF logging failure: ' . get_class($loggingFailure));
+        }
+
+        try {
+            return self::asResponse(
+                $this->factory->create(
+                    500,
+                    $this->factory->isDebug() ? $e->getMessage() : 'Internal Server Error',
+                    $correlationId,
+                )->withHeader('X-Request-ID', $correlationId),
+            );
+        } catch (\Throwable) {
+            return new Response(500, [
+                'Content-Type' => 'text/plain',
+                'X-Request-ID' => $correlationId,
+            ], 'Internal Server Error');
         }
     }
 

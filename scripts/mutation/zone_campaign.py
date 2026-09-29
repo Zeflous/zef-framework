@@ -62,8 +62,27 @@ def load_results() -> dict:
 
 
 def save_results(data: dict) -> None:
+    # S2083 containment: RESULTS is a repo-relative constant, but resolve it
+    # and assert it stays inside the checkout so the write target can never
+    # escape the repository even if this file is relocated or symlinked.
+    # NOTE (PR #251 round 2): the first containment form used
+    # os.path.commonpath([repo, target]) != repo — semantically equivalent,
+    # but SonarPython's taint engine does not recognise commonpath as a
+    # sanitiser, so the BLOCKER stayed open. The parents-membership form
+    # below is the same gate show_escapes.py / mine_escapes.py /
+    # doctum_to_wiki.py have carried since round 1 (never flagged), and it
+    # is the form the engine proves the write target sanitized with. The
+    # temp file gets its own resolved containment check: it is the path the
+    # bytes actually land on first, and RESULTS.with_suffix() re-derives it,
+    # so it must not inherit trust from the target check.
+    repo = REPO.resolve()
+    target = RESULTS.resolve()
+    if repo not in target.parents:
+        raise RuntimeError("zone-campaign results path escapes the repository")
     RESULTS.parent.mkdir(parents=True, exist_ok=True)
-    tmp = RESULTS.with_suffix(".tmp")
+    tmp = RESULTS.with_suffix(".tmp").resolve()
+    if repo not in tmp.parents:
+        raise RuntimeError("zone-campaign temp path escapes the repository")
     tmp.write_text(json.dumps(data, indent=2, sort_keys=True))
     tmp.replace(RESULTS)
 
@@ -82,7 +101,7 @@ def parse_summary(path: Path) -> dict:
         "Ignored": "ignored",
         "Not Covered": "not_covered",
     }
-    out = {v: 0 for v in labels.values()}
+    out = dict.fromkeys(labels.values(), 0)
     if not path.exists():
         return out
     txt = path.read_text()

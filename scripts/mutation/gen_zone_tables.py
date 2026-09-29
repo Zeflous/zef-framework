@@ -195,6 +195,25 @@ def write_table(path: Path, rows: list[list[str]], header: str) -> None:
     path.write_text("\n".join(lines) + "\n")
 
 
+def publish_strictest(zone: str, measurement: dict | None, evidence: Path) -> bool:
+    """Copy the freshest campaign summary into the committed evidence slot,
+    but only when it is not weaker than what is already committed.
+
+    Returns True when a new summary file was written.
+    """
+    build = REPO / "build" / f"infection-summary-{zone}.json"
+    if not (measurement and build.exists() and build.stat().st_size > 0):
+        return False
+    campaign = parse_summary(build)
+    committed = parse_summary(evidence)
+    if not (campaign and (not committed or campaign["msi"] >= committed["msi"] - 1e-9)):
+        return False
+    if evidence.exists() and evidence.read_text() == build.read_text():
+        return False
+    evidence.write_text(build.read_text())
+    return True
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--report", default=None, help="also write a markdown table here")
@@ -209,16 +228,9 @@ def main() -> int:
     notes = 0
     for zone in zones:
         measurement, evidence, note = resolve(zone)
-        # Publish the strictest capture as the committed evidence for this zone:
-        # copy the campaign summary only when it is not weaker than what is there.
-        build = REPO / "build" / f"infection-summary-{zone}.json"
-        if measurement and build.exists() and build.stat().st_size > 0:
-            campaign = parse_summary(build)
-            committed = parse_summary(evidence)
-            if campaign and (not committed or campaign["msi"] >= committed["msi"] - 1e-9):
-                if not evidence.exists() or evidence.read_text() != build.read_text():
-                    evidence.write_text(build.read_text())
-                    published += 1
+        # Publish the strictest capture as the committed evidence for this zone.
+        if publish_strictest(zone, measurement, evidence):
+            published += 1
         if note:
             notes += 1
         rows.append(row_for(zone, measurement, note))

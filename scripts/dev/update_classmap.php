@@ -43,7 +43,7 @@ foreach (array_merge(iterator_to_array($it), iterator_to_array($itTests)) as $fi
 $lines = explode("\n", $source);
 $existing = []; // fqcn (normalized) => line index
 foreach ($lines as $index => $line) {
-    if (preg_match('/^\s*"((?:[A-Za-z0-9_]|\\\\)+)"\s*=>\s*__DIR__/', $line, $m) === 1) {
+    if (preg_match('/^\s*"([\w\\\\]+)"\s*=>\s*__DIR__/', $line, $m) === 1) {
         $fqcn = str_replace('\\\\', '\\', $m[1]);
         $existing[$fqcn] = $index;
     }
@@ -79,10 +79,8 @@ foreach ($newSorted as $class => $rel) {
     $newLine = '                "' . str_replace('\\', '\\\\', $class) . '" => __DIR__ . \'/../' . $rel . '\',';
     $target = null;
     foreach ($existing as $fqcn => $index) {
-        if (strcasecmp($fqcn, $class) > 0) {
-            if ($target === null || $index < $target) {
-                $target = $index;
-            }
+        if (strcasecmp($fqcn, $class) > 0 && ($target === null || $index < $target)) {
+            $target = $index;
         }
     }
     $insertions[$target ?? count($lines)][] = $newLine;

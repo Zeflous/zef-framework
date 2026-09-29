@@ -48,7 +48,7 @@ capped=0
 # Wraps every mutating API call so CS_DRYRUN=1 exercises the full decision
 # tree (fetch, diff, title/body construction) without touching the tracker.
 mutate() {
-  if [ "${dryrun}" = "1" ]; then
+  if [[ "${dryrun}" == "1" ]]; then
     printf '[dryrun] %s\n' "$*"
   else
     "$@"
@@ -147,7 +147,7 @@ total_actions="$(jq 'length' <"${actions_file}")"
 # 4) Execute the action list.
 # ---------------------------------------------------------------------------
 idx=0
-while [ "${idx}" -lt "${total_actions}" ]; do
+while [[ "${idx}" -lt "${total_actions}" ]]; do
   act="$(jq -c ".[${idx}]" <"${actions_file}")"
   idx=$((idx + 1))
   op="$(jq -r '.op' <<<"${act}")"
@@ -155,7 +155,7 @@ while [ "${idx}" -lt "${total_actions}" ]; do
   case "${op}" in
 
     create)
-      if [ "${created}" -ge "${max_new}" ]; then
+      if [[ "${created}" -ge "${max_new}" ]]; then
         capped=$((capped + 1))
         continue
       fi
@@ -189,7 +189,7 @@ while [ "${idx}" -lt "${total_actions}" ]; do
         printf '| Alert | [#%s](%s) |\n' "${a_num}" "${url}"
         printf '| Tool | %s |\n' "${tool}"
         printf '| Rule | `%s` |\n' "${rule}"
-        printf '| Severity | %s%s |\n' "${sev}" "$([ -n "${ssev}" ] && printf ' (security: %s)' "${ssev}")"
+        printf '| Severity | %s%s |\n' "${sev}" "$([[ -n "${ssev}" ]] && printf ' (security: %s)' "${ssev}")"
         printf '| Location | `%s:%s` |\n' "${path}" "${line}"
         printf '| First seen | %s |\n' "${seen}"
         printf '| State | %s |\n' "${state}"
@@ -219,7 +219,7 @@ while [ "${idx}" -lt "${total_actions}" ]; do
       a_url="$(jq -r ".alert.html_url // \"https://github.com/${repo}/security/code-scanning/${a_num}\"" <<<"${act}")"
 
       mutate gh api --method POST "repos/${repo}/issues/${issue}/comments" \
-        -f body="[cs-sync] Alert [#${a_num}](${a_url}) is now **${state}**$([ -n "${reason}" ] && printf ' (%s)' "${reason}") — closing this tracker issue automatically. If the alert ever reopens, this issue is reopened too." >/dev/null
+        -f body="[cs-sync] Alert [#${a_num}](${a_url}) is now **${state}**$([[ -n "${reason}" ]] && printf ' (%s)' "${reason}") — closing this tracker issue automatically. If the alert ever reopens, this issue is reopened too." >/dev/null
       mutate gh api --method PATCH "repos/${repo}/issues/${issue}" \
         -f state=closed >/dev/null
       closed=$((closed + 1))
@@ -237,7 +237,7 @@ while [ "${idx}" -lt "${total_actions}" ]; do
       sync_closed="$(gh api "repos/${repo}/issues/${issue}/comments?per_page=100" \
         | jq '[.[] | select((.body // "") | contains("[cs-sync]"))] | length')"
 
-      if [ "${sync_closed}" -gt 0 ]; then
+      if [[ "${sync_closed}" -gt 0 ]]; then
         mutate gh api --method POST "repos/${repo}/issues/${issue}/comments" \
           -f body="[cs-sync] Alert [#${a_num}](${a_url}) is open again — reopening this tracker issue." >/dev/null
         mutate gh api --method PATCH "repos/${repo}/issues/${issue}" \
@@ -270,7 +270,7 @@ closed_count="$(jq '[.[] | select(.state != "open")] | length' <"${alerts_file}"
   echo "### Code scanning → tracker issues"
   echo ""
   echo "- Alerts: **${open_count} open** / ${closed_count} resolved (of $(jq 'length' <"${alerts_file}") fetched)"
-  echo "- Issues created: **${created}**$( [ "${capped}" -gt 0 ] && printf ' (cap %s hit — %s deferred to the next sweep)' "${max_new}" "${capped}" )"
+  echo "- Issues created: **${created}**$( [[ "${capped}" -gt 0 ]] && printf ' (cap %s hit — %s deferred to the next sweep)' "${max_new}" "${capped}" )"
   echo "- Issues closed: **${closed}** · reopened: **${reopened}** · already in sync: ${noop} · human-closed kept: ${human_kept}"
   echo ""
   echo "Tracker: https://github.com/${repo}/labels/${label} · Alerts: https://github.com/${repo}/security/code-scanning"
