@@ -148,7 +148,7 @@ final class RequestFactory
             if ($uriHost === '') {
                 throw new \InvalidArgumentException('Missing request host.');
             }
-            $validator->assert($uriHost);
+            $validator->assertTrusted($uriHost);
 
             // PSR-7 allows Host to differ from the URI. Honor the same trusted
             // proxy boundary as fromServer(), without trusting forwarded data
@@ -162,7 +162,7 @@ final class RequestFactory
             if ($host === '') {
                 throw new \InvalidArgumentException('Missing request host.');
             }
-            $validator->assert($host);
+            $validator->assertTrusted($host);
         }
 
         $length = $request->getHeaderLine('Content-Length');

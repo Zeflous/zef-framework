@@ -32,12 +32,16 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
-        runAsUser: 1000
-        fsGroup: 1000
+        # UID/GID >= 10000 keeps container processes out of the host's
+        # low-UID range (SNYK-CC-K8S-11).
+        runAsUser: 10000
+        fsGroup: 10000
       containers:
         - name: app
           image: zef-framework:latest   # replace with your registry path
-          imagePullPolicy: IfNotPresent
+          # Always pull so a mutable tag can never silently reuse a stale or
+          # unauthorized image (SNYK-CC-K8S-42).
+          imagePullPolicy: Always
           ports:
             - name: http
               containerPort: 8080

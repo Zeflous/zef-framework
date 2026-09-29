@@ -94,6 +94,10 @@ jobs:
       # on findings. `snyk test --all-projects` scans every detected project
       # and exits 1 when any vulnerability at or above the threshold is found,
       # so the dependency gate is now real and blocking.
+      #
+      # License-policy noise is handled in `.snyk` (the MIT dependencies of the
+      # RoadRunner/PSR stack are explicitly allowed there, with a reason and an
+      # expiry). No vulnerability is ignored: a real advisory still exits 1.
       - name: Snyk Open Source test (SCA, SARIF output)
         id: snyk_sca
         run: |
@@ -113,6 +117,19 @@ jobs:
           snyk iac test --severity-threshold=low --report --sarif-file-output=snyk-iac.sarif || rc=$?
           echo "snyk iac test exit code: ${rc} (0=clean, 1=findings, >1=error)"
           echo "exit_code=${rc}" >> "$GITHUB_OUTPUT"
+
+      # ---------------------------------------------------------------------
+      # SARIF normalization. Snyk's SCA SARIF can carry a rule whose
+      # `security-severity` is the literal string "undefined" (license issues
+      # have no CVSS score), and GitHub Code Scanning rejects the whole file
+      # with "invalid security severity value, is not a number: undefined".
+      # Rewriting those values to 0.0 lets the SCA findings reach the Code
+      # Scanning tab. This touches evidence only — the verdict below is still
+      # computed from the scanner exit codes, so the gate stays fail-closed.
+      # ---------------------------------------------------------------------
+      - name: Normalize SARIF security-severity values
+        if: always()
+        run: python3 scripts/ci/normalize_sarif_severity.py snyk-code.sarif snyk-sca.sarif snyk-iac.sarif
 
       # ---------------------------------------------------------------------
       # Evidence upload. Runs even when a scan above reported findings, and

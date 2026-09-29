@@ -1,25 +1,39 @@
 # Snyk (https://snyk.io) policy file.
 #
-# Scope: Snyk Code (SAST) path exclusions for `snyk code test` (snyk-security.yml).
-# The dependency (SCA) monitor is unaffected: no `ignore:` or `patch:` entries here.
+# Consumed by .github/workflows/snyk-security.yml. Two independent scopes:
 #
-# Why these exclusions are in-repo, in writing: the same discipline as the local
+#   1. `exclude:` — Snyk Code (SAST) path exclusions for `snyk code test`.
+#   2. `ignore:`  — Snyk Open Source (SCA) license-issue ignores for `snyk test`.
+#
+# Why these entries are in-repo, in writing: the same discipline as the local
 # Semgrep rules in .github/semgrep/rules and the SonarCloud src/-only scope —
-# every analyzer boundary in this repository is a reviewed, documented decision,
-# never a silent skip. Re-include by deleting an entry.
+# every analyzer boundary in this repository is a reviewed, documented
+# decision, never a silent skip. Re-include by deleting an entry.
 #
-# The four excluded files are CLI-only developer tooling (infection-log readers,
-# the Doctum-to-Wiki index generator, the mutation zone table generator). Their
-# path arguments are supplied by the developer or CI invoking them, and since
-# fix/code-scanning-python-pt-paths they are validated lexically and
-# containment-checked (symlinks resolved) by repo_path() before any read or
+# ---------------------------------------------------------------------------
+# 1. Snyk Code (SAST) exclusions
+# ---------------------------------------------------------------------------
+# The four excluded Python files are CLI-only developer tooling (infection-log
+# readers, the Doctum-to-Wiki index generator, the mutation zone table
+# generator). Their path arguments are supplied by the developer or CI invoking
+# them, and since fix/code-scanning-python-pt-paths they are validated lexically
+# and containment-checked (symlinks resolved) by repo_path() before any read or
 # write. SnykCode's python/PT rule nevertheless reports every
 # CLI-argument-to-file-operation flow: it recognizes no sanitizer pattern for
 # legitimate CLI path arguments (three hardening iterations could not clear it),
 # so the rule cannot be satisfied by design for this class of tool.
 #
-# Coverage is not lost: CodeQL's python analysis and the Semgrep scripts/ pass
-# still scan these files on every push and pull request.
+# The five excluded PHP files are unit-test fixtures. Snyk Code's "Use of
+# Hardcoded Passwords" / "Use of Hardcoded Credentials" rule fires on the
+# literal fixture values those tests feed into the code under test: a redaction
+# test must pass a literal password to prove the logger redacts it, and a config
+# test must supply a literal password to prove it loads. The rule cannot be
+# satisfied by design for this class of test, and none of the values are real
+# credentials (they are throwaway strings such as 's3cret').
+#
+# Coverage is not lost for either group: CodeQL's python analysis and the
+# Semgrep scripts/ pass still scan the Python files, and the php-sast.yml
+# Semgrep pass still scans tests/ — on every push and pull request.
 exclude:
   global:
     - scripts/show_escapes.py:
@@ -30,3 +44,67 @@ exclude:
         reason: 'CLI-only CI/dev tool; path args are repo_path()-guarded, and CodeQL python + Semgrep still scan it'
     - scripts/mutation/gen_zone_tables.py:
         reason: 'CLI-only dev tool; path args are repo_path()-guarded, and CodeQL python + Semgrep still scan it'
+    - tests/Unit/ConfigV2RadixTreeTest.php:
+        reason: 'Unit-test fixture; literal throwaway password proves config loading, not a real credential. Semgrep tests/ pass still scans it'
+    - tests/Unit/ConfigV2ApplicationTest.php:
+        reason: 'Unit-test fixture; literal throwaway password proves secret resolution, not a real credential. Semgrep tests/ pass still scans it'
+    - tests/Unit/ConfigV2SchemaVersioningTest.php:
+        reason: 'Unit-test fixture; literal throwaway password proves secret migration, not a real credential. Semgrep tests/ pass still scans it'
+    - tests/Unit/ObservabilityTest.php:
+        reason: 'Unit-test fixture; literal throwaway password is the INPUT to a redaction test, not a real credential. Semgrep tests/ pass still scans it'
+    - tests/Unit/EdgeMatrixObservabilityTest.php:
+        reason: 'Unit-test fixture; literal throwaway credential in a URL is the INPUT to a sanitizer test, not a real credential. Semgrep tests/ pass still scans it'
+
+# ---------------------------------------------------------------------------
+# 2. Snyk Open Source (SCA) license ignores
+# ---------------------------------------------------------------------------
+# `snyk test` reports license issues alongside vulnerabilities. Every issue
+# below is an MIT-licensed dependency of the RoadRunner / PSR stack. MIT is an
+# OSI-approved permissive license and is the license this project itself ships
+# under (see composer.json "license": "MIT"), so it is explicitly allowed here
+# and is not a legal risk.
+#
+# No vulnerability is ignored by this block — only license-policy noise. The
+# expiry forces a periodic re-review rather than a permanent silent waiver.
+version: v1.25.0
+ignore:
+  snyk:lic:composer:symfony:polyfill-php83:MIT:
+    - '*':
+        reason: 'MIT is an OSI-approved permissive license and the license this project ships under; explicitly allowed.'
+        expires: '2027-09-29T00:00:00.000Z'
+  snyk:lic:composer:spiral:roadrunner-worker:MIT:
+    - '*':
+        reason: 'MIT is an OSI-approved permissive license and the license this project ships under; explicitly allowed.'
+        expires: '2027-09-29T00:00:00.000Z'
+  snyk:lic:composer:spiral:roadrunner-http:MIT:
+    - '*':
+        reason: 'MIT is an OSI-approved permissive license and the license this project ships under; explicitly allowed.'
+        expires: '2027-09-29T00:00:00.000Z'
+  snyk:lic:composer:spiral:roadrunner:MIT:
+    - '*':
+        reason: 'MIT is an OSI-approved permissive license and the license this project ships under; explicitly allowed.'
+        expires: '2027-09-29T00:00:00.000Z'
+  snyk:lic:composer:spiral:goridge:MIT:
+    - '*':
+        reason: 'MIT is an OSI-approved permissive license and the license this project ships under; explicitly allowed.'
+        expires: '2027-09-29T00:00:00.000Z'
+  snyk:lic:composer:roadrunner-php:roadrunner-api-dto:MIT:
+    - '*':
+        reason: 'MIT is an OSI-approved permissive license and the license this project ships under; explicitly allowed.'
+        expires: '2027-09-29T00:00:00.000Z'
+  snyk:lic:composer:psr:log:MIT:
+    - '*':
+        reason: 'MIT is an OSI-approved permissive license and the license this project ships under; explicitly allowed.'
+        expires: '2027-09-29T00:00:00.000Z'
+  snyk:lic:composer:psr:http-message:MIT:
+    - '*':
+        reason: 'MIT is an OSI-approved permissive license and the license this project ships under; explicitly allowed.'
+        expires: '2027-09-29T00:00:00.000Z'
+  snyk:lic:composer:psr:http-factory:MIT:
+    - '*':
+        reason: 'MIT is an OSI-approved permissive license and the license this project ships under; explicitly allowed.'
+        expires: '2027-09-29T00:00:00.000Z'
+  snyk:lic:composer:nyholm:psr7:MIT:
+    - '*':
+        reason: 'MIT is an OSI-approved permissive license and the license this project ships under; explicitly allowed.'
+        expires: '2027-09-29T00:00:00.000Z'

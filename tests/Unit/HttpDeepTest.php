@@ -54,7 +54,7 @@ final class HttpDeepTest extends TestCase
     {
         $stream = Stream::fromString('payload');
         $resource = $stream->detach();
-        assert(is_resource($resource));
+        self::assertIsResource($resource);
         fclose($resource);
         $this->expectException(\RuntimeException::class);
         $stream->tell();
@@ -71,7 +71,7 @@ final class HttpDeepTest extends TestCase
     public function testStreamWriteReadAndSeekCycle(): void
     {
         $resource = fopen('php://temp', 'w+b');
-        assert(is_resource($resource));
+        self::assertIsResource($resource);
         $stream = new Stream($resource);
         self::assertTrue($stream->isWritable());
         self::assertTrue($stream->isReadable());
@@ -99,7 +99,7 @@ final class HttpDeepTest extends TestCase
     public function testStreamWriteOnReadOnlyResourceFails(): void
     {
         $resource = fopen('php://memory', 'rb');
-        assert(is_resource($resource));
+        self::assertIsResource($resource);
         $stream = new Stream($resource);
         self::assertFalse($stream->isWritable());
         $this->expectException(\RuntimeException::class);
@@ -116,7 +116,7 @@ final class HttpDeepTest extends TestCase
     public function testStreamReadOnNonReadableResourceFails(): void
     {
         $resource = fopen('php://stdout', 'wb');
-        assert(is_resource($resource));
+        self::assertIsResource($resource);
         $stream = new Stream($resource);
         self::assertFalse($stream->isReadable());
         $this->expectException(\RuntimeException::class);
@@ -134,7 +134,7 @@ final class HttpDeepTest extends TestCase
     public function testStreamSeekOnNonSeekableStreamFails(): void
     {
         $resource = fopen('php://output', 'wb');
-        assert(is_resource($resource));
+        self::assertIsResource($resource);
         $stream = new Stream($resource);
         self::assertFalse($stream->isSeekable());
         $this->expectException(\RuntimeException::class);
