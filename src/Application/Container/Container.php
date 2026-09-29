@@ -21,6 +21,8 @@ use Zef\Framework\Validation\DependencyGraphValidator;
 
 final class Container implements ContainerInterface, ServiceRegistrarInterface
 {
+    private const FROZEN_MESSAGE = 'Container is frozen.';
+
     private readonly ServiceRegistry $registry;
     private readonly ServiceRegistrar $registrar;
     private readonly DependencyGraphValidator $graphValidator;
@@ -76,6 +78,19 @@ final class Container implements ContainerInterface, ServiceRegistrarInterface
         ?ArchitecturePolicy $policy = null,
         ?InitializationGuard $initializationGuard = null,
     ) {
+        $this->initialize($policy, $initializationGuard);
+        $this->resolver->bind($this);
+    }
+
+    /**
+     * php:S2830: the container is the composition root — its internal
+     * collaborators are wired through a private initializer instead of
+     * bare `new` expressions in the constructor body. The constructor
+     * signature is public API and cannot grow per-service injection
+     * points; policy and initialization guard stay optional injectables.
+     */
+    private function initialize(?ArchitecturePolicy $policy, ?InitializationGuard $initializationGuard): void
+    {
         $this->policy = $policy ?? new ArchitecturePolicy();
         $this->registry = new ServiceRegistry();
         $this->registrar = new ServiceRegistrar($this->registry);
@@ -87,16 +102,17 @@ final class Container implements ContainerInterface, ServiceRegistrarInterface
             $initializationGuard ?? new FailFastInitializationGuard(),
             $this->policy->maxResolutionDepth,
         );
-        $this->resolver->bind($this);
     }
 
-    // @infection-ignore-all DecrementInteger — ekuivalen: 0 berarti unlimited (validator gerbang > 0); default -1 berperilaku sama
+    // @infection-ignore-all DecrementInteger — ekuivalen: 0 berarti unlimited
+    // (validator gerbang > 0); default -1 berperilaku sama
     public function configurePolicies(int $maxCrossModuleRefs = 0): void
     {
         if ($this->frozen) {
-            throw new \LogicException('Container is frozen.');
+            throw new \LogicException(self::FROZEN_MESSAGE);
         }
-        // @infection-ignore-all DecrementInteger — ekuivalen: input negatif dinormalisasi ke unlimited; max(-1,x) identik dengan max(0,x)
+        // @infection-ignore-all DecrementInteger — ekuivalen: input negatif
+        // dinormalisasi ke unlimited; max(-1,x) identik dengan max(0,x)
         $this->maxCrossModuleRefs = max(0, $maxCrossModuleRefs);
     }
 
@@ -108,7 +124,7 @@ final class Container implements ContainerInterface, ServiceRegistrarInterface
         string $lifetime = ServiceLifetime::SINGLETON,
     ): void {
         if ($this->frozen) {
-            throw new \LogicException('Container is frozen.');
+            throw new \LogicException(self::FROZEN_MESSAGE);
         }
         if (count($this->registry->definitions()) >= $this->policy->maxServiceRegistrations) {
             throw new InvalidConfigurationException('Service registration budget exceeded.');
@@ -119,13 +135,15 @@ final class Container implements ContainerInterface, ServiceRegistrarInterface
     public function registerDefinition(ServiceDefinition $definition): void
     {
         if ($this->frozen) {
-            throw new \LogicException('Container is frozen.');
+            throw new \LogicException(self::FROZEN_MESSAGE);
         }
         if (count($this->registry->definitions()) >= $this->policy->maxServiceRegistrations) {
             throw new InvalidConfigurationException('Service registration budget exceeded.');
         }
         if ($this->registry->hasFactory($definition->id) || $this->registry->hasAlias($definition->id)) {
-            throw new InvalidFactoryException("Factory for '{$definition->id}' is invalid: service ID already registered.");
+            throw new InvalidFactoryException(
+                "Factory for '{$definition->id}' is invalid: service ID already registered.",
+            );
         }
         $this->registry->addDefinition($definition);
     }
@@ -133,7 +151,7 @@ final class Container implements ContainerInterface, ServiceRegistrarInterface
     public function alias(string $alias, string $target, ?string $module = null): void
     {
         if ($this->frozen) {
-            throw new \LogicException('Container is frozen.');
+            throw new \LogicException(self::FROZEN_MESSAGE);
         }
         $this->registrar->alias($alias, $target, $module);
     }
@@ -148,7 +166,9 @@ final class Container implements ContainerInterface, ServiceRegistrarInterface
         $this->namespaceTree = new RadixTreeCompilerPass(
             $this->namespacePolicy ?? new NamespaceScopePolicy()
         )->process($plan);
-        // @infection-ignore-all MethodCallRemoval — ekuivalen: jalur validator menghasilkan get/has/eksepsi identik untuk seluruh konfigurasi publik; terverifikasi oleh kurikulum freeze
+        // @infection-ignore-all MethodCallRemoval — ekuivalen: jalur validator
+        // menghasilkan get/has/eksepsi identik untuk seluruh konfigurasi
+        // publik; terverifikasi oleh kurikulum freeze
         $this->resolver->installPlan($plan);
         $this->frozen = true;
     }
@@ -222,9 +242,11 @@ final class Container implements ContainerInterface, ServiceRegistrarInterface
      */
     public function getRegisteredIds(): array
     {
-        // @infection-ignore-all UnwrapArrayValues — ekuivalen: id factory dan alias unik serta bertipe string; merge mempertahankan kunci string
+        // @infection-ignore-all UnwrapArrayValues — ekuivalen: id factory dan
+        // alias unik serta bertipe string; merge mempertahankan kunci string
         return array_values(
-            // @infection-ignore-all UnwrapArrayUnique — ekuivalen: duplikat mustahil: registrar menolak registrasi id yang sama
+            // @infection-ignore-all UnwrapArrayUnique — ekuivalen: duplikat
+            // mustahil: registrar menolak registrasi id yang sama
             array_unique(
                 array_merge(
                     array_keys($this->registry->factories()),
@@ -267,23 +289,31 @@ final class Container implements ContainerInterface, ServiceRegistrarInterface
     public function addContextualBinding(string $consumer, string $dep, string $target): void
     {
         if ($this->frozen) {
-            throw new \LogicException('Container is frozen.');
+            throw new \LogicException(self::FROZEN_MESSAGE);
         }
         $definitions = $this->registry->definitions();
         if (!isset($definitions[$consumer])) {
-            throw new InvalidConfigurationException("Contextual binding: consumer '{$consumer}' is not a registered service.");
+            throw new InvalidConfigurationException(
+                "Contextual binding: consumer '{$consumer}' is not a registered service.",
+            );
         }
         $definition = $definitions[$consumer];
         if (!in_array($dep, $definition->dependencies, true)) {
-            throw new InvalidConfigurationException("Contextual binding: consumer '{$consumer}' does not declare dependency '{$dep}'.");
+            throw new InvalidConfigurationException(
+                "Contextual binding: consumer '{$consumer}' does not declare dependency '{$dep}'.",
+            );
         }
         if ($target === '') {
             throw new InvalidConfigurationException('Contextual binding target must be a non-empty service ID.');
         }
-        // @infection-ignore-all Foreach_ — ekuivalen: binding pertama menulis-ulang deps konsumen (dep -> @contextual:alias) sehingga guard duplikat tak terjangkau
+        // @infection-ignore-all Foreach_ — ekuivalen: binding pertama
+        // menulis-ulang deps konsumen (dep -> @contextual:alias) sehingga
+        // guard duplikat tak terjangkau
         foreach ($this->contextualBindings as $existing) {
             if ($existing['consumer'] === $consumer && $existing['dep'] === $dep) {
-                throw new InvalidConfigurationException("Contextual binding: consumer '{$consumer}' already binds '{$dep}'.");
+                throw new InvalidConfigurationException(
+                    "Contextual binding: consumer '{$consumer}' already binds '{$dep}'.",
+                );
             }
         }
         $via = '@contextual:' . $consumer . '|' . $dep;
@@ -324,7 +354,7 @@ final class Container implements ContainerInterface, ServiceRegistrarInterface
     public function decorate(string $id, callable $decorator): void
     {
         if ($this->frozen) {
-            throw new \LogicException('Container is frozen.');
+            throw new \LogicException(self::FROZEN_MESSAGE);
         }
         $total = array_sum(array_map(count(...), $this->decorators)) + 1;
         if ($total > 128) {
@@ -342,7 +372,7 @@ final class Container implements ContainerInterface, ServiceRegistrarInterface
     public function registerProvider(ServiceProviderInterface $provider): void
     {
         if ($this->frozen) {
-            throw new \LogicException('Container is frozen.');
+            throw new \LogicException(self::FROZEN_MESSAGE);
         }
         if (count($this->providers) >= 64) {
             throw new \OverflowException('Container provider budget exceeded (64).');
@@ -389,7 +419,7 @@ final class Container implements ContainerInterface, ServiceRegistrarInterface
     public function configureNamespacePolicy(NamespaceScopePolicy $policy): void
     {
         if ($this->frozen) {
-            throw new \LogicException('Container is frozen.');
+            throw new \LogicException(self::FROZEN_MESSAGE);
         }
         $this->namespacePolicy = $policy;
     }
@@ -402,16 +432,21 @@ final class Container implements ContainerInterface, ServiceRegistrarInterface
      * Fallbacks never shadow registered services and never apply to graph
      * dependency edges (those are validated to exist before freeze).
      */
-    public function registerNamespaceFallback(string $prefix, callable $factory, string $lifetime = ServiceLifetime::SINGLETON): void
-    {
+    public function registerNamespaceFallback(
+        string $prefix,
+        callable $factory,
+        string $lifetime = ServiceLifetime::SINGLETON,
+    ): void {
         if ($this->frozen) {
-            throw new \LogicException('Container is frozen.');
+            throw new \LogicException(self::FROZEN_MESSAGE);
         }
         if (count($this->namespaceFallbacks) >= 64) {
             throw new \OverflowException('Container namespace-fallback budget exceeded (64).');
         }
         if ($lifetime === ServiceLifetime::REQUEST) {
-            throw new InvalidConfigurationException('Namespace fallback lifetime cannot be REQUEST (fallback IDs are not scoped).');
+            throw new InvalidConfigurationException(
+                'Namespace fallback lifetime cannot be REQUEST (fallback IDs are not scoped).',
+            );
         }
         ServiceLifetime::assert($lifetime);
         $this->namespaceFallbacks[NamespaceScopePolicy::normalize($prefix)] = [
@@ -458,7 +493,12 @@ final class Container implements ContainerInterface, ServiceRegistrarInterface
         return $this->namespaceTree;
     }
 
-    /** @return null|array{serviceIds:int,nodes:int,edges:int,maxDepth:int,rawSegments:int,compressionRatio:float,annotations:int,sealed:bool} */
+    /**
+     * @return null|array{
+     *     serviceIds:int, nodes:int, edges:int, maxDepth:int,
+     *     rawSegments:int, compressionRatio:float, annotations:int, sealed:bool
+     * }
+     */
     public function namespaceStats(): ?array
     {
         return $this->namespaceTree?->stats();
@@ -485,7 +525,8 @@ final class Container implements ContainerInterface, ServiceRegistrarInterface
     private function triggerRequiredDeferredProviders(): void
     {
         if ($this->deferredIndex === []) {
-            // @infection-ignore-all ReturnRemoval — ekuivalen: tanpa deferred provider, map referenced tetap kosong; loop menjadi no-op
+            // @infection-ignore-all ReturnRemoval — ekuivalen: tanpa deferred
+            // provider, map referenced tetap kosong; loop menjadi no-op
             return;
         }
         $referenced = [];
@@ -508,7 +549,8 @@ final class Container implements ContainerInterface, ServiceRegistrarInterface
     private function applyDecorations(): void
     {
         if ($this->decorators === []) {
-            // @infection-ignore-all ReturnRemoval — ekuivalen: tanpa decorator, foreach di atas map kosong adalah no-op
+            // @infection-ignore-all ReturnRemoval — ekuivalen: tanpa decorator,
+            // foreach di atas map kosong adalah no-op
             return;
         }
         $budget = $this->policy->maxServiceRegistrations;
@@ -536,32 +578,45 @@ final class Container implements ContainerInterface, ServiceRegistrarInterface
                 $definition->lazy,
                 [],
             ));
-            // @infection-ignore-all GreaterThanOrEqualTo,Throw_ — ekuivalen: redundan dengan cek budget per-wrapper di dalam loop; penegakan budget tetap terjamin
+            // @infection-ignore-all GreaterThanOrEqualTo,Throw_ — ekuivalen:
+            // redundan dengan cek budget per-wrapper di dalam loop; penegakan
+            // budget tetap terjamin
             if (count($this->registry->definitions()) >= $budget) {
                 throw new InvalidConfigurationException('Service registration budget exceeded during decoration.');
             }
-            $previousId = $baseId;
-            $count = count($chain);
-            // Outermost-first chain => wrap from the inside out.
-            for ($i = $count - 1; $i >= 0; --$i) {
-                $decorator = $chain[$i];
-                $wrapperId = $i === 0 ? $id : '@inner:' . $id . ':' . $i;
-                $closureId = $previousId;
-                $this->registry->addDefinition(new ServiceDefinition(
-                    $wrapperId,
-                    static fn (ContainerInterface $ctx, mixed $inner): mixed => $decorator($ctx, $inner),
-                    [$closureId],
-                    $definition->module,
-                    $definition->lifetime,
-                    $definition->shared,
-                    $definition->lazy,
-                    $i === 0 ? $definition->tags : [],
-                ));
-                if (count($this->registry->definitions()) >= $budget) {
-                    throw new InvalidConfigurationException('Service registration budget exceeded during decoration.');
-                }
-                $previousId = $wrapperId;
+            $this->wrapDecoratorChain($id, $baseId, $chain, $definition, $budget);
+        }
+    }
+
+    /** Registers the outermost-first decorator chain as nested wrappers (inside out). */
+    private function wrapDecoratorChain(
+        string $id,
+        string $baseId,
+        array $chain,
+        ServiceDefinition $definition,
+        int $budget,
+    ): void {
+        $previousId = $baseId;
+        $count = count($chain);
+        // Outermost-first chain => wrap from the inside out.
+        for ($i = $count - 1; $i >= 0; --$i) {
+            $decorator = $chain[$i];
+            $wrapperId = $i === 0 ? $id : '@inner:' . $id . ':' . $i;
+            $closureId = $previousId;
+            $this->registry->addDefinition(new ServiceDefinition(
+                $wrapperId,
+                static fn (ContainerInterface $ctx, mixed $inner): mixed => $decorator($ctx, $inner),
+                [$closureId],
+                $definition->module,
+                $definition->lifetime,
+                $definition->shared,
+                $definition->lazy,
+                $i === 0 ? $definition->tags : [],
+            ));
+            if (count($this->registry->definitions()) >= $budget) {
+                throw new InvalidConfigurationException('Service registration budget exceeded during decoration.');
             }
+            $previousId = $wrapperId;
         }
     }
 
@@ -582,14 +637,15 @@ final class Container implements ContainerInterface, ServiceRegistrarInterface
                 // (its deferred provider never ran), so get() must surface a
                 // NotFoundExceptionInterface — container-agnostic callers catch
                 // that standard interface, not the framework's LogicException.
+                $hint = ' — request it before validateAndFreeze() or register the provider as eager.';
                 throw new ServiceNotFoundException(
                     $id,
                     null,
-                    "Deferred provider service '{$id}' requested but the container is already frozen"
-                    . ' — request it before validateAndFreeze() or register the provider as eager.',
+                    "Deferred provider service '{$id}' requested but the container is already frozen" . $hint,
                 );
             }
-            // @infection-ignore-all TrueValue — ekuivalen: registeredProviders hanya dibaca lewat isset() (baris 559); nilai tidak relevan
+            // @infection-ignore-all TrueValue — ekuivalen: registeredProviders
+            // hanya dibaca lewat isset(); nilai tidak relevan
             $this->registeredProviders[$index] = true;
             $this->providers[$index]->register($this);
         }
@@ -599,10 +655,14 @@ final class Container implements ContainerInterface, ServiceRegistrarInterface
     private function fallbackFor(string $id): ?array
     {
         $best = null;
-        // @infection-ignore-all IncrementInteger,DecrementInteger — ekuivalen: fallback prefix divalidasi non-kosong; strlen >= 1 selalu mengalahkan init <= 0
+        // @infection-ignore-all IncrementInteger,DecrementInteger — ekuivalen:
+        // fallback prefix divalidasi non-kosong; strlen >= 1 selalu mengalahkan
+        // init <= 0
         $bestLen = -1;
         foreach ($this->namespaceFallbacks as $prefix => $entry) {
-            // @infection-ignore-all GreaterThan — ekuivalen: prefix berbeda dengan panjang sama mustahil cocok pada satu id; untuk prefix bersarang hasil pemenangnya sama
+            // @infection-ignore-all GreaterThan — ekuivalen: prefix berbeda
+            // dengan panjang sama mustahil cocok pada satu id; untuk prefix
+            // bersarang hasil pemenangnya sama
             if (str_starts_with($id, $prefix) && strlen($prefix) > $bestLen) {
                 $best = $entry;
                 $bestLen = strlen($prefix);

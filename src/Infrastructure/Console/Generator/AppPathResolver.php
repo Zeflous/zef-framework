@@ -68,7 +68,7 @@ final readonly class AppPathResolver
         }
 
         return DIRECTORY_SEPARATOR === '\\'
-            && (preg_match('#^[A-Za-z]:/#', $normalizedPath) === 1
+            && (preg_match('#^[[:alpha:]]:/#', $normalizedPath) === 1
                 || str_starts_with($normalizedPath, '//'));
     }
 
@@ -114,7 +114,7 @@ final readonly class AppPathResolver
     private function extractRootPrefix(string $path, bool $windows): array
     {
         $prefix = '';
-        if ($windows && preg_match('#^([A-Za-z]:)(/|$)#', $path) === 1) {
+        if ($windows && preg_match('#^([[:alpha:]]:)(/|$)#', $path) === 1) {
             // Drive root (C:/): the `..` walk must never pop past it.
             $prefix = substr($path, 0, 2);
             $path = substr($path, 2);
