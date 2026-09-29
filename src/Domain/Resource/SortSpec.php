@@ -180,15 +180,12 @@ final readonly class SortSpec
      */
     private static function splitDirection(string $candidate): array
     {
-        $desc = false;
         $first = $candidate[0];
-        if ($first === '-') {
-            $desc = true;
-            $candidate = ltrim(substr($candidate, 1), '+- ');
-        } elseif ($first === '+') {
+        $desc = $first === '-';
+        if ($first === '-' || $first === '+') {
+            // Direction prefix stripped; a plain field name falls through.
             $candidate = ltrim(substr($candidate, 1), '+- ');
         }
-        // Plain field name: no direction prefix to strip.
 
         return [$candidate, $desc];
     }

@@ -73,13 +73,14 @@ abstract class Repository
         foreach ($orderBy ?? [] as $column => $direction) {
             $qb->orderBy($column, $direction);
         }
+        if ($limit === null && $offset !== 0) {
+            throw new \InvalidArgumentException('offset() requires a limit.');
+        }
         if ($limit !== null) {
             $qb->limit($limit);
             if ($offset > 0) {
                 $qb->offset($offset);
             }
-        } elseif ($offset !== 0) {
-            throw new \InvalidArgumentException('offset() requires a limit.');
         }
         // No limit and no offset: nothing to apply to the builder.
 

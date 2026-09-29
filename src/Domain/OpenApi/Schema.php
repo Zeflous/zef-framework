@@ -393,12 +393,14 @@ final readonly class Schema
         if ($this->allOf !== null) {
             $out['allOf'] = array_map(static fn (self $schema): array => $schema->toArray(), $this->allOf);
         }
-        if ($this->additionalProperties instanceof Schema) {
-            $out['additionalProperties'] = $this->additionalProperties->toArray();
-        } elseif ($this->additionalPropertiesAllowed !== null) {
-            $out['additionalProperties'] = $this->additionalPropertiesAllowed;
+        $additionalProperties = match (true) {
+            $this->additionalProperties instanceof Schema => $this->additionalProperties->toArray(),
+            $this->additionalPropertiesAllowed !== null => $this->additionalPropertiesAllowed,
+            default => null,
+        };
+        if ($additionalProperties !== null) {
+            $out['additionalProperties'] = $additionalProperties;
         }
-        // Neither schema nor bool additionalProperties: key omitted.
 
         if ($this->default !== null) {
             $out['default'] = $this->default;

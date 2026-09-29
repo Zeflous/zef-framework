@@ -81,7 +81,10 @@ final class RouteCollection
         foreach ($record['segments'] as $segment) {
             if (!$segment['dynamic']) {
                 ++$staticCount;
-            } elseif (($segment['constraint'] ?? null) !== null) {
+
+                continue;
+            }
+            if (($segment['constraint'] ?? null) !== null) {
                 ++$constrainedCount;
             }
             // Dynamic segment without a constraint: neither counter applies.
