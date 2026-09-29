@@ -52,6 +52,14 @@ final readonly class RateLimitRule
         string $pathPrefix = '/',
         public ?array $methods = null,
     ) {
+        $this->assertName($name);
+        $this->assertQuota($limit, $windowSeconds, $cost);
+        $this->pathPrefix = self::normalisedPathPrefix($pathPrefix);
+        $this->assertMethods($methods);
+    }
+
+    private function assertName(string $name): void
+    {
         if ($name === '') {
             throw new \InvalidArgumentException('Rate limit rule name must not be empty.');
         }
@@ -61,6 +69,10 @@ final readonly class RateLimitRule
         if (strlen($name) > 64) {
             throw new \InvalidArgumentException('Rate limit rule name must be at most 64 characters.');
         }
+    }
+
+    private function assertQuota(int $limit, int $windowSeconds, int $cost): void
+    {
         if ($limit < 1) {
             throw new \InvalidArgumentException('Rate limit rule limit must be >= 1.');
         }
@@ -73,25 +85,41 @@ final readonly class RateLimitRule
         if ($cost > $limit) {
             throw new \InvalidArgumentException('Rate limit rule cost must not exceed the limit.');
         }
+    }
+
+    /**
+     * Normalises away trailing slashes so "/api/" and "/api" behave
+     * identically — a config typo must not change the matched set. The
+     * bare root "/" is its own normal form.
+     */
+    private static function normalisedPathPrefix(string $pathPrefix): string
+    {
         if ($pathPrefix === '' || !str_starts_with($pathPrefix, '/')) {
             throw new \InvalidArgumentException('Rate limit rule pathPrefix must start with "/".');
         }
-        // Normalise away trailing slashes so "/api/" and "/api" behave
-        // identically — a config typo must not change the matched set. The
-        // bare root "/" is its own normal form.
         $pathPrefix = rtrim($pathPrefix, '/');
         if ($pathPrefix === '') {
             $pathPrefix = '/';
         }
-        $this->pathPrefix = $pathPrefix;
-        if ($methods !== null) {
-            if ($methods === []) {
-                throw new \InvalidArgumentException('Rate limit rule methods must be null (all) or a non-empty list.');
-            }
-            foreach ($methods as $method) {
-                if (!is_string($method) || preg_match('/^[A-Z]+$/', $method) !== 1) {
-                    throw new \InvalidArgumentException('Rate limit rule methods must be uppercase HTTP method tokens.');
-                }
+
+        return $pathPrefix;
+    }
+
+    /** @param null|list<string> $methods */
+    private function assertMethods(?array $methods): void
+    {
+        if ($methods === null) {
+            return;
+        }
+        if ($methods === []) {
+            throw new \InvalidArgumentException('Rate limit rule methods must be null (all) or a non-empty list.');
+        }
+        foreach ($methods as $method) {
+            if (!is_string($method) || preg_match('/^[A-Z]+$/', $method) !== 1) {
+                // php:S5867: HTTP method tokens are ASCII-uppercase by design.
+                throw new \InvalidArgumentException(
+                    'Rate limit rule methods must be uppercase HTTP method tokens.',
+                );
             }
         }
     }
@@ -106,53 +134,79 @@ final readonly class RateLimitRule
      */
     public static function fromArray(array $data): self
     {
+        self::assertRequiredKeysPresent($data);
+        self::assertNoUnknownKeys($data);
+        $name = self::asString($data['name'], 'Rate limit rule "name" must be a string.');
+        $limit = self::asInt($data['limit'], 'Rate limit rule "limit" must be an integer.');
+        $window = self::asInt($data['windowSeconds'], 'Rate limit rule "windowSeconds" must be an integer.');
+        $cost = self::asInt($data['cost'] ?? 1, 'Rate limit rule "cost" must be an integer.');
+        $pathPrefix = self::asString($data['pathPrefix'] ?? '/', 'Rate limit rule "pathPrefix" must be a string.');
+        $methods = self::normalisedMethods($data['methods'] ?? null);
+
+        return new self($name, $limit, $window, $cost, $pathPrefix, $methods);
+    }
+
+    /** @param array<string, mixed> $data */
+    private static function assertRequiredKeysPresent(array $data): void
+    {
         foreach (['name', 'limit', 'windowSeconds'] as $required) {
             if (!array_key_exists($required, $data)) {
                 throw new \InvalidArgumentException(sprintf('Rate limit rule is missing the "%s" key.', $required));
             }
         }
+    }
+
+    /** @param array<string, mixed> $data */
+    private static function assertNoUnknownKeys(array $data): void
+    {
         $known = ['name', 'limit', 'windowSeconds', 'cost', 'pathPrefix', 'methods'];
         foreach (array_keys($data) as $key) {
             if (!in_array($key, $known, true)) {
                 throw new \InvalidArgumentException(sprintf('Unknown rate limit rule key "%s".', (string) $key));
             }
         }
-        $name = $data['name'];
-        $limit = $data['limit'];
-        $window = $data['windowSeconds'];
-        $cost = $data['cost'] ?? 1;
-        $pathPrefix = $data['pathPrefix'] ?? '/';
-        $methods = $data['methods'] ?? null;
-        if (!is_string($name)) {
-            throw new \InvalidArgumentException('Rate limit rule "name" must be a string.');
-        }
-        if (!is_int($limit)) {
-            throw new \InvalidArgumentException('Rate limit rule "limit" must be an integer.');
-        }
-        if (!is_int($window)) {
-            throw new \InvalidArgumentException('Rate limit rule "windowSeconds" must be an integer.');
-        }
-        if (!is_int($cost)) {
-            throw new \InvalidArgumentException('Rate limit rule "cost" must be an integer.');
-        }
-        if (!is_string($pathPrefix)) {
-            throw new \InvalidArgumentException('Rate limit rule "pathPrefix" must be a string.');
-        }
-        if ($methods !== null) {
-            if (!is_array($methods) || array_values($methods) !== $methods) {
-                throw new \InvalidArgumentException('Rate limit rule "methods" must be a list of strings.');
-            }
-            $list = [];
-            foreach ($methods as $method) {
-                if (!is_string($method)) {
-                    throw new \InvalidArgumentException('Rate limit rule "methods" must be a list of strings.');
-                }
-                $list[] = $method;
-            }
-            $methods = $list;
+    }
+
+    private static function asString(mixed $value, string $message): string
+    {
+        if (!is_string($value)) {
+            throw new \InvalidArgumentException($message);
         }
 
-        return new self($name, $limit, $window, $cost, $pathPrefix, $methods);
+        return $value;
+    }
+
+    private static function asInt(mixed $value, string $message): int
+    {
+        if (!is_int($value)) {
+            throw new \InvalidArgumentException($message);
+        }
+
+        return $value;
+    }
+
+    /**
+     * @param mixed $methods
+     *
+     * @return null|list<string>
+     */
+    private static function normalisedMethods($methods): ?array
+    {
+        if ($methods === null) {
+            return null;
+        }
+        if (!is_array($methods) || array_values($methods) !== $methods) {
+            throw new \InvalidArgumentException('Rate limit rule "methods" must be a list of strings.');
+        }
+        $list = [];
+        foreach ($methods as $method) {
+            if (!is_string($method)) {
+                throw new \InvalidArgumentException('Rate limit rule "methods" must be a list of strings.');
+            }
+            $list[] = $method;
+        }
+
+        return $list;
     }
 
     /**

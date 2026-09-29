@@ -218,7 +218,10 @@ final readonly class FilterSpec
             FilterCondition::EQ => $actual !== null && $this->equals($actual, $expected),
             FilterCondition::IN => $this->inList($actual, $expected),
             FilterCondition::LIKE => $this->like($actual, $expected),
-            FilterCondition::GT, FilterCondition::GTE, FilterCondition::LT, FilterCondition::LTE => $this->compareWithin($actual, $expected, $condition->op),
+            FilterCondition::GT,
+            FilterCondition::GTE,
+            FilterCondition::LT,
+            FilterCondition::LTE => $this->compareWithin($actual, $expected, $condition->op),
             default => false,
         };
     }
@@ -266,13 +269,10 @@ final readonly class FilterSpec
         $cmp = $this->compare($actual, $expected);
 
         return match ($op) {
-            FilterCondition::GT, FilterCondition::GTE, FilterCondition::LT, FilterCondition::LTE => match ($op) {
-                FilterCondition::GT => $cmp > 0,
-                FilterCondition::GTE => $cmp >= 0,
-                FilterCondition::LT => $cmp < 0,
-                FilterCondition::LTE => $cmp <= 0,
-                default => false,
-            },
+            FilterCondition::GT => $cmp > 0,
+            FilterCondition::GTE => $cmp >= 0,
+            FilterCondition::LT => $cmp < 0,
+            FilterCondition::LTE => $cmp <= 0,
             default => false,
         };
     }
