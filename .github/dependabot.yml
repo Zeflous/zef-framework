@@ -38,6 +38,25 @@ updates:
         patterns:
           - "*"
 
+  # Container base images. deploy/Dockerfile pins `php:8.4-cli-alpine` and
+  # deploy/docker-compose.yml pins `redis:7-alpine`; without this ecosystem
+  # those tags were the only unpinned, unmonitored dependencies in the
+  # repository — a base-image CVE would never have surfaced as a PR.
+  - package-ecosystem: docker
+    directory: /deploy
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Asia/Jakarta
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - docker
+    commit-message:
+      prefix: "chore(deps)"
+      include: scope
+
   - package-ecosystem: github-actions
     directory: /
     schedule:

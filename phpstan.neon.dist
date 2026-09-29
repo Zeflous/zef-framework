@@ -2,8 +2,14 @@
 #
 # v2.13.0 hardening: analysis runs at LEVEL MAX with the official
 # phpstan-strict-rules extension (booleans-in-conditions, no implicit
-# mixed, disallowed loose constructs) and treatPhpDocTypesAsCertain so
-# every phpDoc annotation is validated against real runtime types.
+# mixed, disallowed loose constructs).
+#
+# treatPhpDocTypesAsCertain is deliberately FALSE (see the parameter at the
+# bottom of this file). The header used to claim the opposite, which made the
+# configuration read as stricter than it is. The setting is kept off on
+# purpose: turning it on promotes every phpDoc annotation to a certainty and
+# surfaces findings outside the frozen baseline, so it is a deliberate,
+# separately-measured change rather than a comment fix.
 #
 # The frozen baseline (phpstan-baseline.neon) is regenerated only on
 # purpose; CI fails on any error outside it (reportUnmatchedIgnoredErrors).
@@ -20,6 +26,7 @@ parameters:
         - src
         - modules
         - plugins
+        - app
         - tests
     bootstrapFiles:
         - autoload/zef_autoload.php
