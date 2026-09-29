@@ -81,6 +81,7 @@ use Zef\Framework\Observability\Telemetry;
 use Zef\Framework\Runtime\BlockingSleeper;
 use Zef\Framework\Runtime\RoadRunnerRuntime;
 use Zef\Framework\Runtime\RoadRunnerWorkerAdapter;
+use Zef\Framework\Runtime\RuntimeGovernor;
 use Zef\Framework\Runtime\WorkerInterface;
 use Zef\Framework\Security\AuthenticationMiddleware;
 use Zef\Framework\Security\Distributed\AuthenticationResult;
@@ -402,8 +403,8 @@ final class RuntimeSecMutationDebtTest extends TestCase
         $app = $this->okApp();
         $worker = new RuntimeSecWorker([$this->request('/sec-ok', 'GET')]);
         $runtime = new RoadRunnerRuntime($app, $worker, 0, 0, false);
-        $inFlight = new \ReflectionProperty(RoadRunnerRuntime::class, 'inFlight');
-        $inFlight->setValue($runtime, 5);
+        $inFlight = new \ReflectionProperty(RuntimeGovernor::class, 'inFlight');
+        $inFlight->setValue($this->governorOf($runtime), 5);
 
         $exit = $runtime->run();
 
@@ -447,25 +448,27 @@ final class RuntimeSecMutationDebtTest extends TestCase
     public function testRuntimeValidateControlCommandFailsClosedOutsideItsAllowList(): void
     {
         $this->loadShadows();
-        $method = new \ReflectionMethod(RoadRunnerRuntime::class, 'validateControlCommand');
+        $method = new \ReflectionMethod(RuntimeGovernor::class, 'validateControlCommand');
 
         putenv('ZEF_RUNTIME_CONTROL_PLANE=on');
         $enabled = new RoadRunnerRuntime($this->okApp(), new RuntimeSecWorker([]), 0, 0, false);
+        $enabledGovernor = $this->governorOf($enabled);
         foreach (['diagnostics.snapshot', 'lifecycle.status', 'config.reload'] as $command) {
             self::assertTrue(
-                $method->invoke($enabled, $command),
+                $method->invoke($enabledGovernor, $command),
                 "the enabled control plane must accept its allow-listed command '{$command}'",
             );
         }
         self::assertFalse(
-            $method->invoke($enabled, 'diagnostics.purge'),
+            $method->invoke($enabledGovernor, 'diagnostics.purge'),
             'an unlisted command must fail closed even when the control plane is enabled',
         );
 
         putenv('ZEF_RUNTIME_CONTROL_PLANE');
         $disabled = new RoadRunnerRuntime($this->okApp(), new RuntimeSecWorker([]), 0, 0, false);
+        $disabledGovernor = $this->governorOf($disabled);
         self::assertFalse(
-            $method->invoke($disabled, 'lifecycle.status'),
+            $method->invoke($disabledGovernor, 'lifecycle.status'),
             'a disabled control plane must reject every command before consulting the allow-list',
         );
     }
@@ -499,6 +502,15 @@ final class RuntimeSecMutationDebtTest extends TestCase
         } catch (\Throwable $e) {
             self::fail('stop() must tolerate inner workers without a stop method: ' . $e->getMessage());
         }
+    }
+
+    /** Materializes (and returns) the runtime's lazily built governor for private-state inspection. */
+    private function governorOf(RoadRunnerRuntime $runtime): RuntimeGovernor
+    {
+        $governor = (new \ReflectionMethod(RoadRunnerRuntime::class, 'governor'))->invoke($runtime);
+        self::assertInstanceOf(RuntimeGovernor::class, $governor);
+
+        return $governor;
     }
 
     private function saturatedMemoryPercent(int $memoryLimitBytes, int $fakeBytes): float
