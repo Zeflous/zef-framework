@@ -58,6 +58,33 @@ final class BatchSpanProcessor
         }
     }
 
+    public function shutdown(): void
+    {
+        if ($this->shutdown) {
+            return;
+        }
+        $env = $this->env ?? new Env();
+        $deadline = microtime(true) + $env->readInt('ZEF_OTEL_SHUTDOWN_DRAIN_MS', 2000, 0, 60000) / 1000;
+        while ($this->queue !== [] && microtime(true) < $deadline) {
+            $batch = array_splice($this->queue, 0, min($this->batchSize, count($this->queue)));
+            $this->exportBeforeDeadline($batch, $deadline);
+        }
+        $this->shutdown = true;
+
+        try {
+            $this->exporter->shutdown();
+        } catch (\Throwable) {
+            // Shutdown is best-effort by OTel contract: a failing exporter
+            // must not prevent the processor from releasing its queue.
+        }
+        $this->queue = [];
+    }
+
+    public function isInMemoryExporter(): bool
+    {
+        return $this->exporter instanceof InMemorySpanExporter;
+    }
+
     /**
      * Exports one batch, retrying transport failures according to the
      * shared backoff policy; invalid-argument failures abort the batch.
@@ -87,28 +114,6 @@ final class BatchSpanProcessor
         }
     }
 
-    public function shutdown(): void
-    {
-        if ($this->shutdown) {
-            return;
-        }
-        $env = $this->env ?? new Env();
-        $deadline = microtime(true) + $env->readInt('ZEF_OTEL_SHUTDOWN_DRAIN_MS', 2000, 0, 60000) / 1000;
-        while ($this->queue !== [] && microtime(true) < $deadline) {
-            $batch = array_splice($this->queue, 0, min($this->batchSize, count($this->queue)));
-            $this->exportBeforeDeadline($batch, $deadline);
-        }
-        $this->shutdown = true;
-
-        try {
-            $this->exporter->shutdown();
-        } catch (\Throwable) {
-            // Shutdown is best-effort by OTel contract: a failing exporter
-            // must not prevent the processor from releasing its queue.
-        }
-        $this->queue = [];
-    }
-
     /**
      * Exports one batch during the shutdown drain window, bounded by three
      * attempts per batch and the drain deadline.
@@ -131,11 +136,6 @@ final class BatchSpanProcessor
                 }
             }
         }
-    }
-
-    public function isInMemoryExporter(): bool
-    {
-        return $this->exporter instanceof InMemorySpanExporter;
     }
 }
 

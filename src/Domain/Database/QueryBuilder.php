@@ -140,8 +140,7 @@ final class QueryBuilder
         string $operator,
         string $second,
         string $type = 'inner',
-    ): self
-    {
+    ): self {
         $this->assertSelect('join()');
         $type = strtolower($type);
         if (!in_array($type, self::JOIN_TYPES, true)) {
@@ -355,9 +354,9 @@ final class QueryBuilder
                 $expected = array_keys($row);
             } elseif (array_keys($row) !== $expected) {
                 throw new QueryException("insertRows() row {$i} column set differs from the first row.");
-            } else {
-                // Same column set as the first row: nothing to normalise.
             }
+            // Same column set as the first row: nothing to normalise.
+
             foreach ($row as $column => $value) {
                 $this->quoteIdentifier($column, 'column');
                 $this->assertScalar($value, "insertRows() row {$i} value for '{$column}'");

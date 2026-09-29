@@ -48,12 +48,6 @@ final readonly class PdoSnapshotStore implements SnapshotStoreInterface
         $this->table = $table;
     }
 
-    /** Validates $table through the shared identifier grammar (throws on bad names). */
-    private static function assertValidTable(string $table): void
-    {
-        new QueryBuilder()->quoteIdentifier($table, 'table');
-    }
-
     /**
      * Create the snapshots table (portable DDL, safe to run repeatedly).
      */
@@ -129,6 +123,12 @@ final readonly class PdoSnapshotStore implements SnapshotStoreInterface
                 ->where('aggregate_id', '=', $aggregateId)
                 ->build(),
         ) > 0;
+    }
+
+    /** Validates $table through the shared identifier grammar (throws on bad names). */
+    private static function assertValidTable(string $table): void
+    {
+        new QueryBuilder()->quoteIdentifier($table, 'table');
     }
 
     private function doSave(Snapshot $snapshot): void

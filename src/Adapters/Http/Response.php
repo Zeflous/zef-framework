@@ -37,12 +37,6 @@ final class Response extends MessageBase implements ResponseInterface
             : (HttpReasonPhrases::MAP[$status] ?? '');
     }
 
-    /** Validates $status against the shared RFC 9110 status grammar. */
-    private static function assertStatus(int $status): void
-    {
-        (new HttpStatusValidator())->assert($status);
-    }
-
     #[\Override]
     public function getStatusCode(): int
     {
@@ -67,6 +61,12 @@ final class Response extends MessageBase implements ResponseInterface
     public function getReasonPhrase(): string
     {
         return $this->reasonPhrase;
+    }
+
+    /** Validates $status against the shared RFC 9110 status grammar. */
+    private static function assertStatus(int $status): void
+    {
+        new HttpStatusValidator()->assert($status);
     }
 
     /**

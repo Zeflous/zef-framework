@@ -30,12 +30,6 @@ final readonly class CoroutineLocal
         $this->store = self::emptyStore();
     }
 
-    /** WeakMap factory kept out of the constructor (S2830: no object creation there). */
-    private static function emptyStore(): \WeakMap
-    {
-        return new \WeakMap();
-    }
-
     /**
      * Reads $key from the current coroutine's scope, falling back to
      * $default when the key was never set in this scope.
@@ -60,6 +54,12 @@ final readonly class CoroutineLocal
         $scope[$key] = $value;
         // @phpstan-ignore offsetAssign.dimType, assign.propertyType
         $this->store[$fiber] = $scope;
+    }
+
+    /** WeakMap factory kept out of the constructor (S2830: no object creation there). */
+    private static function emptyStore(): \WeakMap
+    {
+        return new \WeakMap();
     }
 
     /**

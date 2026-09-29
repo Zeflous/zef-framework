@@ -88,9 +88,9 @@ final class CounterMeter implements MeterInterface
             $clean = $this->boundedSystemAttributes($name, $clean);
         } elseif ($name === 'zef.lifecycle.events.total') {
             $clean = $this->boundedLifecycleAttributes($clean);
-        } else {
-            // Other metric families keep their full (sanitized) attribute set.
         }
+        // Other metric families keep their full (sanitized) attribute set.
+
         ksort($clean);
 
         return $clean;
