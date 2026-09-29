@@ -79,10 +79,9 @@ final readonly class CsrfTokenManager
             return false;
         }
         [$issuedAtRaw, $value, $signature] = $parts;
-        if (!$this->hasWellFormedBody($value, $signature)) {
-            return false;
-        }
-        if (preg_match('/^\d{1,12}$/', $issuedAtRaw) !== 1) {
+        $shapeOk = $this->hasWellFormedBody($value, $signature)
+            && preg_match('/^\d{1,12}$/', $issuedAtRaw) === 1;
+        if (!$shapeOk) {
             return false;
         }
         $now = ($this->clock)();

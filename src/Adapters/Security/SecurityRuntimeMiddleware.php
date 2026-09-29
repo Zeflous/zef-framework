@@ -16,7 +16,6 @@ use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Psr\Log\LoggerInterface;
-use Zef\Framework\Http\JsonResponse;
 
 final class SecurityRuntimeMiddleware implements MiddlewareInterface
 {

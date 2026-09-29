@@ -99,10 +99,7 @@ final readonly class EnvConfigSource implements ConfigSourceInterface
      */
     private function dottedKeyFor(string $fullKey, int $prefixLength): ?string
     {
-        if (!str_starts_with($fullKey, $this->prefix)) {
-            return null;
-        }
-        $body = substr($fullKey, $prefixLength);
+        $body = str_starts_with($fullKey, $this->prefix) ? substr($fullKey, $prefixLength) : '';
         if ($body === '' || preg_match(self::BODY_PATTERN, $body) !== 1) {
             return null;
         }

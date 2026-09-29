@@ -82,7 +82,10 @@ final readonly class AppSkeleton
             "{$target}/bin/worker.php" => $codeFiles->worker(),
             "{$target}/bin/zef" => $codeFiles->appZef(),
             "{$target}/app/Bootstrap.php" => $codeFiles->appBootstrap($pascal),
-            "{$target}/modules/{$pascal}/ConfigProvider.php" => $codeFiles->homeConfigProvider($moduleNamespace, $kebab),
+            "{$target}/modules/{$pascal}/ConfigProvider.php" => $codeFiles->homeConfigProvider(
+                $moduleNamespace,
+                $kebab,
+            ),
             "{$target}/modules/{$pascal}/HomeHandler.php" => $codeFiles->homeHandler($moduleNamespace, $kebab),
         ];
     }

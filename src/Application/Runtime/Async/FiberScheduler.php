@@ -59,7 +59,10 @@ final class FiberScheduler
 
     private ?FiberSuspensionCoordinator $suspensions = null;
 
-    public function __construct(private ?MonotonicClockInterface $clock = null, private ?SleeperInterface $sleeper = null) {}
+    public function __construct(
+        private ?MonotonicClockInterface $clock = null,
+        private ?SleeperInterface $sleeper = null,
+    ) {}
 
     // ------------------------------------------------------------------
     // Public coroutine API
@@ -362,25 +365,33 @@ final class FiberScheduler
 
     private function timers(): AsyncTimerQueue
     {
-        return $this->timers ??= new AsyncTimerQueue();
+        $this->timers ??= new AsyncTimerQueue();
+
+        return $this->timers;
     }
 
     private function runner(): FiberTaskRunner
     {
-        return $this->runner ??= new FiberTaskRunner();
+        $this->runner ??= new FiberTaskRunner();
+
+        return $this->runner;
     }
 
     private function taskTable(): FiberTaskTable
     {
-        return $this->taskTable ??= new FiberTaskTable();
+        $this->taskTable ??= new FiberTaskTable();
+
+        return $this->taskTable;
     }
 
     private function suspensions(): FiberSuspensionCoordinator
     {
-        return $this->suspensions ??= new FiberSuspensionCoordinator(
+        $this->suspensions ??= new FiberSuspensionCoordinator(
             $this,
             $this->runner(),
             $this->timers(),
         );
+
+        return $this->suspensions;
     }
 }

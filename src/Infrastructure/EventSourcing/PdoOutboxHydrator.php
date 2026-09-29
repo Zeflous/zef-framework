@@ -19,7 +19,11 @@ final class PdoOutboxHydrator
         'next_attempt_at', 'last_error', 'created_at', 'lease_owner', 'lease_until',
     ];
 
-    private function __construct() {}
+    private function __construct()
+    {
+        // Intentionally empty: static hydrator — the private constructor
+        // only exists to prevent instantiation of this all-static class.
+    }
 
     /**
      * @param array<string, mixed> $row

@@ -126,8 +126,9 @@ final readonly class AppPathResolver
                     . (isset($segments[1]) && $segments[1] !== '' ? '/' . $segments[1] : '');
                 $path = substr($path, strlen($prefix));
             }
+        } else {
+            // Neither drive nor UNC root: nothing to strip (POSIX or relative).
         }
-        // Neither drive nor UNC root: nothing to strip (POSIX or relative).
 
         return [$prefix, $path];
     }
@@ -145,9 +146,10 @@ final readonly class AppPathResolver
             array_pop($parts);
         } elseif (!$absolute) {
             $parts[] = '..';
+        } else {
+            // Absolute: `..` at the root is dropped — it can never pop past
+            // the drive/UNC/`/` root that bounds the path.
         }
-        // Absolute: `..` at the root is dropped — it can never pop past
-        // the drive/UNC/`/` root that bounds the path.
     }
 
     /** Split an absolute normalized path into segments (root `/` → []). */

@@ -98,6 +98,7 @@ final class RouteMetadataAccumulator
     ): void {
         if ($this->requestBody instanceof RequestBody) {
             $method = "{$handlerClass}::{$sourceName}()";
+
             throw new SpecificationException(
                 "Handler {$method} declares more than one #[RequestBody]; at most one is allowed per operation."
             );
@@ -135,14 +136,6 @@ final class RouteMetadataAccumulator
         $this->deprecated = true;
     }
 
-    /** The schema/content collaborator (php:S1200 extraction), built on first use. */
-    private function schemaContent(): SchemaContentBuilder
-    {
-        $this->schemaContent ??= new SchemaContentBuilder();
-
-        return $this->schemaContent;
-    }
-
     public function toMetadata(): RouteHandlerMetadata
     {
         return new RouteHandlerMetadata(
@@ -158,5 +151,13 @@ final class RouteMetadataAccumulator
             methodSecurity: $this->methodSecurity,
             operationIdOverride: $this->operationIdOverride,
         );
+    }
+
+    /** The schema/content collaborator (php:S1200 extraction), built on first use. */
+    private function schemaContent(): SchemaContentBuilder
+    {
+        $this->schemaContent ??= new SchemaContentBuilder();
+
+        return $this->schemaContent;
     }
 }

@@ -135,6 +135,8 @@ final class FiberTaskRunner
      */
     private function fiberToTask(): \WeakMap
     {
-        return $this->fiberToTask ??= new \WeakMap();
+        $this->fiberToTask ??= new \WeakMap();
+
+        return $this->fiberToTask;
     }
 }

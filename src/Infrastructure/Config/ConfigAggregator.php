@@ -60,6 +60,7 @@ final class ConfigAggregator
             // a variable so no line exceeds 120 columns without adjacent
             // string-literal concatenation.
             $reason = 'a provider called ConfigAggregator::get()/all()/merge() while configuration is being merged.';
+
             throw new \LogicException('Reentrant configuration read: ' . $reason);
         }
         $this->merging = true;

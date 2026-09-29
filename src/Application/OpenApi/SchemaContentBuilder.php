@@ -11,7 +11,7 @@ namespace Zef\Framework\OpenApi;
 
 /**
  * @internal builds the OpenAPI content maps the route metadata accumulator
- * attaches to parameters, request bodies and responses.
+ * attaches to parameters, request bodies and responses
  */
 final class SchemaContentBuilder
 {

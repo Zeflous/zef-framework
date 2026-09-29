@@ -48,18 +48,10 @@ final class PostmanSchemaExamples
      */
     private static function literalExample(array $schema): mixed
     {
-        if (isset($schema['example'])) {
-            return $schema['example'];
-        }
-        if (isset($schema['default'])) {
-            return $schema['default'];
-        }
         $enum = $schema['enum'] ?? null;
-        if (is_array($enum) && isset($enum[0])) {
-            return $enum[0];
-        }
+        $firstEnumValue = is_array($enum) && isset($enum[0]) ? $enum[0] : null;
 
-        return null;
+        return $schema['example'] ?? $schema['default'] ?? $firstEnumValue;
     }
 
     /**

@@ -89,8 +89,7 @@ final readonly class ConfigProvider implements ConfigProviderInterface
                     'deps' => [LoggerInterface::class],
                 ],
                 'middleware.security.rate_limit' => [
-                    'factory' => static fn (?ContainerInterface $c = null): RateLimitMiddleware
-                        => SecurityRateLimitWiring::rateLimitMiddleware($env, $c),
+                    'factory' => $this->buildRateLimitMiddleware(...),
                     'deps' => [],
                 ],
             ],
@@ -130,6 +129,16 @@ final readonly class ConfigProvider implements ConfigProviderInterface
         $origins = $this->env->readCsv('ZEF_CORS_ORIGIN');
 
         return new CorsMiddleware($origins);
+    }
+
+    /**
+     * The tiered rate-limit middleware service: a method (mirroring
+     * buildCors()) so the factory entry stays a one-liner — the wiring
+     * itself lives in {@see SecurityRateLimitWiring}.
+     */
+    private function buildRateLimitMiddleware(?ContainerInterface $c = null): RateLimitMiddleware
+    {
+        return SecurityRateLimitWiring::rateLimitMiddleware($this->env, $c);
     }
 
     /**

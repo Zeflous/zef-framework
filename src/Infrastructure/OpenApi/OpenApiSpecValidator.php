@@ -157,7 +157,7 @@ final class OpenApiSpecValidator
         $this->validateOperationId($where, $operation, $operationIds, $errors);
         $this->validateResponses($where, $operation, $errors);
         $this->validateParameters($where, $operation, $path, $errors);
-        $this->validateOperationSecurity($where, $operation, $errors);
+        OpenApiSecurityValidator::validateOperationSecurity($where, $operation, $errors);
     }
 
     /**
@@ -234,12 +234,7 @@ final class OpenApiSpecValidator
      */
     private function validateOperationSecurity(string $where, array $operation, array &$errors): void
     {
-        $security = is_array($operation['security'] ?? null) ? $operation['security'] : [];
-        foreach ($security as $requirement) {
-            if (!is_array($requirement)) {
-                $errors[] = "Operation {$where} contains a malformed security requirement.";
-            }
-        }
+        OpenApiSecurityValidator::validateOperationSecurity($where, $operation, $errors);
     }
 
     /**
@@ -267,37 +262,7 @@ final class OpenApiSpecValidator
      */
     private function validateSecuritySchemes(array $components, array &$errors): void
     {
-        $securitySchemes = is_array($components['securitySchemes'] ?? null) ? $components['securitySchemes'] : [];
-        foreach ($securitySchemes as $name => $scheme) {
-            $this->validateSecurityScheme($name, $scheme, $errors);
-        }
-    }
-
-    /**
-     * @param list<string> $errors
-     */
-    private function validateSecurityScheme(mixed $name, mixed $scheme, array &$errors): void
-    {
-        if (!is_string($name) || $name === '') {
-            $errors[] = 'Security scheme names must be non-empty strings.';
-
-            return;
-        }
-        if (!is_array($scheme) || !is_string($scheme['type'] ?? null)) {
-            $errors[] = "Security scheme '{$name}' must be an object with a type.";
-
-            return;
-        }
-        $type = $scheme['type'];
-        if ($type === 'http' && (!is_string($scheme['scheme'] ?? null) || $scheme['scheme'] === '')) {
-            $errors[] = "Security scheme '{$name}' of type http must define a scheme.";
-        }
-        if ($type === 'apiKey' && !in_array($scheme['in'] ?? null, ['query', 'header', 'cookie'], true)) {
-            $errors[] = "Security scheme '{$name}' of type apiKey must define in: query|header|cookie.";
-        }
-        if ($type === 'openIdConnect' && !is_string($scheme['openIdConnectUrl'] ?? null)) {
-            $errors[] = "Security scheme '{$name}' of type openIdConnect must define openIdConnectUrl.";
-        }
+        OpenApiSecurityValidator::validateSchemes($components, $errors);
     }
 
     /**

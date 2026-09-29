@@ -207,7 +207,8 @@ final readonly class ClassSchemaBuilder
     /** @param \ReflectionClass<object> $reflection */
     private function classSchemaAttribute(\ReflectionClass $reflection): ?Attribute\Schema
     {
-        $attribute = $reflection->getAttributes(Attribute\Schema::class, \ReflectionAttribute::IS_INSTANCEOF)[0] ?? null;
+        $attributes = $reflection->getAttributes(Attribute\Schema::class, \ReflectionAttribute::IS_INSTANCEOF);
+        $attribute = $attributes[0] ?? null;
 
         return $attribute !== null ? $attribute->newInstance() : null;
     }

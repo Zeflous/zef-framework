@@ -206,8 +206,7 @@ final readonly class Schema
         foreach ($this->properties as $name => $property) {
             if (!is_string($name) || trim($name) === '' || mb_strlen($name) > 128) {
                 throw new SchemaDefinitionException(
-                    'Schema property names must be non-empty strings'
-                    . ' of at most 128 characters.',
+                    'Schema property names must be non-empty strings of at most 128 characters.',
                 );
             }
             if (!$property instanceof self) {

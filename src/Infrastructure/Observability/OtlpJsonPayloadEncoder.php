@@ -18,7 +18,11 @@ namespace Zef\Framework\Observability;
 
 final class OtlpJsonPayloadEncoder
 {
-    private function __construct() {}
+    private function __construct()
+    {
+        // Intentionally empty: stateless encoder — the private constructor
+        // only exists to prevent instantiation of this all-static class.
+    }
 
     /**
      * @param array<string,mixed> $attributes

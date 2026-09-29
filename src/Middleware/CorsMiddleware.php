@@ -114,14 +114,11 @@ final readonly class CorsMiddleware implements MiddlewareInterface
      */
     private function negotiatedOrigin(ServerRequestInterface $request): ?string
     {
-        if ($this->allowedOrigins === []) {
-            return null;
-        }
-        if ($this->allowAll) {
+        $origin = trim($request->getHeaderLine('Origin'));
+        if ($this->allowAll && $this->allowedOrigins !== []) {
             return '*';
         }
-        $origin = trim($request->getHeaderLine('Origin'));
-        if ($origin === '' || !$this->originIsAllowed($origin)) {
+        if ($this->allowedOrigins === [] || $origin === '' || !$this->originIsAllowed($origin)) {
             return null;
         }
 
