@@ -57,7 +57,10 @@ final class ApiVersionNegotiator
         }
         foreach ($supported as $version) {
             if (!is_string($version) || !$this->isValidToken($version)) {
-                throw new \InvalidArgumentException('Supported versions must match [A-Za-z0-9._-]{1,16}, got: ' . (is_scalar($version) ? (string) $version : get_debug_type($version)));
+                throw new \InvalidArgumentException(
+                    'Supported versions must match [A-Za-z0-9._-]{1,16}, got: '
+                    . (is_scalar($version) ? (string) $version : get_debug_type($version)),
+                );
             }
         }
         if ($default !== null) {
@@ -85,22 +88,11 @@ final class ApiVersionNegotiator
      */
     public function negotiate(string $path, ?string $headerValue = null, ?string $queryValue = null): ApiVersion
     {
-        // 1) Path prefix (most explicit).
-        [$pathVersion] = $this->splitPathPrefix($path);
-        if ($pathVersion !== null) {
-            return $this->assertSupported($pathVersion, ApiVersion::SOURCE_PATH);
-        }
-
-        // 2) Header.
-        $headerToken = $this->sanitizeToken($headerValue, self::MAX_HEADER_BYTES);
-        if ($headerToken !== null) {
-            return $this->assertSupported($headerToken, ApiVersion::SOURCE_HEADER);
-        }
-
-        // 3) Query.
-        $queryToken = $this->sanitizeToken($queryValue, self::MAX_QUERY_BYTES);
-        if ($queryToken !== null) {
-            return $this->assertSupported($queryToken, ApiVersion::SOURCE_QUERY);
+        // 1–3) Explicit channels in priority order; first non-null token wins.
+        foreach ($this->versionCandidates($path, $headerValue, $queryValue) as [$token, $source]) {
+            if ($token !== null) {
+                return $this->assertSupported($token, $source);
+            }
         }
 
         // 4) Default.
@@ -108,7 +100,15 @@ final class ApiVersionNegotiator
             return new ApiVersion($this->default, ApiVersion::SOURCE_DEFAULT);
         }
 
-        throw new ApiVersionUnsupportedException(null, $this->supportedVersions(), 'No API version provided (path /v{n} prefix, ' . $this->headerName . ' header or ?' . $this->queryKey . '= query).');
+        throw new ApiVersionUnsupportedException(
+            null,
+            $this->supportedVersions(),
+            'No API version provided (path /v{n} prefix, '
+            . $this->headerName
+            . ' header or ?'
+            . $this->queryKey
+            . '= query).',
+        );
     }
 
     /**
@@ -138,10 +138,30 @@ final class ApiVersionNegotiator
         return [null, $path];
     }
 
+    /**
+     * Explicit (non-default) version candidates in priority order.
+     *
+     * @return list<array{?string, string}>
+     */
+    private function versionCandidates(string $path, ?string $headerValue, ?string $queryValue): array
+    {
+        return [
+            [$this->splitPathPrefix($path)[0], ApiVersion::SOURCE_PATH],
+            [$this->sanitizeToken($headerValue, self::MAX_HEADER_BYTES), ApiVersion::SOURCE_HEADER],
+            [$this->sanitizeToken($queryValue, self::MAX_QUERY_BYTES), ApiVersion::SOURCE_QUERY],
+        ];
+    }
+
     private function assertSupported(string $token, string $source): ApiVersion
     {
         if (!isset($this->supported[$token])) {
-            throw new ApiVersionUnsupportedException($token, $this->supportedVersions(), "API version '{$token}' is not supported. Supported versions: " . implode(', ', $this->supportedVersions()) . '.');
+            throw new ApiVersionUnsupportedException(
+                $token,
+                $this->supportedVersions(),
+                "API version '{$token}' is not supported. Supported versions: "
+                . implode(', ', $this->supportedVersions())
+                . '.',
+            );
         }
 
         return new ApiVersion($token, $source);

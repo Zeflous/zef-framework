@@ -22,6 +22,7 @@ use Psr\Http\Message\UploadedFileFactoryInterface;
 use Psr\Http\Message\UploadedFileInterface;
 use Psr\Http\Message\UriFactoryInterface;
 use Psr\Http\Message\UriInterface;
+use Zef\Framework\Exception\StreamOpenException;
 
 final class Psr17Factory implements RequestFactoryInterface, ResponseFactoryInterface, ServerRequestFactoryInterface, StreamFactoryInterface, UploadedFileFactoryInterface, UriFactoryInterface
 {
@@ -85,7 +86,7 @@ final class Psr17Factory implements RequestFactoryInterface, ResponseFactoryInte
             restore_error_handler();
         }
         if ($h === false) {
-            throw new \RuntimeException("Unable to open '{$filename}'" . ($warning !== null ? ": {$warning}" : '.'));
+            throw new StreamOpenException("Unable to open '{$filename}'" . ($warning !== null ? ": {$warning}" : '.'));
         }
 
         return new Stream($h);

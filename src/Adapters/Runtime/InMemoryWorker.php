@@ -37,7 +37,12 @@ final class InMemoryWorker implements WorkerInterface
     }
 
     #[\Override]
-    public function error(string $message): void {}
+    public function error(string $message): void
+    {
+        // Intentionally empty: this in-memory worker has no error channel to
+        // observe — the WorkerInterface contract requires the hook, while test
+        // suites only assert on waitRequest()/respond()/responses().
+    }
 
     #[\Override]
     public function stop(): void
