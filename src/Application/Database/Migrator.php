@@ -70,12 +70,6 @@ final class Migrator
         $this->lock = $this->buildLock();
     }
 
-    /** Built through a factory so the constructor body stays wiring-free. */
-    private function buildLock(): MigrationLock
-    {
-        return new MigrationLock($this->connection, $this->now, $this->lockTtlSeconds);
-    }
-
     public function register(MigrationInterface $migration): void
     {
         $version = $migration->version();
@@ -221,6 +215,12 @@ final class Migrator
         } finally {
             $this->lock->release();
         }
+    }
+
+    /** Built through a factory so the constructor body stays wiring-free. */
+    private function buildLock(): MigrationLock
+    {
+        return new MigrationLock($this->connection, $this->now, $this->lockTtlSeconds);
     }
 
     // ------------------------------------------------------------------

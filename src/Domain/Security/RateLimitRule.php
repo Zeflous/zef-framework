@@ -58,6 +58,52 @@ final readonly class RateLimitRule
         $this->assertMethods($methods);
     }
 
+    /**
+     * Builds a rule from a config/environment map with strict key checking
+     * (fail-fast on typos instead of silently dropping a tier).
+     *
+     * @param array<string, mixed> $data
+     *
+     * @throws \InvalidArgumentException on missing, unknown or invalid keys
+     */
+    public static function fromArray(array $data): self
+    {
+        self::assertRequiredKeysPresent($data);
+        self::assertNoUnknownKeys($data);
+        $name = self::asString($data['name'], 'Rate limit rule "name" must be a string.');
+        $limit = self::asInt($data['limit'], 'Rate limit rule "limit" must be an integer.');
+        $window = self::asInt($data['windowSeconds'], 'Rate limit rule "windowSeconds" must be an integer.');
+        $cost = self::asInt($data['cost'] ?? 1, 'Rate limit rule "cost" must be an integer.');
+        $pathPrefix = self::asString($data['pathPrefix'] ?? '/', 'Rate limit rule "pathPrefix" must be a string.');
+        $methods = self::normalisedMethods($data['methods'] ?? null);
+
+        return new self($name, $limit, $window, $cost, $pathPrefix, $methods);
+    }
+
+    /**
+     * True when the request path falls into this rule's bucket: the path is
+     * equal to the prefix, or extends it at a segment boundary ("/api"
+     * matches "/api" and "/api/users", but NOT "/apiv2"). The prefix is
+     * already trailing-slash-normalised at construction, so no trimming
+     * happens here; the bare root "/" matches everything.
+     */
+    public function matchesPath(string $path): bool
+    {
+        if ($this->pathPrefix === '/') {
+            return true;
+        }
+
+        return $path === $this->pathPrefix || str_starts_with($path, $this->pathPrefix . '/');
+    }
+
+    /**
+     * True when the rule applies to the HTTP method (null = all methods).
+     */
+    public function matchesMethod(string $method): bool
+    {
+        return $this->methods === null || in_array(strtoupper($method), $this->methods, true);
+    }
+
     private function assertName(string $name): void
     {
         if ($name === '') {
@@ -124,28 +170,6 @@ final readonly class RateLimitRule
         }
     }
 
-    /**
-     * Builds a rule from a config/environment map with strict key checking
-     * (fail-fast on typos instead of silently dropping a tier).
-     *
-     * @param array<string, mixed> $data
-     *
-     * @throws \InvalidArgumentException on missing, unknown or invalid keys
-     */
-    public static function fromArray(array $data): self
-    {
-        self::assertRequiredKeysPresent($data);
-        self::assertNoUnknownKeys($data);
-        $name = self::asString($data['name'], 'Rate limit rule "name" must be a string.');
-        $limit = self::asInt($data['limit'], 'Rate limit rule "limit" must be an integer.');
-        $window = self::asInt($data['windowSeconds'], 'Rate limit rule "windowSeconds" must be an integer.');
-        $cost = self::asInt($data['cost'] ?? 1, 'Rate limit rule "cost" must be an integer.');
-        $pathPrefix = self::asString($data['pathPrefix'] ?? '/', 'Rate limit rule "pathPrefix" must be a string.');
-        $methods = self::normalisedMethods($data['methods'] ?? null);
-
-        return new self($name, $limit, $window, $cost, $pathPrefix, $methods);
-    }
-
     /** @param array<string, mixed> $data */
     private static function assertRequiredKeysPresent(array $data): void
     {
@@ -207,29 +231,5 @@ final readonly class RateLimitRule
         }
 
         return $list;
-    }
-
-    /**
-     * True when the request path falls into this rule's bucket: the path is
-     * equal to the prefix, or extends it at a segment boundary ("/api"
-     * matches "/api" and "/api/users", but NOT "/apiv2"). The prefix is
-     * already trailing-slash-normalised at construction, so no trimming
-     * happens here; the bare root "/" matches everything.
-     */
-    public function matchesPath(string $path): bool
-    {
-        if ($this->pathPrefix === '/') {
-            return true;
-        }
-
-        return $path === $this->pathPrefix || str_starts_with($path, $this->pathPrefix . '/');
-    }
-
-    /**
-     * True when the rule applies to the HTTP method (null = all methods).
-     */
-    public function matchesMethod(string $method): bool
-    {
-        return $this->methods === null || in_array(strtoupper($method), $this->methods, true);
     }
 }

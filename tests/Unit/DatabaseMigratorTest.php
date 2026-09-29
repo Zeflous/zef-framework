@@ -221,8 +221,8 @@ final class DatabaseMigratorTest extends TestCase
         ));
 
         $m = $this->migrator();
-        $lock = (new \ReflectionProperty(Migrator::class, 'lock'))->getValue($m);
-        (new \ReflectionProperty(MigrationLock::class, 'depth'))->setValue($lock, 1);
+        $lock = new \ReflectionProperty(Migrator::class, 'lock')->getValue($m);
+        new \ReflectionProperty(MigrationLock::class, 'depth')->setValue($lock, 1);
 
         $this->expectException(TransactionException::class);
         $this->expectExceptionMessage('Migration lock is already held by this Migrator instance.');

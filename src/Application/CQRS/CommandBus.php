@@ -184,7 +184,7 @@ final class CommandBus implements CommandBusInterface
      * @param null|\Closure(ConnectionInterface): void $beforeCommit
      * @param callable(): mixed $execute
      *
-     * @return array{result: mixed, failure: \Throwable|null}
+     * @return array{result: mixed, failure: null|\Throwable}
      */
     private function commitThroughTransaction(
         TransactionManagerInterface $transactions,
@@ -252,8 +252,7 @@ final class CommandBus implements CommandBusInterface
         array $pendingEvents,
         CqrsContext $context,
         ?TransactionManagerInterface $eventTransactions,
-    ): void
-    {
+    ): void {
         foreach ($pendingEvents as $event) {
             $fanOut = function () use ($event, $context): void {
                 $this->eventBus?->dispatchWithContext($event, $context->toEventContext());

@@ -14,6 +14,15 @@ final readonly class SecurityRequest
 {
     use BoundedTrait;
 
+    public const int MAX_OPERATION_BYTES = 128;
+    public const int MAX_RESOURCE_BYTES = 128;
+    public const int MAX_ACTION_BYTES = 64;
+    public const int MAX_REPLAY_ID_BYTES = 128;
+    public const int MAX_ATTRIBUTES = 16;
+    public const int MAX_ATTRIBUTE_KEY_BYTES = 64;
+    public const int MAX_ATTRIBUTE_VALUE_BYTES = 256;
+    public const int MAX_ATTRIBUTE_BYTES = 4096;
+
     /** Lowercase credential fragments banned from generic attribute keys. */
     private const array FORBIDDEN_ATTRIBUTE_KEYS = [
         'authorization',
@@ -24,15 +33,6 @@ final readonly class SecurityRequest
         'private_key',
         'private-key',
     ];
-
-    public const int MAX_OPERATION_BYTES = 128;
-    public const int MAX_RESOURCE_BYTES = 128;
-    public const int MAX_ACTION_BYTES = 64;
-    public const int MAX_REPLAY_ID_BYTES = 128;
-    public const int MAX_ATTRIBUTES = 16;
-    public const int MAX_ATTRIBUTE_KEY_BYTES = 64;
-    public const int MAX_ATTRIBUTE_VALUE_BYTES = 256;
-    public const int MAX_ATTRIBUTE_BYTES = 4096;
 
     /** @param array<string, mixed> $attributes */
     public function __construct(
