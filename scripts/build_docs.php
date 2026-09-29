@@ -76,9 +76,9 @@ $esc = static fn (string $value): string => htmlspecialchars($value, ENT_QUOTES 
 /**
  * Rewrite relative Markdown links so they resolve inside the built site.
  */
-$rewriteLinks = static function (string $html, array $page): string {
+$rewriteLinks = static function (string $html, array $page) use ($pages): string {
     $slugOf = [];
-    foreach ($GLOBALS['pages'] as $candidate) {
+    foreach ($pages as $candidate) {
         $slugOf[$candidate['source']] = $candidate['slug'] . '.html';
     }
 
@@ -250,7 +250,8 @@ if (!is_dir($outDir) && !mkdir($outDir, 0o755, true) && !is_dir($outDir)) {
 
     exit(1);
 }
-if (!is_dir($outDir . '/assets') && !mkdir($outDir . '/assets', 0o755, true) && !is_dir($outDir . '/assets')) {
+$assetsDir = $outDir . '/assets';
+if (!is_dir($assetsDir) && !mkdir($assetsDir, 0o755, true) && !is_dir($assetsDir)) {
     fwrite(STDERR, "Cannot create {$outDir}/assets\n");
 
     exit(1);

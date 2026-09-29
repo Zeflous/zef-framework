@@ -33,12 +33,18 @@ final class ConfigProvider implements ConfigProviderInterface
                     'lifetime' => ServiceLifetime::SINGLETON,
                 ],
                 'toko.handler.index' => [
-                    'factory' => static fn (ContainerInterface $c, ProdukService $svc): TokoHandler => new TokoHandler($svc),
+                    'factory' => static fn (
+                        ContainerInterface $c,
+                        ProdukService $svc,
+                    ): TokoHandler => new TokoHandler($svc),
                     'deps' => ['toko.service.produk'],
                     'lifetime' => ServiceLifetime::SINGLETON,
                 ],
                 'toko.handler.detail' => [
-                    'factory' => static fn (ContainerInterface $c, ProdukService $svc): ProdukDetailHandler => new ProdukDetailHandler($svc),
+                    'factory' => static fn (
+                        ContainerInterface $c,
+                        ProdukService $svc,
+                    ): ProdukDetailHandler => new ProdukDetailHandler($svc),
                     'deps' => ['toko.service.produk'],
                     'lifetime' => ServiceLifetime::SINGLETON,
                 ],
@@ -46,7 +52,12 @@ final class ConfigProvider implements ConfigProviderInterface
             'aliases' => ['toko.produk' => 'toko.service.produk'],
             'routes' => [
                 ['method' => 'GET', 'path' => '/toko', 'handler' => 'toko.handler.index', 'priority' => 100],
-                ['method' => 'GET', 'path' => '/toko/produk/{id:int}', 'handler' => 'toko.handler.detail', 'priority' => 100],
+                [
+                    'method' => 'GET',
+                    'path' => '/toko/produk/{id:int}',
+                    'handler' => 'toko.handler.detail',
+                    'priority' => 100,
+                ],
             ],
         ];
     }

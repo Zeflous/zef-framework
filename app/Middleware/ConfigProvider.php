@@ -13,6 +13,7 @@ namespace Zef\Middleware;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
 use Zef\Framework\Config\ConfigProviderInterface;
+use Zef\Framework\Exception\InvalidConfigurationException;
 use Zef\Framework\Foundation\Env;
 use Zef\Framework\Security\ApcuRateLimiter;
 use Zef\Framework\Security\InMemoryRateLimiter;
@@ -67,19 +68,7 @@ final class ConfigProvider implements ConfigProviderInterface
                     'deps' => [],
                 ],
                 'middleware.security.runtime' => [
-                    'factory' => static function (ContainerInterface $c): SecurityRuntimeMiddleware {
-                        $logger = null;
-
-                        try {
-                            $resolved = $c->get(LoggerInterface::class);
-                            $logger = $resolved instanceof LoggerInterface ? $resolved : null;
-                        } catch (\Throwable) {
-                        }
-                        $policy = SecurityPolicy::fromEnvironment($logger);
-                        $rateLimiter = self::buildRateLimiter($policy, $logger);
-
-                        return new SecurityRuntimeMiddleware($policy, $rateLimiter);
-                    },
+                    'factory' => static fn (ContainerInterface $c): SecurityRuntimeMiddleware => self::buildSecurityRuntime($c),
                     'deps' => [LoggerInterface::class],
                 ],
             ],
@@ -91,6 +80,27 @@ final class ConfigProvider implements ConfigProviderInterface
                 'middleware.cors',
             ],
         ];
+    }
+
+    /**
+     * Boot composition for middleware.security.runtime: the optional PSR-3
+     * sink, the environment-derived security policy and its rate limiter.
+     * Extracted from the service factory so getConfig() stays declarative.
+     */
+    private static function buildSecurityRuntime(ContainerInterface $c): SecurityRuntimeMiddleware
+    {
+        $logger = null;
+
+        try {
+            $resolved = $c->get(LoggerInterface::class);
+            $logger = $resolved instanceof LoggerInterface ? $resolved : null;
+        } catch (\Throwable) {
+            // Optional dependency: a container without a PSR-3 sink simply
+            // runs the security runtime middleware unlogged.
+        }
+        $policy = SecurityPolicy::fromEnvironment($logger);
+
+        return new SecurityRuntimeMiddleware($policy, self::buildRateLimiter($policy, $logger));
     }
 
     /**
@@ -131,7 +141,9 @@ final class ConfigProvider implements ConfigProviderInterface
                 default => new InMemoryRateLimiter($policy->rateLimitMaxKeys),
             };
         } catch (\Throwable $e) {
-            $msg = '[ZEF][security] Rate-limit store "' . $store . '" unavailable (' . $e->getMessage() . '); falling back to in-memory per-process limiter.';
+            $msg = '[ZEF][security] Rate-limit store "' . $store . '" unavailable ('
+                . $e->getMessage()
+                . '); falling back to in-memory per-process limiter.';
             if ($logger !== null) {
                 $logger->warning($msg);
             } else {
@@ -150,37 +162,42 @@ final class ConfigProvider implements ConfigProviderInterface
     private static function connectRedis(): \Redis
     {
         if (!class_exists(\Redis::class)) {
-            throw new \RuntimeException('The phpredis extension is not installed.');
+            throw new InvalidConfigurationException('The phpredis extension is not installed.');
         }
         $dsn = trim(Env::string('ZEF_REDIS_URL', ''));
         if ($dsn === '') {
-            throw new \RuntimeException('ZEF_REDIS_URL is required when ZEF_RATE_LIMIT_STORE=redis.');
+            throw new InvalidConfigurationException('ZEF_REDIS_URL is required when ZEF_RATE_LIMIT_STORE=redis.');
         }
         $parts = parse_url($dsn);
         if ($parts === false || !isset($parts['host']) || $parts['host'] === '') {
-            throw new \RuntimeException('Invalid ZEF_REDIS_URL DSN.');
+            throw new InvalidConfigurationException('Invalid ZEF_REDIS_URL DSN.');
         }
         $redis = new \Redis();
         $timeout = (float) (Env::int('ZEF_REDIS_TIMEOUT_MS', 2000, 100, 10000) / 1000);
         if (!$redis->pconnect((string) $parts['host'], (int) ($parts['port'] ?? 6379), $timeout)) {
-            throw new \RuntimeException('Unable to connect to Redis.');
+            throw new InvalidConfigurationException('Unable to connect to Redis.');
         }
         $password = $parts['pass'] ?? null;
         if ($password !== null) {
             $username = $parts['user'] ?? null;
             if (!$redis->auth($username !== null && $username !== '' ? [$username, $password] : $password)) {
-                throw new \RuntimeException('Redis authentication failed.');
+                throw new InvalidConfigurationException('Redis authentication failed.');
             }
         }
         $db = isset($parts['path']) ? trim((string) $parts['path'], '/') : '';
         if ($db !== '') {
-            // "redis://h/abc" previously (int)-cast to 0 and SILENTLY selected db 0 — a wrong-database isolation bug.
+            // "redis://h/abc" previously (int)-cast to 0 and SILENTLY selected db 0 —
+            // a wrong-database isolation bug.
             if (!ctype_digit($db)) {
-                // ctype_digit also rejects signed forms like "-1"/"+1": the fail-closed behaviour is correct for both, but the message must say WHY (non-negative integer required).
-                throw new \RuntimeException('Redis DB index in ZEF_REDIS_URL must be a non-negative integer.');
+                // ctype_digit also rejects signed forms like "-1"/"+1": the fail-closed
+                // behaviour is correct for both, but the message must say WHY
+                // (non-negative integer required).
+                throw new InvalidConfigurationException(
+                    'Redis DB index in ZEF_REDIS_URL must be a non-negative integer.',
+                );
             }
             if (!$redis->select((int) $db)) {
-                throw new \RuntimeException('Redis SELECT failed.');
+                throw new InvalidConfigurationException('Redis SELECT failed.');
             }
         }
 

@@ -25,7 +25,7 @@ $fail = static function (string $message): never {
     exit(1);
 };
 
-$raw = @file_get_contents($composerPath);
+$raw = file_get_contents($composerPath);
 if ($raw === false) {
     $fail("composer.json not readable at {$composerPath}");
 }

@@ -24,9 +24,9 @@ declare(strict_types=1);
 // -> autoload/zef_autoload.php). Fallback zero-composer tetap didukung bila
 // vendor/ tidak ada — guard class_exists di bawah akan menuntun pemasangan.
 if (is_file(__DIR__ . '/../vendor/autoload.php')) {
-    require __DIR__ . '/../vendor/autoload.php';
+    require_once __DIR__ . '/../vendor/autoload.php';
 } else {
-    require __DIR__ . '/../autoload/zef_autoload.php';
+    require_once __DIR__ . '/../autoload/zef_autoload.php';
 }
 
 if (PHP_VERSION_ID < 80400) {
@@ -35,10 +35,7 @@ if (PHP_VERSION_ID < 80400) {
 }
 
 if (!class_exists(\Spiral\RoadRunner\Http\PSR7Worker::class)) {
-    fwrite(STDERR,
-        "RoadRunner bridge not installed.\n"
-        . "Run: composer require spiral/roadrunner-http nyholm/psr7\n"
-    );
+    fwrite(STDERR, "RoadRunner bridge not installed.\nRun: composer require spiral/roadrunner-http nyholm/psr7\n");
     exit(1);
 }
 

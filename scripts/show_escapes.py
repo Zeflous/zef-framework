@@ -43,44 +43,54 @@ def repo_path(raw: str, what: str) -> Path:
     return resolved
 
 
+def parse_args(argv: list[str]) -> tuple[str, str, int] | None:
+    """Split argv into (log, substr, maxn); None means usage error."""
+    if len(argv) < 2:
+        return None
+    log = repo_path(argv[1], "infection log")
+    substr = argv[2] if len(argv) > 2 and not argv[2].startswith("--") else ""
+    maxn = 10000
+    if "--max" in argv:
+        maxn = int(argv[argv.index("--max") + 1])
+    return log, substr, maxn
+
+
+def render_entry(index: int, entry: str, path: str, line: str, mut: str) -> None:
+    """Render one escaped-mutant entry."""
+    short = "/".join(path.split("/")[-3:])
+    print(f"#{index} {short}:{line} [{mut}]")
+    diff = []
+    for ln in entry.splitlines()[1:]:
+        s = ln.strip()
+        if s.startswith(("@@", "-", "+")):
+            diff.append(s[:160])
+    for d in diff[:14]:
+        print(f"   {d}")
+    print()
+
+
 def main() -> int:
-    if len(sys.argv) < 2:
+    parsed = parse_args(sys.argv)
+    if parsed is None:
         print("usage: show_escapes.py <log> [substr] [--max N]", file=sys.stderr)
         return 2
-    log = repo_path(sys.argv[1], "infection log")
-    substr = sys.argv[2] if len(sys.argv) > 2 and not sys.argv[2].startswith("--") else ""
-    maxn = 10000
-    if "--max" in sys.argv:
-        maxn = int(sys.argv[sys.argv.index("--max") + 1])
+    log, substr, maxn = parsed
     text = open(log, encoding="utf-8", errors="replace").read()
-    m = re.search(r"^Escaped mutants:\s*=+\s*(.*?)(?=^\w[\w ]* mutants?:|\Z)", text, flags=re.M | re.S)
+    m = re.search(r"^Escaped mutants:\s*=+\s*(.*?)(?=(?:^\w[\w ]* mutants?:)|\Z)", text, flags=re.M | re.S)
     if not m:
         print("(tidak ada escape)", file=sys.stderr)
         return 0
-    block = m.group(1)
-    entries = re.split(r"\n(?=\d+\) )", block)
+    entries = re.split(r"\n(?=\d+\) )", m.group(1))
     n = 0
     for e in entries:
         hm = re.match(r"\d+\) (.+?):(\d+)\s+\[M\] (\S+)", e)
-        if not hm:
-            continue
-        path, line, mut = hm.group(1), hm.group(2), hm.group(3)
-        short = "/".join(path.split("/")[-3:])
-        if substr and substr not in path:
+        if hm is None or (substr and substr not in hm.group(1)):
             continue
         n += 1
         if n > maxn:
             print(f"... (dipotong, > {maxn})")
             break
-        diff = []
-        for ln in e.splitlines()[1:]:
-            s = ln.strip()
-            if s.startswith("@@") or s.startswith("-") or s.startswith("+"):
-                diff.append(s[:160])
-        print(f"#{n} {short}:{line} [{mut}]")
-        for d in diff[:14]:
-            print(f"   {d}")
-        print()
+        render_entry(n, e, hm.group(1), hm.group(2), hm.group(3))
     if n == 0:
         print("(tidak ada escape cocok)", file=sys.stderr)
     return 0

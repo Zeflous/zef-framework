@@ -131,7 +131,7 @@ if (!is_file($versionFile)) {
     $fail('ZefVersion source file not found', ['path' => $versionFile]);
 }
 $versionSource = (string) file_get_contents($versionFile);
-if (preg_match("/VERSION\s*=\s*'([0-9]+\.[0-9]+\.[0-9]+)'/", $versionSource, $m) !== 1) {
+if (preg_match("/VERSION\s*=\s*'(\d+\.\d+\.\d+)'/", $versionSource, $m) !== 1) {
     $fail('could not parse ZefVersion::VERSION from source', ['path' => $versionFile]);
 }
 $codeVersion = $m[1];

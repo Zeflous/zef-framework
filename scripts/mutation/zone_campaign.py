@@ -62,6 +62,13 @@ def load_results() -> dict:
 
 
 def save_results(data: dict) -> None:
+    # S2083 containment: RESULTS is a repo-relative constant, but resolve it
+    # and assert it stays inside the checkout so the write target can never
+    # escape the repository even if this file is relocated or symlinked.
+    repo = REPO.resolve()
+    target = RESULTS.resolve()
+    if repo != target and repo not in target.parents:
+        raise RuntimeError("zone-campaign results path escapes the repository")
     RESULTS.parent.mkdir(parents=True, exist_ok=True)
     tmp = RESULTS.with_suffix(".tmp")
     tmp.write_text(json.dumps(data, indent=2, sort_keys=True))
@@ -82,7 +89,7 @@ def parse_summary(path: Path) -> dict:
         "Ignored": "ignored",
         "Not Covered": "not_covered",
     }
-    out = {v: 0 for v in labels.values()}
+    out = dict.fromkeys(labels.values(), 0)
     if not path.exists():
         return out
     txt = path.read_text()

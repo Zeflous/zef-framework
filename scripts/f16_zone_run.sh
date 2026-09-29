@@ -22,7 +22,7 @@ for ln in open('scripts/f16_zones.tsv'):
         break
 PY
 )
-if [ -z "$ZONE" ]; then
+if [[ -z "$ZONE" ]]; then
   echo "ALL-ZONES-DONE"
   exit 0
 fi

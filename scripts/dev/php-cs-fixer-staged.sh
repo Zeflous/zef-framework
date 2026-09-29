@@ -33,7 +33,7 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
-if [ ! -x vendor/bin/php-cs-fixer ]; then
+if [[ ! -x vendor/bin/php-cs-fixer ]]; then
   echo "php-cs-fixer (staged): vendor/bin/php-cs-fixer not found. Run 'composer install'." >&2
   exit 1
 fi
@@ -42,12 +42,12 @@ fi
 # (a file staged for deletion must not be handed to the fixer).
 staged_files=()
 while IFS= read -r file; do
-  [ -n "$file" ] || continue
-  [ -f "$file" ] || continue
+  [[ -n "$file" ]] || continue
+  [[ -f "$file" ]] || continue
   staged_files+=("$file")
 done < <(git diff --cached --name-only --diff-filter=ACMR -- '*.php')
 
-if [ "${#staged_files[@]}" -eq 0 ]; then
+if [[ "${#staged_files[@]}" -eq 0 ]]; then
   echo "php-cs-fixer (staged): no staged PHP files; nothing to check."
   exit 0
 fi
