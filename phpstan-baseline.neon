@@ -247,12 +247,6 @@ parameters:
 			path: src/Adapters/Http/RequestFactory.php
 
 		-
-			message: '#^Method Zef\\Framework\\Http\\RequestFactory\:\:buildUri\(\) has parameter \$server with no value type specified in iterable type array\.$#'
-			identifier: missingType.iterableValue
-			count: 1
-			path: src/Adapters/Http/RequestFactory.php
-
-		-
 			message: '#^Method Zef\\Framework\\Http\\RequestFactory\:\:buildUri\(\) has parameter \$trustedHosts with no value type specified in iterable type array\.$#'
 			identifier: missingType.iterableValue
 			count: 1
@@ -901,7 +895,7 @@ parameters:
 			path: src/Domain/Config/ModuleDefinition.php
 
 		-
-			message: '#^Parameter \#5 \$extensions of class Zef\\Framework\\Config\\ModuleDefinition constructor expects array\<string, mixed\>, array\<mixed, mixed\> given\.$#'
+			message: '#^Parameter \#5 \$extensions of class Zef\\Framework\\Config\\ModuleDefinition constructor expects array\<string, mixed\>, array\<mixed\> given\.$#'
 			identifier: argument.type
 			count: 1
 			path: src/Domain/Config/ModuleDefinition.php

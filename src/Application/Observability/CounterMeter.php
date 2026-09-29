@@ -84,12 +84,13 @@ final class CounterMeter implements MeterInterface
     private function normalizeAttributes(string $name, array $attributes): array
     {
         $clean = TelemetrySanitizer::attributes($attributes);
-        if (str_starts_with($name, 'zef.http.') || str_starts_with($name, 'zef.container.')) {
-            $clean = $this->boundedSystemAttributes($name, $clean);
-        } elseif ($name === 'zef.lifecycle.events.total') {
-            $clean = $this->boundedLifecycleAttributes($clean);
-        }
-        // Other metric families keep their full (sanitized) attribute set.
+        $isSystemFamily = str_starts_with($name, 'zef.http.') || str_starts_with($name, 'zef.container.');
+        $clean = match (true) {
+            $isSystemFamily => $this->boundedSystemAttributes($name, $clean),
+            $name === 'zef.lifecycle.events.total' => $this->boundedLifecycleAttributes($clean),
+            // Other metric families keep their full (sanitized) attribute set.
+            default => $clean,
+        };
 
         ksort($clean);
 

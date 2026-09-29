@@ -33,7 +33,7 @@ final class RouteConstraintValidator
 
     public function addCustom(string $name, string $regex): void
     {
-        if ($name === '' || preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $name) !== 1) {
+        if ($name === '' || preg_match('/^[A-Za-z_]\w*$/', $name) !== 1) {
             throw new InvalidConfigurationException("Invalid route constraint name '{$name}'.");
         }
         if ($regex === '' || strlen($regex) > 2048) {

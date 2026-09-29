@@ -14,6 +14,7 @@ use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Message\UploadedFileInterface;
 use Psr\Http\Message\UriInterface;
 use Zef\Framework\Exception\PayloadTooLargeException;
+use Zef\Framework\Exception\StreamOpenException;
 use Zef\Framework\Foundation\Env;
 use Zef\Framework\Foundation\EnvInterface;
 use Zef\Framework\Validation\HeaderValidator;
@@ -21,6 +22,10 @@ use Zef\Framework\Validation\TrustedHostValidator;
 
 final class RequestFactory
 {
+    private const string BODY_TOO_LARGE = 'Request body exceeds configured size limit.';
+
+    private const string MALFORMED_HOST = 'Malformed Host header.';
+
     /**
      * Bug fix #8: simplified superglobal access patterns.
      *
@@ -101,11 +106,11 @@ final class RequestFactory
             && ctype_digit($contentLengthHeader)
             && (int) $contentLengthHeader > $bodyPolicy->maxBytes
         ) {
-            throw new PayloadTooLargeException('Request body exceeds configured size limit.');
+            throw new PayloadTooLargeException(self::BODY_TOO_LARGE);
         }
         $input = fopen('php://input', 'rb');
         if ($input === false) {
-            throw new \RuntimeException('Unable to open request input stream.');
+            throw new StreamOpenException('Unable to open request input stream.');
         }
         $body = new LimitedInputStream(new Stream($input), $bodyPolicy);
         $contentType = strtolower(trim(explode(';', (string) ($headers['content-type'][0] ?? ''))[0]));
@@ -151,36 +156,17 @@ final class RequestFactory
         RequestBodyPolicy $bodyPolicy,
     ): ServerRequestInterface {
         if ($trustedHosts !== []) {
-            $validator = new TrustedHostValidator($trustedHosts);
-            $uriHost = $request->getUri()->getHost();
-            if ($uriHost === '') {
-                throw new \InvalidArgumentException('Missing request host.');
-            }
-            $validator->assertTrusted($uriHost);
-
-            // PSR-7 allows Host to differ from the URI. Honor the same trusted
-            // proxy boundary as fromServer(), without trusting forwarded data
-            // supplied by arbitrary clients.
-            $remote = $request->getServerParams()['REMOTE_ADDR'] ?? '';
-            $remote = is_string($remote) ? $remote : '';
-            $authority = TrustedProxyMatcher::matches($remote, $trustedProxies) && $request->hasHeader('X-Forwarded-Host')
-                ? self::firstForwardedValue($request->getHeaderLine('X-Forwarded-Host'))
-                : ($request->hasHeader('Host') ? $request->getHeaderLine('Host') : $uriHost);
-            [$host] = self::parseAuthority($authority);
-            if ($host === '') {
-                throw new \InvalidArgumentException('Missing request host.');
-            }
-            $validator->assertTrusted($host);
+            self::assertTrustedRequestHost($request, $trustedHosts, $trustedProxies);
         }
 
         $length = $request->getHeaderLine('Content-Length');
         if ($length !== '' && ctype_digit($length) && (int) $length > $bodyPolicy->maxBytes) {
-            throw new PayloadTooLargeException('Request body exceeds configured size limit.');
+            throw new PayloadTooLargeException(self::BODY_TOO_LARGE);
         }
         $body = $request->getBody();
         $size = $body->getSize();
         if ($size !== null && $size > $bodyPolicy->maxBytes) {
-            throw new PayloadTooLargeException('Request body exceeds configured size limit.');
+            throw new PayloadTooLargeException(self::BODY_TOO_LARGE);
         }
 
         // Read at most maxBytes + 1 before dispatch, even when size/length is
@@ -233,53 +219,57 @@ final class RequestFactory
         }
     }
 
+    /**
+     * Trusted-host half of validateIngress(): the URI host and the effective
+     * Host-header authority must both be trusted before the request passes
+     * the application ingress.
+     *
+     * @param list<string> $trustedHosts
+     * @param list<string> $trustedProxies
+     */
+    private static function assertTrustedRequestHost(
+        ServerRequestInterface $request,
+        array $trustedHosts,
+        array $trustedProxies,
+    ): void {
+        $validator = new TrustedHostValidator($trustedHosts);
+        $uriHost = $request->getUri()->getHost();
+        if ($uriHost === '') {
+            throw new \InvalidArgumentException('Missing request host.');
+        }
+        $validator->assertTrusted($uriHost);
+
+        // PSR-7 allows Host to differ from the URI. Honor the same trusted
+        // proxy boundary as fromServer(), without trusting forwarded data
+        // supplied by arbitrary clients.
+        $remote = $request->getServerParams()['REMOTE_ADDR'] ?? '';
+        $remote = is_string($remote) ? $remote : '';
+        if (TrustedProxyMatcher::matches($remote, $trustedProxies) && $request->hasHeader('X-Forwarded-Host')) {
+            $authority = self::firstForwardedValue($request->getHeaderLine('X-Forwarded-Host'));
+        } elseif ($request->hasHeader('Host')) {
+            $authority = $request->getHeaderLine('Host');
+        } else {
+            $authority = $uriHost;
+        }
+        [$host] = self::parseAuthority($authority);
+        if ($host === '') {
+            throw new \InvalidArgumentException('Missing request host.');
+        }
+        $validator->assertTrusted($host);
+    }
+
+    /**
+     * @param array<string,mixed> $server
+     */
     private static function buildUri(array $server, array $trustedHosts, array $trustedProxies): Uri
     {
         [$path, $query] = self::splitRequestTarget((string) ($server['REQUEST_URI'] ?? '/'));
         $remote = (string) ($server['REMOTE_ADDR'] ?? '');
         $trusted = TrustedProxyMatcher::matches($remote, $trustedProxies);
-        $hostHeader = $trusted && isset($server['HTTP_X_FORWARDED_HOST'])
-            ? self::firstForwardedValue((string) $server['HTTP_X_FORWARDED_HOST'])
-            : (string) ($server['HTTP_HOST'] ?? $server['SERVER_NAME'] ?? '');
-        [$host, $forwardedPort] = self::parseAuthority($hostHeader);
-        $scheme = !empty($server['HTTPS']) && $server['HTTPS'] !== 'off' ? 'https' : 'http';
-        if ($trusted && isset($server['HTTP_X_FORWARDED_PROTO'])) {
-            $forwardedScheme = strtolower(trim(explode(',', (string) $server['HTTP_X_FORWARDED_PROTO'])[0]));
-            if (!in_array($forwardedScheme, ['http', 'https'], true)) {
-                throw new \InvalidArgumentException('Invalid forwarded protocol.');
-            }
-            $scheme = $forwardedScheme;
-        }
-        $port = $forwardedPort;
-        if ($port === null && isset($server['SERVER_PORT'])) {
-            $rawPort = (string) $server['SERVER_PORT'];
-            // Non-numeric/0 ports cast to 0 and previously leaked into the
-            // base URL, making Uri throw. Ignore malformed values instead.
-            if (
-                ctype_digit($rawPort)
-                && ($p = (int) $rawPort) >= 1 && $p <= 65535
-                && (($scheme === 'http' && $p !== 80) || ($scheme === 'https' && $p !== 443))
-            ) {
-                $port = $p;
-            }
-        }
-        $script = (string) ($server['SCRIPT_NAME'] ?? '');
-        $scriptFilename = (string) ($server['SCRIPT_FILENAME'] ?? '');
-        $parsedPath = parse_url($script, PHP_URL_PATH);
-        $scriptPath = $script !== '' ? (is_string($parsedPath) ? $parsedPath : '') : '';
-        $scriptBase = $scriptPath !== '' ? basename($scriptPath) : '';
-        $filenameBase = $scriptFilename !== '' ? basename($scriptFilename) : '';
-        $isFrontControllerScript = $scriptPath !== '' && $filenameBase !== '' && $scriptBase === $filenameBase;
-        if ($isFrontControllerScript) {
-            if ($path === $scriptPath) {
-                $path = '/';
-            } elseif (str_starts_with($path, $scriptPath . '/')) {
-                $path = substr($path, strlen($scriptPath));
-            }
-            if ($path === '') {
-                $path = '/';
-            }
-        }
+        [$host, $forwardedPort] = self::parseAuthority(self::resolveHostAuthority($server, $trusted));
+        $scheme = self::resolveScheme($server, $trusted);
+        $port = self::resolvePort($server, $forwardedPort, $scheme);
+        $path = self::stripScriptPrefix($server, $path);
         $hostLiteral = str_contains($host, ':') ? '[' . $host . ']' : $host;
         $base = $scheme . '://'
             . ($hostLiteral !== '' ? $hostLiteral : 'localhost')
@@ -288,6 +278,101 @@ final class RequestFactory
             . ($query !== '' ? '?' . $query : '');
 
         return new Uri($base, $trustedHosts);
+    }
+
+    /**
+     * Host authority selection: a forwarded Host (only from a trusted
+     * proxy) wins, then HTTP_HOST, then SERVER_NAME.
+     *
+     * @param array<string,mixed> $server
+     */
+    private static function resolveHostAuthority(array $server, bool $trusted): string
+    {
+        return $trusted && isset($server['HTTP_X_FORWARDED_HOST'])
+            ? self::firstForwardedValue((string) $server['HTTP_X_FORWARDED_HOST'])
+            : (string) ($server['HTTP_HOST'] ?? $server['SERVER_NAME'] ?? '');
+    }
+
+    /**
+     * Effective scheme: request HTTPS state, overridden by a forwarded
+     * protocol (only from a trusted proxy).
+     *
+     * @param array<string,mixed> $server
+     */
+    private static function resolveScheme(array $server, bool $trusted): string
+    {
+        $scheme = !empty($server['HTTPS']) && $server['HTTPS'] !== 'off' ? 'https' : 'http';
+        if (!$trusted || !isset($server['HTTP_X_FORWARDED_PROTO'])) {
+            return $scheme;
+        }
+        $forwardedScheme = strtolower(trim(explode(',', (string) $server['HTTP_X_FORWARDED_PROTO'])[0]));
+        if (!in_array($forwardedScheme, ['http', 'https'], true)) {
+            throw new \InvalidArgumentException('Invalid forwarded protocol.');
+        }
+
+        return $forwardedScheme;
+    }
+
+    /**
+     * Effective port: the forwarded authority port wins, otherwise a valid
+     * non-default SERVER_PORT is used.
+     *
+     * @param array<string,mixed> $server
+     */
+    private static function resolvePort(array $server, ?int $forwardedPort, string $scheme): ?int
+    {
+        if ($forwardedPort !== null) {
+            return $forwardedPort;
+        }
+        $rawPort = (string) ($server['SERVER_PORT'] ?? '');
+        // Non-numeric/0 ports cast to 0 and previously leaked into the
+        // base URL, making Uri throw. Ignore malformed values instead.
+        $isExplicitPort = ctype_digit($rawPort)
+            && (int) $rawPort >= 1
+            && (int) $rawPort <= 65535
+            && !self::isDefaultSchemePort($scheme, (int) $rawPort);
+
+        return $isExplicitPort ? (int) $rawPort : null;
+    }
+
+    /** True for 80/http and 443/https — ports Uri omits from the base URL. */
+    private static function isDefaultSchemePort(string $scheme, int $port): bool
+    {
+        return ($scheme === 'http' && $port === 80) || ($scheme === 'https' && $port === 443);
+    }
+
+    /**
+     * Strip the front-controller script prefix from the request path so
+     * routing sees the application-relative path.
+     *
+     * @param array<string,mixed> $server
+     */
+    private static function stripScriptPrefix(array $server, string $path): string
+    {
+        $script = (string) ($server['SCRIPT_NAME'] ?? '');
+        $scriptFilename = (string) ($server['SCRIPT_FILENAME'] ?? '');
+        $parsedPath = parse_url($script, PHP_URL_PATH);
+        $scriptPath = '';
+        if ($script !== '' && is_string($parsedPath)) {
+            $scriptPath = $parsedPath;
+        }
+        $scriptBase = $scriptPath !== '' ? basename($scriptPath) : '';
+        $filenameBase = $scriptFilename !== '' ? basename($scriptFilename) : '';
+        $isFrontControllerScript = $scriptPath !== '' && $filenameBase !== '' && $scriptBase === $filenameBase;
+        if (!$isFrontControllerScript) {
+            return $path;
+        }
+        if ($path === $scriptPath) {
+            return '/';
+        }
+        if (str_starts_with($path, $scriptPath . '/')) {
+            $path = substr($path, strlen($scriptPath));
+        }
+        if ($path === '') {
+            $path = '/';
+        }
+
+        return $path;
     }
 
     /**
@@ -356,17 +441,17 @@ final class RequestFactory
             if (!is_string($value)) {
                 continue;
             }
-            $name = null;
-            if (str_starts_with($key, 'HTTP_')) {
-                $name = str_replace('_', '-', substr($key, 5));
-            } elseif ($key === 'CONTENT_TYPE' || $key === 'CONTENT_LENGTH') {
-                $name = str_replace('_', '-', $key);
-            }
+            $name = match (true) {
+                str_starts_with($key, 'HTTP_') => str_replace('_', '-', substr($key, 5)),
+                $key === 'CONTENT_TYPE', $key === 'CONTENT_LENGTH' => str_replace('_', '-', $key),
+                default => null,
+            };
             if ($name === null) {
                 continue;
             }
             $valueBytes = strlen($value);
-            if (++$count > $maxCount || $valueBytes > $maxValueBytes) {
+            ++$count;
+            if ($count > $maxCount || $valueBytes > $maxValueBytes) {
                 throw new PayloadTooLargeException('Request headers exceed the configured size limit.');
             }
             $totalBytes += $valueBytes + strlen($name);
@@ -400,29 +485,8 @@ final class RequestFactory
 
                 return $result;
             }
-            $error = is_int($error)
-                ? $error
-                : ((is_string($error) && ctype_digit($error)) ? (int) $error : UPLOAD_ERR_NO_FILE);
-            $tmp = (string) ($tmp ?? '');
-            // err=OK with no tmp_name is a "ghost upload": PHP always
-            // provides tmp_name for real uploads. Previously the leaf was
-            // built with error=OK and the CLIENT-DECLARED size while the
-            // body was empty. Downgrade to NO_FILE so getError() tells
-            // the truth.
-            if ($error === UPLOAD_ERR_OK && $tmp === '') {
-                $error = UPLOAD_ERR_NO_FILE;
-            }
-            $stream = ($error === UPLOAD_ERR_OK && $tmp !== '')
-                ? $factory->createStreamFromFile($tmp, 'rb')
-                : $factory->createStream('');
 
-            return $factory->createUploadedFile(
-                $stream,
-                $size !== null ? (int) $size : null,
-                $error,
-                is_string($name) ? $name : null,
-                is_string($type) ? $type : null,
-            );
+            return self::buildUploadedLeaf($factory, $name, $type, $tmp, $error, $size);
         };
         $out = [];
         foreach ($files as $field => $spec) {
@@ -441,6 +505,50 @@ final class RequestFactory
         }
 
         return $out;
+    }
+
+    private static function buildUploadedLeaf(
+        Psr17Factory $factory,
+        mixed $name,
+        mixed $type,
+        mixed $tmp,
+        mixed $error,
+        mixed $size,
+    ): UploadedFileInterface {
+        $error = self::normalizeUploadError($error);
+        $tmp = (string) ($tmp ?? '');
+        // err=OK with no tmp_name is a "ghost upload": PHP always
+        // provides tmp_name for real uploads. Previously the leaf was
+        // built with error=OK and the CLIENT-DECLARED size while the
+        // body was empty. Downgrade to NO_FILE so getError() tells
+        // the truth.
+        if ($error === UPLOAD_ERR_OK && $tmp === '') {
+            $error = UPLOAD_ERR_NO_FILE;
+        }
+        $stream = ($error === UPLOAD_ERR_OK && $tmp !== '')
+            ? $factory->createStreamFromFile($tmp, 'rb')
+            : $factory->createStream('');
+
+        return $factory->createUploadedFile(
+            $stream,
+            $size !== null ? (int) $size : null,
+            $error,
+            is_string($name) ? $name : null,
+            is_string($type) ? $type : null,
+        );
+    }
+
+    /** Coerce a SAPI upload error value to the UPLOAD_ERR_* int it represents. */
+    private static function normalizeUploadError(mixed $error): int
+    {
+        if (is_int($error)) {
+            return $error;
+        }
+        if (is_string($error) && ctype_digit($error)) {
+            return (int) $error;
+        }
+
+        return UPLOAD_ERR_NO_FILE;
     }
 
     /**
@@ -484,30 +592,11 @@ final class RequestFactory
             return ['', null];
         }
         if (preg_match('~[\x00-\x20\x7f@\/?#]~', $authority) === 1) {
-            throw new \InvalidArgumentException('Malformed Host header.');
+            throw new \InvalidArgumentException(self::MALFORMED_HOST);
         }
-        $host = $authority;
-        $port = null;
-        if ($authority[0] === '[') {
-            $close = strpos($authority, ']');
-            if ($close === false) {
-                throw new \InvalidArgumentException('Malformed Host header.');
-            }
-            $host = substr($authority, 1, $close - 1);
-            $rest = substr($authority, $close + 1);
-            if ($rest !== '') {
-                if (!str_starts_with($rest, ':') || !ctype_digit(substr($rest, 1))) {
-                    throw new \InvalidArgumentException('Malformed Host header.');
-                }
-                $port = (int) substr($rest, 1);
-            }
-        } elseif (substr_count($authority, ':') === 1) {
-            [$host, $portText] = explode(':', $authority, 2);
-            if ($portText === '' || !ctype_digit($portText)) {
-                throw new \InvalidArgumentException('Malformed Host header.');
-            }
-            $port = (int) $portText;
-        }
+        [$host, $port] = str_starts_with($authority, '[')
+            ? self::parseBracketedAuthority($authority)
+            : self::parseBareAuthority($authority);
         $host = strtolower(trim($host));
         // Strip exactly one FQDN root dot ('example.com.'). Uri's host
         // grammar rejects trailing dots, so the same header must not
@@ -520,13 +609,46 @@ final class RequestFactory
             && self::isValidDnsHost($host)
             && !str_ends_with($host, '.');
         if ($host === '' || (!$isIp && !$isDns)) {
-            throw new \InvalidArgumentException('Malformed Host header.');
+            throw new \InvalidArgumentException(self::MALFORMED_HOST);
         }
         if ($port !== null && ($port < 1 || $port > 65535)) {
-            throw new \InvalidArgumentException('Malformed Host header.');
+            throw new \InvalidArgumentException(self::MALFORMED_HOST);
         }
 
         return [$host, $port];
+    }
+
+    /** @return array{0:string,1:null|int} */
+    private static function parseBracketedAuthority(string $authority): array
+    {
+        $close = strpos($authority, ']');
+        if ($close === false) {
+            throw new \InvalidArgumentException(self::MALFORMED_HOST);
+        }
+        $host = substr($authority, 1, $close - 1);
+        $rest = substr($authority, $close + 1);
+        if ($rest === '') {
+            return [$host, null];
+        }
+        if (!str_starts_with($rest, ':') || !ctype_digit(substr($rest, 1))) {
+            throw new \InvalidArgumentException(self::MALFORMED_HOST);
+        }
+
+        return [$host, (int) substr($rest, 1)];
+    }
+
+    /** @return array{0:string,1:null|int} */
+    private static function parseBareAuthority(string $authority): array
+    {
+        if (substr_count($authority, ':') !== 1) {
+            return [$authority, null];
+        }
+        [$host, $portText] = explode(':', $authority, 2);
+        if ($portText === '' || !ctype_digit($portText)) {
+            throw new \InvalidArgumentException(self::MALFORMED_HOST);
+        }
+
+        return [$host, (int) $portText];
     }
 
     private static function isValidDnsHost(string $host): bool
@@ -534,29 +656,43 @@ final class RequestFactory
         if ($host === '' || strlen($host) > 253) {
             return false;
         }
-        $host = rtrim($host, '.');
+
+        return self::isValidTrimmedDnsHost(rtrim($host, '.'));
+    }
+
+    private static function isValidTrimmedDnsHost(string $host): bool
+    {
         if ($host === '') {
             return false;
         }
         foreach (explode('.', $host) as $label) {
-            $length = strlen($label);
-            if ($length < 1 || $length > 63 || $label[0] === '-' || $label[$length - 1] === '-') {
+            if (!self::isValidDnsLabel($label)) {
                 return false;
             }
-            for ($i = 0; $i < $length; ++$i) {
-                $char = $label[$i];
-                // N-11 (issue #176): '_' is accepted to align with
-                // Uri::assertHost()'s RFC 3986 reg-name grammar — RFC 9110
-                // defines Host as reg-name and '_' is unreserved, so
-                // intranet names like "my_service.internal" must validate
-                // identically at both layers instead of being accepted by
-                // Uri and rejected at the ingress boundary. The allowed
-                // alphabet (lowercase alphanumerics, '-' and '_') is
-                // expressed as a strpbrk charset so the branch stays a
-                // single, flat condition.
-                if (strpbrk($char, 'abcdefghijklmnopqrstuvwxyz0123456789-_') === false) {
-                    return false;
-                }
+        }
+
+        return true;
+    }
+
+    private static function isValidDnsLabel(string $label): bool
+    {
+        $length = strlen($label);
+        if ($length < 1 || $length > 63 || $label[0] === '-' || $label[$length - 1] === '-') {
+            return false;
+        }
+        for ($i = 0; $i < $length; ++$i) {
+            $char = $label[$i];
+            // N-11 (issue #176): '_' is accepted to align with
+            // Uri::assertHost()'s RFC 3986 reg-name grammar — RFC 9110
+            // defines Host as reg-name and '_' is unreserved, so
+            // intranet names like "my_service.internal" must validate
+            // identically at both layers instead of being accepted by
+            // Uri and rejected at the ingress boundary. The allowed
+            // alphabet (lowercase alphanumerics, '-' and '_') is
+            // expressed as a strpbrk charset so the branch stays a
+            // single, flat condition.
+            if (strpbrk($char, 'abcdefghijklmnopqrstuvwxyz0123456789-_') === false) {
+                return false;
             }
         }
 
