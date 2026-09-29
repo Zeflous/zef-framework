@@ -59,20 +59,39 @@ final class CorsMiddleware implements MiddlewareInterface
             return $handler->handle($request);
         }
         $requestOrigin = trim($request->getHeaderLine('Origin'));
-        if ($this->allowAll) {
-            $originAllowed = true;
-        } elseif ($requestOrigin === '') {
-            return $handler->handle($request);
-        } else {
-            $originAllowed = $this->originIsAllowed($requestOrigin);
-            if (!$originAllowed) {
-                if (strtoupper($request->getMethod()) === 'OPTIONS') {
-                    return new Response(204, ['Vary' => 'Origin']);
-                }
-
-                return $handler->handle($request);
-            }
+        if (!$this->requestOriginIsAllowed($requestOrigin)) {
+            return $this->rejectOrigin($request, $handler);
         }
+
+        return $this->corsResponse($request, $handler, $requestOrigin);
+    }
+
+    /** True when the request's Origin header may receive CORS headers. */
+    private function requestOriginIsAllowed(string $requestOrigin): bool
+    {
+        if ($this->allowAll) {
+            return true;
+        }
+
+        return $requestOrigin !== '' && $this->originIsAllowed($requestOrigin);
+    }
+
+    /** A disallowed origin gets a bare 204 preflight or a plain pass-through. */
+    private function rejectOrigin(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
+    {
+        if (strtoupper($request->getMethod()) === 'OPTIONS') {
+            return new Response(204, ['Vary' => 'Origin']);
+        }
+
+        return $handler->handle($request);
+    }
+
+    /** The preflight (204) or simple-request response carrying the CORS headers. */
+    private function corsResponse(
+        ServerRequestInterface $request,
+        RequestHandlerInterface $handler,
+        string $requestOrigin,
+    ): ResponseInterface {
         $allowOrigin = $this->allowAll ? '*' : $requestOrigin;
         if (strtoupper($request->getMethod()) === 'OPTIONS') {
             return new Response(204, [
@@ -88,9 +107,20 @@ final class CorsMiddleware implements MiddlewareInterface
             ->withHeader('Access-Control-Allow-Methods', $this->allowMethods)
             ->withHeader('Access-Control-Allow-Headers', $this->allowHeaders)
         ;
-        $vary = $response->getHeader('Vary');
+
+        return self::asResponse(
+            $response->withHeader('Vary', implode(', ', $this->mergedVary($response))),
+        );
+    }
+
+    /** The response's existing Vary tokens plus Origin, deduplicated case-insensitively.
+     *
+     * @return list<string>
+     */
+    private function mergedVary(MessageInterface $message): array
+    {
         $tokens = [];
-        foreach ($vary as $line) {
+        foreach ($message->getHeader('Vary') as $line) {
             if (!is_string($line)) {
                 continue;
             }
@@ -103,7 +133,7 @@ final class CorsMiddleware implements MiddlewareInterface
         }
         $tokens['origin'] = 'Origin';
 
-        return self::asResponse($response->withHeader('Vary', implode(', ', array_values($tokens))));
+        return array_values($tokens);
     }
 
     /**

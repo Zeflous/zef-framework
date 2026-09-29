@@ -26,7 +26,10 @@ use Zef\Framework\OpenApi\Server;
 use Zef\Framework\OpenApi\SpecificationBuilder;
 use Zef\Framework\OpenApi\Tag;
 
-require __DIR__ . '/../../vendor/autoload.php';
+require_once __DIR__ . '/../../vendor/autoload.php';
+
+// Single source for the User schema ref pointer (S1192: was duplicated 3x).
+const USER_SCHEMA_REF = '#/components/schemas/User';
 
 $builder = new SpecificationBuilder(
     new Info(
@@ -54,7 +57,7 @@ $builder->addSchema('User', new Schema(
         'email' => new Schema(type: SchemaType::String, format: 'email', maxLength: 254, example: 'u@zef.dev'),
         'status' => new Schema(type: SchemaType::String, enum: ['active', 'off']),
         'tags' => new Schema(type: SchemaType::Array, items: new Schema(type: SchemaType::String), uniqueItems: true, minItems: 1, maxItems: 10),
-        'nickname' => new Schema(ref: '#/components/schemas/User', nullable: true),
+        'nickname' => new Schema(ref: USER_SCHEMA_REF, nullable: true),
     ],
     additionalPropertiesAllowed: false,
     example: ['id' => 1],
@@ -63,7 +66,7 @@ $builder->addOperation(new Operation(
     operationId: 'getUser',
     method: 'GET',
     path: '/users/{id}',
-    responses: ['200' => new Response('User found', ['application/json' => new Schema(ref: '#/components/schemas/User')]), '404' => new Response('Missing')],
+    responses: ['200' => new Response('User found', ['application/json' => new Schema(ref: USER_SCHEMA_REF)]), '404' => new Response('Missing')],
     summary: 'Get one',
     description: 'Full detail',
     tags: ['users'],
@@ -79,7 +82,7 @@ $builder->addOperation(new Operation(
     method: 'POST',
     path: '/users',
     responses: ['201' => new Response('Created')],
-    requestBody: new RequestBody([MediaType::Json->value => new Schema(ref: '#/components/schemas/User')], 'New user', true),
+    requestBody: new RequestBody([MediaType::Json->value => new Schema(ref: USER_SCHEMA_REF)], 'New user', true),
 ));
 
 $spec = $builder->build();

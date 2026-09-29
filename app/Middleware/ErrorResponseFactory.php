@@ -14,6 +14,17 @@ use Zef\Framework\Http\Response;
 
 final class ErrorResponseFactory
 {
+    /**
+     * Masks values of common credential keys embedded in exception
+     * messages ("password=hunter2", "Bearer abc...", "api_key: xyz").
+     * Conservative: only [A-Za-z0-9._-] values are matched so normal
+     * prose is left untouched.
+     */
+    private const string SECRET_KEYS
+        = 'pass(?:word|wd)?|pwd|secret|token|api[_-]?key|authorization|bearer|private[_-]?key';
+
+    private const string SECRET_VALUE_TAIL = '(\s*[=:]\s*|\s+)(["\']?)[A-Za-z0-9._\/-]{4,}\3';
+
     public function __construct(private readonly bool $devMode = false) {}
 
     public function isDebug(): bool
@@ -42,16 +53,10 @@ final class ErrorResponseFactory
         );
     }
 
-    /**
-     * Masks values of common credential keys embedded in exception
-     * messages ("password=hunter2", "Bearer abc...", "api_key: xyz").
-     * Conservative: only [A-Za-z0-9._-] values are matched so normal
-     * prose is left untouched.
-     */
     private function redactSecrets(string $message): string
     {
         $redacted = preg_replace(
-            '/\b(pass(?:word|wd)?|pwd|secret|token|api[_-]?key|authorization|bearer|private[_-]?key)\b(\s*[=:]\s*|\s+)(["\']?)[A-Za-z0-9._\/-]{4,}\3/i',
+            '/\b(' . self::SECRET_KEYS . ')\b' . self::SECRET_VALUE_TAIL . '/i',
             '$1$2$3[REDACTED]$3',
             $message,
         );
