@@ -42,18 +42,18 @@ final readonly class ConfigShower
         'signing-key', 'signing_key', 'client-key', 'client_key',
     ];
 
-    private EnvInterface $env;
-
+    /**
+     * Issue #55: production reads the environment through the injected
+     * port, never the static facade. The nullable port keeps the standalone
+     * CLI call sites (bin/zef) zero-config — the concrete Env default is
+     * materialised lazily at read time (php:S2830 — no object creation in
+     * the constructor).
+     */
     public function __construct(
         private ConfigAggregator $aggregator,
         private ConsoleIO $io,
-        ?EnvInterface $env = null,
-    ) {
-        // Issue #55: production reads the environment through the injected
-        // port, never the static facade. The concrete default keeps the
-        // standalone CLI call sites (bin/zef) zero-config.
-        $this->env = $env ?? new Env();
-    }
+        private readonly ?EnvInterface $env = null,
+    ) {}
 
     public function run(?string $key, bool $reveal = false): int
     {
@@ -62,13 +62,30 @@ final readonly class ConfigShower
 
             return 1;
         }
-
         if ($key === null) {
-            $this->io->out($this->encode($this->jsonSafe($this->aggregator->all(), $reveal)));
+            $this->showAll($reveal);
 
             return 0;
         }
 
+        return $this->showKey($key, $reveal);
+    }
+
+    private function encode(mixed $value): string
+    {
+        return json_encode(
+            $value,
+            JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR,
+        );
+    }
+
+    private function showAll(bool $reveal): void
+    {
+        $this->io->out($this->encode($this->jsonSafe($this->aggregator->all(), $reveal)));
+    }
+
+    private function showKey(string $key, bool $reveal): int
+    {
         $value = $this->aggregator->get($key, self::MISSING);
         if ($value === self::MISSING) {
             $this->io->err("Config key '{$key}' is not set.");
@@ -85,39 +102,37 @@ final readonly class ConfigShower
         return 0;
     }
 
-    private function encode(mixed $value): string
-    {
-        return json_encode(
-            $value,
-            JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR,
-        );
-    }
-
     private function jsonSafe(mixed $value, bool $reveal): mixed
     {
-        if ($value instanceof \Closure) {
-            return '<closure>';
-        }
         if (is_array($value)) {
-            $out = [];
-            foreach ($value as $k => $v) {
-                // (string) is a no-op post PHP array-key normalisation; kept for
-                // JSON key stability. @infection-ignore-all
-                $out[(string) $k] = !$reveal && $this->isSecretKey((string) $k)
-                    ? $this->mask($v)
-                    : $this->jsonSafe($v, $reveal);
-            }
-
-            return $out;
-        }
-        if (is_object($value)) {
-            return '<object ' . $value::class . '>';
-        }
-        if (is_resource($value)) {
-            return '<resource>';
+            return $this->jsonSafeArray($value, $reveal);
         }
 
-        return $value;
+        return match (true) {
+            $value instanceof \Closure => '<closure>',
+            is_object($value) => '<object ' . $value::class . '>',
+            is_resource($value) => '<resource>',
+            default => $value,
+        };
+    }
+
+    /**
+     * @param array<mixed, mixed> $value
+     *
+     * @return array<string, mixed>
+     */
+    private function jsonSafeArray(array $value, bool $reveal): array
+    {
+        $out = [];
+        foreach ($value as $k => $v) {
+            // (string) is a no-op post PHP array-key normalisation; kept for
+            // JSON key stability. @infection-ignore-all
+            $out[(string) $k] = !$reveal && $this->isSecretKey((string) $k)
+                ? $this->mask($v)
+                : $this->jsonSafe($v, $reveal);
+        }
+
+        return $out;
     }
 
     /** Does this dotted config path point at a secret-looking slot? */
@@ -147,6 +162,8 @@ final readonly class ConfigShower
 
     private function isProduction(): bool
     {
-        return strcasecmp($this->env->readString('ZEF_ENV'), 'production') === 0;
+        $env = $this->env ?? new Env();
+
+        return strcasecmp($env->readString('ZEF_ENV'), 'production') === 0;
     }
 }

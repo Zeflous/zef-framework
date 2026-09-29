@@ -20,31 +20,69 @@ final class DefaultSecurityBoundary implements SecurityBoundaryInterface
         ReplayProtectorInterface $replayProtector,
         int $nowMs,
     ): SecurityAdmissionDecision {
+        $failure = $this->authenticationFailure($authentication);
+        if ($failure === SecurityFailure::NONE) {
+            $failure = $this->postAuthenticationFailure(
+                $authentication->context,
+                $request,
+                $authorization,
+                $replayProtector,
+                $nowMs,
+            );
+        }
+
+        return new SecurityAdmissionDecision(
+            $failure === SecurityFailure::NONE ? SecurityVerdict::ALLOW : SecurityVerdict::DENY,
+            $failure,
+            false,
+        );
+    }
+
+    private function authenticationFailure(AuthenticationResult $authentication): SecurityFailure
+    {
         if ($authentication->status !== AuthenticationStatus::AUTHENTICATED) {
             return match ($authentication->status) {
-                AuthenticationStatus::EXPIRED => new SecurityAdmissionDecision(SecurityVerdict::DENY, SecurityFailure::CREDENTIAL_EXPIRED, false),
-                AuthenticationStatus::UNAVAILABLE => new SecurityAdmissionDecision(SecurityVerdict::DENY, SecurityFailure::AUTHENTICATION_UNAVAILABLE, false),
-                default => new SecurityAdmissionDecision(SecurityVerdict::DENY, SecurityFailure::AUTHENTICATION_FAILED, false),
+                AuthenticationStatus::EXPIRED => SecurityFailure::CREDENTIAL_EXPIRED,
+                AuthenticationStatus::UNAVAILABLE => SecurityFailure::AUTHENTICATION_UNAVAILABLE,
+                default => SecurityFailure::AUTHENTICATION_FAILED,
             };
         }
-        $context = $authentication->context;
-        if (!$context instanceof SecurityContext) {
-            return new SecurityAdmissionDecision(SecurityVerdict::DENY, SecurityFailure::MALFORMED_METADATA, false);
+
+        return $authentication->context instanceof SecurityContext
+            ? SecurityFailure::NONE
+            : SecurityFailure::MALFORMED_METADATA;
+    }
+
+    private function postAuthenticationFailure(
+        ?SecurityContext $context,
+        SecurityRequest $request,
+        AuthorizationPolicyInterface $authorization,
+        ReplayProtectorInterface $replayProtector,
+        int $nowMs,
+    ): SecurityFailure {
+        if ($context === null) {
+            return SecurityFailure::MALFORMED_METADATA;
         }
-        $authorizationResult = $authorization->authorize($context, $request);
-        if ($authorizationResult->verdict !== SecurityVerdict::ALLOW) {
-            return new SecurityAdmissionDecision(SecurityVerdict::DENY, SecurityFailure::AUTHORIZATION_DENIED, false);
+        if ($authorization->authorize($context, $request)->verdict !== SecurityVerdict::ALLOW) {
+            return SecurityFailure::AUTHORIZATION_DENIED;
         }
+
+        return $this->replayFailure($replayProtector, $request, $nowMs);
+    }
+
+    private function replayFailure(
+        ReplayProtectorInterface $replayProtector,
+        SecurityRequest $request,
+        int $nowMs,
+    ): SecurityFailure {
         $replay = $replayProtector->check($request->replayId, $nowMs);
-        if (!$replay->allows()) {
-            $failure = match ($replay->decision) {
-                ReplayDecision::UNAVAILABLE => SecurityFailure::REPLAY_UNAVAILABLE,
-                default => SecurityFailure::REPLAY_REJECTED,
-            };
-
-            return new SecurityAdmissionDecision(SecurityVerdict::DENY, $failure, false);
+        if ($replay->allows()) {
+            return SecurityFailure::NONE;
         }
 
-        return new SecurityAdmissionDecision(SecurityVerdict::ALLOW, SecurityFailure::NONE, false);
+        return match ($replay->decision) {
+            ReplayDecision::UNAVAILABLE => SecurityFailure::REPLAY_UNAVAILABLE,
+            default => SecurityFailure::REPLAY_REJECTED,
+        };
     }
 }
