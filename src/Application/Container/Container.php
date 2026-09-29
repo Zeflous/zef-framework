@@ -82,28 +82,6 @@ final class Container implements ContainerInterface, ServiceRegistrarInterface
         $this->resolver->bind($this);
     }
 
-    /**
-     * php:S2830: the container is the composition root — its internal
-     * collaborators are wired through a private initializer instead of
-     * bare `new` expressions in the constructor body. The constructor
-     * signature is public API and cannot grow per-service injection
-     * points; policy and initialization guard stay optional injectables.
-     */
-    private function initialize(?ArchitecturePolicy $policy, ?InitializationGuard $initializationGuard): void
-    {
-        $this->policy = $policy ?? new ArchitecturePolicy();
-        $this->registry = new ServiceRegistry();
-        $this->registrar = new ServiceRegistrar($this->registry);
-        $this->graphValidator = new DependencyGraphValidator();
-        $this->compiler = new ContainerCompiler($this->graphValidator);
-        $this->resolver = new ContainerResolver(
-            $this->registry,
-            $this->graphValidator,
-            $initializationGuard ?? new FailFastInitializationGuard(),
-            $this->policy->maxResolutionDepth,
-        );
-    }
-
     // @infection-ignore-all DecrementInteger — ekuivalen: 0 berarti unlimited
     // (validator gerbang > 0); default -1 berperilaku sama
     public function configurePolicies(int $maxCrossModuleRefs = 0): void
@@ -517,6 +495,28 @@ final class Container implements ContainerInterface, ServiceRegistrarInterface
     }
 
     /**
+     * php:S2830: the container is the composition root — its internal
+     * collaborators are wired through a private initializer instead of
+     * bare `new` expressions in the constructor body. The constructor
+     * signature is public API and cannot grow per-service injection
+     * points; policy and initialization guard stay optional injectables.
+     */
+    private function initialize(?ArchitecturePolicy $policy, ?InitializationGuard $initializationGuard): void
+    {
+        $this->policy = $policy ?? new ArchitecturePolicy();
+        $this->registry = new ServiceRegistry();
+        $this->registrar = new ServiceRegistrar($this->registry);
+        $this->graphValidator = new DependencyGraphValidator();
+        $this->compiler = new ContainerCompiler($this->graphValidator);
+        $this->resolver = new ContainerResolver(
+            $this->registry,
+            $this->graphValidator,
+            $initializationGuard ?? new FailFastInitializationGuard(),
+            $this->policy->maxResolutionDepth,
+        );
+    }
+
+    /**
      * Deferred providers whose provides() IDs are referenced by the existing
      * graph (as a dependency or alias target) must register before compile —
      * otherwise their definitions would be invisible to graph validation.
@@ -638,6 +638,7 @@ final class Container implements ContainerInterface, ServiceRegistrarInterface
                 // NotFoundExceptionInterface — container-agnostic callers catch
                 // that standard interface, not the framework's LogicException.
                 $hint = ' — request it before validateAndFreeze() or register the provider as eager.';
+
                 throw new ServiceNotFoundException(
                     $id,
                     null,
