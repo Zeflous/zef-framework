@@ -101,7 +101,7 @@ final class ConfigProvider implements ConfigProviderInterface
     private static function loggerFrom(ContainerInterface $c): LoggerInterface
     {
         $logger = $c->get(LoggerInterface::class);
-        \assert($logger instanceof LoggerInterface);
+        assert($logger instanceof LoggerInterface);
 
         return $logger;
     }
@@ -174,12 +174,9 @@ final class ConfigProvider implements ConfigProviderInterface
         }
         $db = isset($parts['path']) ? trim((string) $parts['path'], '/') : '';
         if ($db !== '') {
-            // "redis://h/abc" previously (int)-cast to 0 and SILENTLY
-            // selected db 0 — a wrong-database isolation bug.
+            // "redis://h/abc" previously (int)-cast to 0 and SILENTLY selected db 0 — a wrong-database isolation bug.
             if (!ctype_digit($db)) {
-                // ctype_digit also rejects signed forms like "-1"/"+1":
-                // the fail-closed behaviour is correct for both, but the
-                // message must say WHY (non-negative integer required).
+                // ctype_digit also rejects signed forms like "-1"/"+1": the fail-closed behaviour is correct for both, but the message must say WHY (non-negative integer required).
                 throw new \RuntimeException('Redis DB index in ZEF_REDIS_URL must be a non-negative integer.');
             }
             if (!$redis->select((int) $db)) {

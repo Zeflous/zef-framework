@@ -114,7 +114,7 @@ final class CorsMiddleware implements MiddlewareInterface
      */
     private static function asResponse(MessageInterface $message): ResponseInterface
     {
-        \assert($message instanceof ResponseInterface);
+        assert($message instanceof ResponseInterface);
 
         return $message;
     }

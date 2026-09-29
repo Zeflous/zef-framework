@@ -29,7 +29,7 @@ final class GlobalErrorHandler implements MiddlewareInterface
     ) {}
 
     /**
-     * Bug fix #20: handles MethodNotAllowedException (defence in depth); uses JsonResponse.
+     * Bug fix #20: handles MethodNotAllowedException (defense in depth); uses JsonResponse.
      */
     #[\Override]
     public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
@@ -89,7 +89,7 @@ final class GlobalErrorHandler implements MiddlewareInterface
      */
     private static function asResponse(MessageInterface $message): ResponseInterface
     {
-        \assert($message instanceof ResponseInterface);
+        assert($message instanceof ResponseInterface);
 
         return $message;
     }
