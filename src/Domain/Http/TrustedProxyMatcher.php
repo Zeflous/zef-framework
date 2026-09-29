@@ -32,7 +32,7 @@ final class TrustedProxyMatcher
             return false;
         }
         foreach ($trusted as $entry) {
-            if (self::entryMatchesIp($entry, $ip)) {
+            if (self::entryMatchesIp(trim((string) $entry), $ip)) {
                 return true;
             }
         }
@@ -56,14 +56,11 @@ final class TrustedProxyMatcher
     }
 
     /**
-     * One trusted-list entry against a validated IP: exact string match or
-     * CIDR containment.
-     *
-     * @param mixed $entry raw trusted-list entry (cast to string)
+     * One trimmed trusted-list entry against a validated IP: exact string
+     * match or CIDR containment.
      */
-    private static function entryMatchesIp(mixed $entry, string $ip): bool
+    private static function entryMatchesIp(string $entry, string $ip): bool
     {
-        $entry = trim((string) $entry);
         if ($entry === '') {
             return false;
         }
