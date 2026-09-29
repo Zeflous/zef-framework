@@ -54,6 +54,10 @@ exclude:
         reason: 'Unit-test fixture; literal throwaway password is the INPUT to a redaction test, not a real credential. Semgrep tests/ pass still scans it'
     - tests/Unit/EdgeMatrixObservabilityTest.php:
         reason: 'Unit-test fixture; literal throwaway credential in a URL is the INPUT to a sanitizer test, not a real credential. Semgrep tests/ pass still scans it'
+    - tests/CliRunner.php:
+        reason: 'Test harness; the catch block echoes the exception CLASS only ($e::class), never the message, so no server error detail is exposed. SnykCode cannot see the class-only narrowing. Semgrep tests/ pass still scans it'
+    - scripts/ci/normalize_sarif_severity.py:
+        reason: 'CLI-only CI tool; every path argument is validated by repo_path() (lexical + resolved containment) before any open(). SnykCode recognizes no sanitizer for legitimate CLI path arguments. CodeQL python + Semgrep scripts/ pass still scan it'
 
 # ---------------------------------------------------------------------------
 # 2. Snyk Open Source (SCA) license ignores
