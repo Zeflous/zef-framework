@@ -44,9 +44,10 @@ final class DatabaseKillRound4Test extends TestCase
             self::fail('duplicate insert via fetchAll must throw');
         } catch (QueryException $e) {
             self::assertMatchesRegularExpression(
-                '/^Execution failed: .+ \(sql: INSERT INTO t \(id\) VALUES \(1\)\)$/',
+                '/^Execution failed: .+$/',
                 $e->getMessage(),
             );
+            self::assertSame('INSERT INTO t (id) VALUES (1)', $e->getSql());
         }
     }
 

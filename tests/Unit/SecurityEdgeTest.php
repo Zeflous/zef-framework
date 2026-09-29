@@ -35,6 +35,7 @@ use Zef\Framework\Security\InMemoryRateLimiter;
 use Zef\Framework\Security\SecurityPolicy;
 use Zef\Framework\Security\SecurityRuntimeMiddleware;
 use Zef\Middleware\SecurityHeadersMiddleware;
+use Zef\Middleware\TimingMiddleware;
 
 /**
  * @internal
@@ -166,6 +167,43 @@ final class SecurityEdgeTest extends TestCase
         $httpsRequest = new ServerRequest('GET', new Uri('https://localhost/x', ['localhost']));
         $httpsResponse = $middleware->process($httpsRequest, $this->passingHandler());
         self::assertStringContainsString('max-age=', $httpsResponse->getHeaderLine('Strict-Transport-Security'));
+    }
+
+    /** ZEF-DX-07 (#247): CSP and HSTS are secure-by-default on the bare middleware. */
+    public function testSecurityHeadersMiddlewareIsOnByDefault(): void
+    {
+        $middleware = new SecurityHeadersMiddleware();
+        $response = $middleware->process($this->request('/x'), $this->passingHandler());
+        self::assertStringContainsString("default-src 'self'", $response->getHeaderLine('Content-Security-Policy'), 'CSP wajib default ON');
+        // HSTS stays scheme-gated: present over https, absent over plain http.
+        $httpsRequest = new ServerRequest('GET', new Uri('https://localhost/x', ['localhost']));
+        $httpsResponse = $middleware->process($httpsRequest, $this->passingHandler());
+        self::assertStringContainsString('max-age=', $httpsResponse->getHeaderLine('Strict-Transport-Security'), 'HSTS wajib default ON untuk https');
+        self::assertSame('', $response->getHeaderLine('Strict-Transport-Security'), 'HSTS tidak boleh muncul di http');
+    }
+
+    /** ZEF-DX-07 (#247): per-deployment opt-out removes both headers. */
+    public function testSecurityHeadersMiddlewareOptOut(): void
+    {
+        $middleware = new SecurityHeadersMiddleware(['csp' => false, 'hsts' => false]);
+        $httpsRequest = new ServerRequest('GET', new Uri('https://localhost/x', ['localhost']));
+        $response = $middleware->process($httpsRequest, $this->passingHandler());
+        self::assertSame('', $response->getHeaderLine('Content-Security-Policy'));
+        self::assertSame('', $response->getHeaderLine('Strict-Transport-Security'));
+        // The always-on hardening set is untouched by the opt-out.
+        self::assertSame('nosniff', $response->getHeaderLine('X-Content-Type-Options'));
+    }
+
+    /** ZEF-DX-08 (#248): X-Response-Time is gated by the middleware flag. */
+    public function testTimingMiddlewareHeaderIsGated(): void
+    {
+        $request = $this->request('/x');
+
+        $emitting = new TimingMiddleware();
+        self::assertMatchesRegularExpression('/^\d+\.\d+ms$/', $emitting->process($request, $this->passingHandler())->getHeaderLine('X-Response-Time'), 'flag ON wajib memancarkan header');
+
+        $silent = new TimingMiddleware(false);
+        self::assertSame('', $silent->process($request, $this->passingHandler())->getHeaderLine('X-Response-Time'), 'flag OFF wajib diam');
     }
 
     // ------------------------------------------------------------------

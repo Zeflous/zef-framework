@@ -32,8 +32,6 @@ final class PdoConnection implements ConnectionInterface
 {
     private const string EXECUTION_FAILED_PREFIX = 'Execution failed: ';
 
-    private const string SQL_CONTEXT_SUFFIX = ' (sql: ';
-
     private ?\PDO $handle = null;
     private bool $unusable = false;
 
@@ -59,9 +57,13 @@ final class PdoConnection implements ConnectionInterface
             $statement->execute($query->params);
         } catch (\PDOException $e) {
             throw new QueryException(
-                self::EXECUTION_FAILED_PREFIX . $e->getMessage() . self::SQL_CONTEXT_SUFFIX . $query->sql . ')',
+                self::EXECUTION_FAILED_PREFIX . $e->getMessage(),
                 (int) $e->getCode(),
                 $e,
+                // ZEF-DX-09 (issue #249): the SQL rides as structured context
+                // (getSql()) for logging — never in the message, which debug
+                // mode renders straight into the HTTP error body.
+                $query->sql,
             );
         }
 
@@ -81,9 +83,13 @@ final class PdoConnection implements ConnectionInterface
             $statement->execute($query->params);
         } catch (\PDOException $e) {
             throw new QueryException(
-                self::EXECUTION_FAILED_PREFIX . $e->getMessage() . self::SQL_CONTEXT_SUFFIX . $query->sql . ')',
+                self::EXECUTION_FAILED_PREFIX . $e->getMessage(),
                 (int) $e->getCode(),
                 $e,
+                // ZEF-DX-09 (issue #249): the SQL rides as structured context
+                // (getSql()) for logging — never in the message, which debug
+                // mode renders straight into the HTTP error body.
+                $query->sql,
             );
         }
 
@@ -186,9 +192,11 @@ final class PdoConnection implements ConnectionInterface
             return $this->pdo()->prepare($query->sql);
         } catch (\PDOException $e) {
             throw new QueryException(
-                'Preparation failed: ' . $e->getMessage() . self::SQL_CONTEXT_SUFFIX . $query->sql . ')',
+                'Preparation failed: ' . $e->getMessage(),
                 (int) $e->getCode(),
                 $e,
+                // ZEF-DX-09 (issue #249): structured context, not message text.
+                $query->sql,
             );
         }
     }
