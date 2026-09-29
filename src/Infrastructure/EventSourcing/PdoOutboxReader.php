@@ -24,6 +24,9 @@ final readonly class PdoOutboxReader
     /** @var (\Closure(): int) */
     private \Closure $clock;
 
+    /**
+     * @param null|(\Closure(): int) $clock now source (default: realtime nanoseconds)
+     */
     public function __construct(
         private ConnectionInterface $connection,
         private string $table,
