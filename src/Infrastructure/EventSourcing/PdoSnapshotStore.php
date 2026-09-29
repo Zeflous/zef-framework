@@ -53,14 +53,14 @@ final readonly class PdoSnapshotStore implements SnapshotStoreInterface
      */
     public function createSchema(): void
     {
-        $this->connection->execute(SqlQuery::raw(
-            'CREATE TABLE IF NOT EXISTS "' . $this->table . '" ("aggregate_type" VARCHAR(128) NOT NULL, '
-            . '"aggregate_id" VARCHAR(128) NOT NULL, '
-            . '"version" BIGINT NOT NULL, '
-            . '"state" TEXT NOT NULL, '
-            . '"created_at" BIGINT NOT NULL, '
-            . 'CONSTRAINT "uq_' . $this->table . '_identity" UNIQUE ("aggregate_type", "aggregate_id"))',
-        ));
+        $this->connection->execute(SqlQuery::raw(implode('', [
+            'CREATE TABLE IF NOT EXISTS "' . $this->table . '" ("aggregate_type" VARCHAR(128) NOT NULL, ',
+            '"aggregate_id" VARCHAR(128) NOT NULL, ',
+            '"version" BIGINT NOT NULL, ',
+            '"state" TEXT NOT NULL, ',
+            '"created_at" BIGINT NOT NULL, ',
+            'CONSTRAINT "uq_' . $this->table . '_identity" UNIQUE ("aggregate_type", "aggregate_id"))',
+        ])));
     }
 
     #[\Override]

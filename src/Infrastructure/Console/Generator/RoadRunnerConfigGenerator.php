@@ -36,19 +36,17 @@ final readonly class RoadRunnerConfigGenerator implements GeneratorInterface
         $path = "{$this->root}/.rr.yaml";
         $force = in_array('--force', $argv, true);
 
-        if (!$force && is_file($path)) {
-            $this->io->err(".rr.yaml already exists ({$path}). Use --force to regenerate it.");
-
-            return 1;
-        }
-
         $address = $this->option($argv, 'address') ?? $this->envString('ZEF_HTTP_ADDRESS');
         $workers = $this->intOption($argv, 'workers', $this->envString('ZEF_RR_NUM_WORKERS')) ?? 4;
         $maxJobs = $this->intOption($argv, 'max-jobs', $this->envString('ZEF_WORKER_MAX_JOBS')) ?? 0;
         $memory = $this->intOption($argv, 'memory', $this->envString('ZEF_WORKER_MEMORY_LIMIT')) ?? 512;
 
         $address ??= '0.0.0.0:8080';
-        $error = $this->validationError($address, $workers, $maxJobs, $memory);
+        if (!$force && is_file($path)) {
+            $error = ".rr.yaml already exists ({$path}). Use --force to regenerate it.";
+        } else {
+            $error = $this->validationError($address, $workers, $maxJobs, $memory);
+        }
         if ($error !== null) {
             $this->io->err($error);
 

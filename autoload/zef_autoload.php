@@ -303,6 +303,7 @@ if (!function_exists('zef_framework_autoload')) {
                 "Zef\\Framework\\Http\\ApiVersionNegotiator" => __DIR__ . '/../src/Adapters/Http/ApiVersionNegotiator.php',
                 "Zef\\Framework\\Http\\ETagMiddleware" => __DIR__ . '/../src/Adapters/Http/ETagMiddleware.php',
                 "Zef\\Framework\\Http\\FormRequest" => __DIR__ . '/../src/Adapters/Http/FormRequest.php',
+                "Zef\\Framework\\Http\\HostAuthorityParser" => __DIR__ . '/../src/Adapters/Http/HostAuthorityParser.php',
                 "Zef\\Framework\\Http\\JsonResponse" => __DIR__ . '/../src/Adapters/Http/JsonResponse.php',
                 "Zef\\Framework\\Http\\LimitedInputStream" => __DIR__ . '/../src/Adapters/Http/LimitedInputStream.php',
                 "Zef\\Framework\\Http\\MessageBase" => __DIR__ . '/../src/Adapters/Http/MessageBase.php',

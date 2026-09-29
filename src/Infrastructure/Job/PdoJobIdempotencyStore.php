@@ -68,12 +68,12 @@ final readonly class PdoJobIdempotencyStore implements JobIdempotencyStoreInterf
      */
     public function createSchema(): void
     {
-        $this->connection->execute(SqlQuery::raw(
-            'CREATE TABLE IF NOT EXISTS "' . $this->table . '" ("idem_key" VARCHAR(255) NOT NULL, '
-            . '"value" TEXT NOT NULL, '
-            . '"expires_at" BIGINT NOT NULL, '
-            . 'CONSTRAINT "uq_' . $this->table . '_key" UNIQUE ("idem_key"))',
-        ));
+        $this->connection->execute(SqlQuery::raw(implode('', [
+            'CREATE TABLE IF NOT EXISTS "' . $this->table . '" ("idem_key" VARCHAR(255) NOT NULL, ',
+            '"value" TEXT NOT NULL, ',
+            '"expires_at" BIGINT NOT NULL, ',
+            'CONSTRAINT "uq_' . $this->table . '_key" UNIQUE ("idem_key"))',
+        ])));
     }
 
     #[\Override]
