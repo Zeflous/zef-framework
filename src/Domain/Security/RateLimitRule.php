@@ -210,11 +210,9 @@ final readonly class RateLimitRule
     }
 
     /**
-     * @param mixed $methods
-     *
      * @return null|list<string>
      */
-    private static function normalisedMethods($methods): ?array
+    private static function normalisedMethods(mixed $methods): ?array
     {
         if ($methods === null) {
             return null;
