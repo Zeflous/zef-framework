@@ -30,7 +30,7 @@ final readonly class SpecHandler implements RequestHandlerInterface
         array $spec,
         bool $pretty = true,
     ) {
-        $this->body = self::serializedDocument($spec, $pretty);
+        $this->body = $this->serializedDocument($spec, $pretty);
         $this->etag = '"' . hash('sha256', $this->body) . '"';
     }
 
@@ -59,7 +59,7 @@ final readonly class SpecHandler implements RequestHandlerInterface
      *
      * @param array<string, mixed> $spec built OpenAPI document
      */
-    private static function serializedDocument(array $spec, bool $pretty): string
+    private function serializedDocument(array $spec, bool $pretty): string
     {
         $serializer = new JsonSpecificationSerializer();
 

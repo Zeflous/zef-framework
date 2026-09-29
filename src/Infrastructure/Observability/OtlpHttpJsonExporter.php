@@ -232,9 +232,12 @@ final class OtlpHttpJsonExporter implements SpanExporterInterface, MetricExporte
                 'ignore_errors' => true,
             ],
         ]);
-        $transportError = null;
-        set_error_handler(static function (int $s, string $m) use (&$transportError): bool {
-            $transportError = $m;
+        $transportErrors = [];
+        set_error_handler(static function (int $severity, string $message) use (&$transportErrors): bool {
+            // Both engine arguments are consumed so the handler mirrors the
+            // set_error_handler contract; the diagnostic message (not the
+            // severity) is what the failure report carries.
+            $transportErrors[] = [$severity, $message];
 
             return true;
         });
@@ -253,7 +256,8 @@ final class OtlpHttpJsonExporter implements SpanExporterInterface, MetricExporte
             }
         }
         if ($result === false) {
-            $reason = $transportError !== null ? ': ' . TelemetrySanitizer::redact($transportError) : '.';
+            $last = $transportErrors === [] ? null : $transportErrors[count($transportErrors) - 1][1];
+            $reason = $last !== null ? ': ' . TelemetrySanitizer::redact($last) : '.';
 
             throw new OtlpExporterException('OTLP exporter transport failure' . $reason);
         }

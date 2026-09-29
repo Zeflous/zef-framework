@@ -47,7 +47,8 @@ final class ClassRootAttributeScanner
             $meta = $this->scan($resolved);
             $schemes = [...$schemes, ...$meta->schemes];
             $tags = [...$tags, ...$meta->tags];
-            if ($meta->infoOverride !== null && $infoOverride === null) {
+            $carriesInfoOverride = $meta->infoOverride instanceof Info;
+            if ($carriesInfoOverride && !$infoOverride instanceof Info) {
                 $infoOverride = $meta->infoOverride;
             }
         }

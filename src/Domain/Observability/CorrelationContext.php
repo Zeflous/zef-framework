@@ -166,7 +166,7 @@ final readonly class CorrelationContext
                 throw new \InvalidArgumentException('Invalid correlation attribute key.');
             }
             $isScalarValue = is_string($value) || is_int($value) || is_float($value) || is_bool($value);
-            if (!($isScalarValue || $value === null)) {
+            if (!$isScalarValue && $value !== null) {
                 throw new \InvalidArgumentException('Correlation attribute values must be scalar or null.');
             }
             if (is_string($value) && strlen($value) > self::MAX_ATTRIBUTE_VALUE_BYTES) {

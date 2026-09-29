@@ -38,8 +38,6 @@ use Zef\Framework\Database\SqlExpression;
  */
 final readonly class PdoOutbox implements OutboxStoreInterface, OutboxClaimInterface
 {
-    private string $table;
-
     private string $quotedTable;
 
     /** @var (\Closure(): int) */
@@ -52,11 +50,10 @@ final readonly class PdoOutbox implements OutboxStoreInterface, OutboxClaimInter
      */
     public function __construct(
         private ConnectionInterface $connection,
-        string $table = 'zef_outbox',
+        private string $table = 'zef_outbox',
         ?\Closure $clock = null,
     ) {
-        $this->table = $table;
-        $this->quotedTable = self::quoteTable($table);
+        $this->quotedTable = $this->quoteTable($this->table);
         $this->clock = $clock ?? static fn (): int => (int) (microtime(true) * 1_000_000_000);
     }
 
@@ -182,7 +179,7 @@ final readonly class PdoOutbox implements OutboxStoreInterface, OutboxClaimInter
         $entries = new PdoOutboxClaimer($this->connection, $this->table, $this->quotedTable)
             ->claim($owner, $limit, $now, $leaseUntil)
         ;
-        usort($entries, self::compareFifo(...));
+        usort($entries, $this->compareFifo(...));
 
         return $entries;
     }
@@ -203,7 +200,7 @@ final readonly class PdoOutbox implements OutboxStoreInterface, OutboxClaimInter
     }
 
     /** Quoting the table name once up front keeps every later query builder call short. */
-    private static function quoteTable(string $table): string
+    private function quoteTable(string $table): string
     {
         return new QueryBuilder()->quoteIdentifier($table, 'table');
     }
@@ -214,7 +211,7 @@ final readonly class PdoOutbox implements OutboxStoreInterface, OutboxClaimInter
     }
 
     /** FIFO order used by claimBatch(): (createdAt, id), both ascending. */
-    private static function compareFifo(OutboxEntry $a, OutboxEntry $b): int
+    private function compareFifo(OutboxEntry $a, OutboxEntry $b): int
     {
         return [$a->createdAtUnixNano, $a->id] <=> [$b->createdAtUnixNano, $b->id];
     }
