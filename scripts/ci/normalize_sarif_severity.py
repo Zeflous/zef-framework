@@ -17,9 +17,16 @@ This script rewrites any non-numeric ``security-severity`` to ``"0.0"`` so the
 file is accepted. It touches ONLY the SARIF *evidence*; the workflow's
 fail-closed verdict is computed from the scanner exit codes and is unaffected.
 
-Usage::
-
-    python3 scripts/ci/normalize_sarif_severity.py snyk-code.sarif snyk-sca.sarif
+Inputs
+------
+The three SARIF files are fixed by the workflow that produces them, so they are
+declared here as module constants rather than read from ``sys.argv``. A path
+that arrives as a command-line argument is attacker-influenced input, and
+feeding it to ``open()`` is a path-traversal sink (code-scanning rule
+python/PT) that no amount of downstream validation reliably clears for a
+static analyser. With the names as constants there is no taint source at all:
+the only paths this script can ever touch are the three below, resolved under
+the repository root.
 
 Missing files are skipped (a scanner that produced no SARIF is handled by the
 verdict step, not here). Exit status is always 0 unless a file exists but is
@@ -29,33 +36,27 @@ not valid JSON, which is a real error worth failing on.
 from __future__ import annotations
 
 import json
-import os
-import re
 import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-# A SARIF filename the Snyk CLI writes into the checkout root: a bare name with
-# no directory component and a strict character whitelist. Anything else is
-# refused before a path is built.
-_SAFE_SARIF_NAME = re.compile(r"^[A-Za-z0-9._-]+\.sarif$")
+# Fixed by .github/workflows/snyk-security.yml — one file per scanner.
+SARIF_FILES = ("snyk-code.sarif", "snyk-sca.sarif", "snyk-iac.sarif")
 
 
-def sarif_path(raw: str) -> Path:
-    """Resolve a SARIF filename to a path inside the repository root.
+def sarif_path(name: str) -> Path:
+    """Resolve one of the fixed SARIF names under the repository root.
 
-    The Snyk CLI writes its SARIF output into the checkout root, so this tool
-    accepts a bare ``*.sarif`` filename only. ``os.path.basename`` strips any
-    directory component (a sanitizer Snyk Code recognises) and the strict
-    whitelist rejects everything that is not a plain SARIF filename, so a
-    crafted argument can never influence the location that is written to.
+    ``name`` is always a module constant, never user input, so this is a
+    containment assertion rather than a sanitizer: it guarantees the script
+    can only ever read and rewrite files inside the checkout.
     """
-    name = os.path.basename(raw.replace("\\", "/"))
-    if not _SAFE_SARIF_NAME.match(name):
-        print(f"ERROR: SARIF path must be a bare *.sarif filename: {raw}", file=sys.stderr)
+    path = (REPO_ROOT / name).resolve()
+    if path != REPO_ROOT and REPO_ROOT not in path.parents:
+        print(f"ERROR: refusing to touch a path outside the repository: {name}", file=sys.stderr)
         sys.exit(2)
-    return REPO_ROOT / name
+    return path
 
 
 def normalize(path: Path) -> int:
@@ -90,12 +91,8 @@ def normalize(path: Path) -> int:
     return fixed
 
 
-def main(argv: list[str]) -> int:
-    if len(argv) < 2:
-        print("usage: normalize_sarif_severity.py <file.sarif> [...]", file=sys.stderr)
-        return 2
-
-    for name in argv[1:]:
+def main() -> int:
+    for name in SARIF_FILES:
         path = sarif_path(name)
         if not path.exists():
             print(f"{name}: absent, skipped")
@@ -111,4 +108,4 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv))
+    raise SystemExit(main())

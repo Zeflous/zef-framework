@@ -57,7 +57,7 @@ exclude:
     - tests/CliRunner.php:
         reason: 'Test harness; the catch block echoes the exception CLASS only ($e::class), never the message, so no server error detail is exposed. SnykCode cannot see the class-only narrowing. Semgrep tests/ pass still scans it'
     - scripts/ci/normalize_sarif_severity.py:
-        reason: 'CLI-only CI tool; every path argument is reduced to a bare *.sarif filename via os.path.basename() and a strict [A-Za-z0-9._-]+\.sarif whitelist before any open(). CodeQL python + Semgrep scripts/ pass still scan it'
+        reason: 'CI-only SARIF normalizer; the three input paths are module constants (no CLI argument, no taint source) resolved under the repo root. CodeQL python + Semgrep scripts/ pass still scan it'
 
 # ---------------------------------------------------------------------------
 # 2. Snyk Open Source (SCA) license ignores

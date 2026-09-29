@@ -129,7 +129,7 @@ jobs:
       # ---------------------------------------------------------------------
       - name: Normalize SARIF security-severity values
         if: always()
-        run: python3 scripts/ci/normalize_sarif_severity.py snyk-code.sarif snyk-sca.sarif snyk-iac.sarif
+        run: python3 scripts/ci/normalize_sarif_severity.py
 
       # ---------------------------------------------------------------------
       # Evidence upload. Runs even when a scan above reported findings, and
