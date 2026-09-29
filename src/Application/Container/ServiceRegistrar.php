@@ -38,7 +38,9 @@ final readonly class ServiceRegistrar
         ServiceLifetime::assert($lifetime);
         foreach ($deps as $dep) {
             if (!is_string($dep) || $dep === '') {
-                throw new InvalidFactoryException("Factory for '{$id}' is invalid: dependency IDs must be non-empty strings.");
+                throw new InvalidFactoryException(
+                    "Factory for '{$id}' is invalid: dependency IDs must be non-empty strings.",
+                );
             }
         }
         $this->registry->addFactory($id, $factory, $deps, $module, $lifetime);

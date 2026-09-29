@@ -67,7 +67,8 @@ final readonly class EventUpcaster
     {
         $hops = 0;
         while (isset($this->byType[$event->eventType])) {
-            if (++$hops > self::MAX_HOPS) {
+            ++$hops;
+            if ($hops > self::MAX_HOPS) {
                 throw new EventSourcingException(
                     'Upcaster chain exceeded ' . self::MAX_HOPS . " hops at '{$event->eventType}' (rename cycle?).",
                 );
@@ -92,14 +93,13 @@ final readonly class EventUpcaster
     private function apply(UpcasterInterface $upcaster, StoredEvent $event): StoredEvent
     {
         $upcast = $upcaster->upcast($event);
-        if (
-            $upcast->eventId !== $event->eventId
-            || $upcast->aggregateType !== $event->aggregateType
-            || $upcast->aggregateId !== $event->aggregateId
-            || $upcast->version !== $event->version
-            || $upcast->globalSequence !== $event->globalSequence
-            || $upcast->recordedAtUnixNano !== $event->recordedAtUnixNano
-        ) {
+        $identityFrozen = $upcast->eventId === $event->eventId
+            && $upcast->aggregateType === $event->aggregateType
+            && $upcast->aggregateId === $event->aggregateId;
+        $coordinatesFrozen = $upcast->version === $event->version
+            && $upcast->globalSequence === $event->globalSequence
+            && $upcast->recordedAtUnixNano === $event->recordedAtUnixNano;
+        if (!$identityFrozen || !$coordinatesFrozen) {
             throw new EventSourcingException(
                 'Upcaster ' . $upcaster::class . ' mutated the stream identity of event ' . $event->eventId . '.',
             );

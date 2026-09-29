@@ -51,36 +51,10 @@ final readonly class ModuleDefinition
     ) {
         $name = trim($name);
         Identifier::assertModuleName($name);
-        foreach ($services as $id => $definition) {
-            if (!is_string($id) || $id === '' || !$definition instanceof ServiceDefinition) {
-                throw new \InvalidArgumentException('Module services must map non-empty IDs to ServiceDefinition instances.');
-            }
-            if ($definition->id !== $id) {
-                throw new \InvalidArgumentException("Service definition ID '{$definition->id}' does not match registry key '{$id}'.");
-            }
-        }
-        foreach ($aliases as $alias => $target) {
-            if (!is_string($alias) || $alias === '' || !is_string($target) || $target === '') {
-                throw new \InvalidArgumentException('Module aliases must map non-empty strings to non-empty strings.');
-            }
-        }
-        foreach ($dependencies as $dependency) {
-            Identifier::assertModuleName($dependency, 'module dependency');
-        }
-        $normalizedDependencies = [];
-        foreach ($dependencies as $dependency) {
-            $normalizedDependencies[] = strtolower($dependency);
-        }
-        $dependencies = array_values(array_unique($normalizedDependencies));
-        foreach ($routes as $route) {
-            if (!$route instanceof RouteDefinition) {
-                throw new \InvalidArgumentException('Module routes must contain RouteDefinition instances.');
-            }
-        }
-        $this->services = $services;
-        $this->aliases = $aliases;
-        $this->routes = array_values($routes);
-        $this->dependencies = $dependencies;
+        $this->services = $this->validatedServices($services);
+        $this->aliases = $this->validatedAliases($aliases);
+        $this->routes = $this->validatedRoutes($routes);
+        $this->dependencies = $this->normalizedDependencies($dependencies);
     }
 
     public static function fromArray(string $name, array $config): self
@@ -108,7 +82,9 @@ final readonly class ModuleDefinition
             }
             if ($definition instanceof ServiceDefinition) {
                 if ($definition->id !== $id) {
-                    throw new \InvalidArgumentException("Service definition ID '{$definition->id}' does not match registry key '{$id}'.");
+                    throw new \InvalidArgumentException(
+                        "Service definition ID '{$definition->id}' does not match registry key '{$id}'.",
+                    );
                 }
                 $services[$id] = $definition->module === $name
                     ? $definition
@@ -174,5 +150,76 @@ final readonly class ModuleDefinition
             ],
             $this->extensions,
         );
+    }
+
+    /**
+     * @param array<array-key,mixed> $services
+     *
+     * @return array<string,ServiceDefinition>
+     */
+    private function validatedServices(array $services): array
+    {
+        foreach ($services as $id => $definition) {
+            if (!is_string($id) || $id === '' || !$definition instanceof ServiceDefinition) {
+                throw new \InvalidArgumentException(
+                    'Module services must map non-empty IDs to ServiceDefinition instances.',
+                );
+            }
+            if ($definition->id !== $id) {
+                throw new \InvalidArgumentException(
+                    "Service definition ID '{$definition->id}' does not match registry key '{$id}'.",
+                );
+            }
+        }
+
+        return $services;
+    }
+
+    /**
+     * @param array<array-key,mixed> $aliases
+     *
+     * @return array<string,string>
+     */
+    private function validatedAliases(array $aliases): array
+    {
+        foreach ($aliases as $alias => $target) {
+            if (!is_string($alias) || $alias === '' || !is_string($target) || $target === '') {
+                throw new \InvalidArgumentException('Module aliases must map non-empty strings to non-empty strings.');
+            }
+        }
+
+        return $aliases;
+    }
+
+    /**
+     * @param array<mixed> $routes
+     *
+     * @return list<RouteDefinition>
+     */
+    private function validatedRoutes(array $routes): array
+    {
+        foreach ($routes as $route) {
+            if (!$route instanceof RouteDefinition) {
+                throw new \InvalidArgumentException('Module routes must contain RouteDefinition instances.');
+            }
+        }
+
+        return array_values($routes);
+    }
+
+    /**
+     * @param array<int,string> $dependencies
+     *
+     * @return list<string>
+     */
+    private function normalizedDependencies(array $dependencies): array
+    {
+        $normalized = [];
+        foreach ($dependencies as $dependency) {
+            Identifier::assertModuleName($dependency, 'module dependency');
+            $normalized[] = strtolower($dependency);
+        }
+
+        return array_values(array_unique($normalized));
     }
 }

@@ -19,21 +19,9 @@ use Zef\Framework\Observability\MeterInterface;
  * - connects lazily on first use (no socket touched for config errors);
  * - maps every \PDOException onto ConnectionException (connect phase) or
  *   QueryException (prepare/execute phase), chaining the original;
- * - nested transactions use explicit SAVEPOINTs (`zef_sp2`, `zef_sp3`, …)
- *   tracked with an internal depth counter — PDO::inTransaction() cannot
- *   distinguish nesting and is only consulted during failure cleanup;
- * - transaction() cleans up callback and commit failures, preserving the
- *   original exception; uncertain cleanup makes this adapter unusable;
- * - isolation levels are applied via `SET TRANSACTION ISOLATION LEVEL`
- *   with driver-aware ordering: MySQL scopes the statement to the
- *   session's NEXT transaction, so it runs before the outermost BEGIN;
- *   PostgreSQL honours it only inside the transaction block (outside one
- *   it is a silent no-op), so it runs right after BEGIN and before the
- *   transaction's first statement; SQLite rejects the concept outright;
- * - isolation is a TRANSACTION-SCOPE property, not a SAVEPOINT one: a
- *   nested beginTransaction()/transaction() call cannot change it (a
- *   nested transaction() call silently drops the isolation argument —
- *   see ConnectionInterface::transaction());
+ * - transaction/SAVEPOINT nesting, isolation placement and failure
+ *   cleanup live in the {@see PdoTransactions} collaborator (see its
+ *   docblock for the driver-aware isolation semantics);
  * - optionally audits `allowUnbounded()` executions: when an unbounded
  *   UPDATE/DELETE (SqlQuery::$unbounded) runs, an optional
  *   {@see MeterInterface} counter and/or an optional
@@ -42,11 +30,15 @@ use Zef\Framework\Observability\MeterInterface;
  */
 final class PdoConnection implements ConnectionInterface
 {
-    private const int MAX_NESTING = 16;
+    private const string EXECUTION_FAILED_PREFIX = 'Execution failed: ';
+
+    private const string SQL_CONTEXT_SUFFIX = ' (sql: ';
 
     private ?\PDO $handle = null;
-    private int $level = 0;
     private bool $unusable = false;
+
+    /** Lazily-created transaction machinery ({@see transactions()}). */
+    private ?PdoTransactions $transactions = null;
 
     public function __construct(
         private readonly ConnectionConfig $config,
@@ -67,7 +59,7 @@ final class PdoConnection implements ConnectionInterface
             $statement->execute($query->params);
         } catch (\PDOException $e) {
             throw new QueryException(
-                'Execution failed: ' . $e->getMessage() . ' (sql: ' . $query->sql . ')',
+                self::EXECUTION_FAILED_PREFIX . $e->getMessage() . self::SQL_CONTEXT_SUFFIX . $query->sql . ')',
                 (int) $e->getCode(),
                 $e,
             );
@@ -89,7 +81,7 @@ final class PdoConnection implements ConnectionInterface
             $statement->execute($query->params);
         } catch (\PDOException $e) {
             throw new QueryException(
-                'Execution failed: ' . $e->getMessage() . ' (sql: ' . $query->sql . ')',
+                self::EXECUTION_FAILED_PREFIX . $e->getMessage() . self::SQL_CONTEXT_SUFFIX . $query->sql . ')',
                 (int) $e->getCode(),
                 $e,
             );
@@ -126,171 +118,41 @@ final class PdoConnection implements ConnectionInterface
 
     public function beginTransaction(?IsolationLevel $isolation = null): void
     {
-        $pdo = $this->pdo();
-        $setIsolation = $this->isolationStatement($isolation);
-        if ($this->level === 0) {
-            $this->beginOutermost($pdo, $setIsolation);
-        } else {
-            if ($this->level >= self::MAX_NESTING) {
-                throw new TransactionException(
-                    'Transaction nesting limit of ' . self::MAX_NESTING . ' exceeded.',
-                );
-            }
-            $this->runStatement('SAVEPOINT zef_sp' . ($this->level + 1));
-        }
-        ++$this->level;
+        $this->transactions()->beginTransaction($isolation);
     }
 
     public function commit(): void
     {
-        if ($this->level === 0) {
-            throw new TransactionException('commit() called outside a transaction.');
-        }
-        if ($this->level === 1) {
-            try {
-                $this->pdo()->commit();
-            } catch (\PDOException $e) {
-                throw new TransactionException('Failed to commit transaction: ' . $e->getMessage(), 0, $e);
-            }
-        } else {
-            $this->runStatement('RELEASE SAVEPOINT zef_sp' . $this->level);
-        }
-        --$this->level;
+        $this->transactions()->commit();
     }
 
     public function rollBack(): void
     {
-        if ($this->level === 0) {
-            throw new TransactionException('rollBack() called outside a transaction.');
-        }
-        if ($this->level === 1) {
-            try {
-                if (!$this->pdo()->rollBack()) {
-                    throw new TransactionException('Failed to roll back transaction.');
-                }
-            } catch (\PDOException $e) {
-                throw new TransactionException('Failed to roll back transaction: ' . $e->getMessage(), 0, $e);
-            }
-        } else {
-            $this->runStatement('ROLLBACK TO SAVEPOINT zef_sp' . $this->level);
-        }
-        --$this->level;
+        $this->transactions()->rollBack();
     }
 
     public function transactionLevel(): int
     {
-        return $this->level;
+        return $this->transactions()->transactionLevel();
     }
 
     public function transaction(callable $fn, ?IsolationLevel $isolation = null): mixed
     {
-        $outermost = $this->level === 0;
-        $this->beginTransaction($outermost ? $isolation : null);
-
-        try {
-            $result = $fn($this);
-            $this->commit();
-        } catch (\Throwable $e) {
-            $this->cleanUpFailedTransaction();
-
-            throw $e;
-        }
-
-        return $result;
-    }
-
-    private function cleanUpFailedTransaction(): void
-    {
-        try {
-            $pdo = $this->pdo();
-            if ($pdo->inTransaction()) {
-                $this->rollBack();
-
-                return;
-            }
-        } catch (\Throwable) {
-            // Cleanup must never replace the original callback/commit failure.
-        }
-
-        // The transaction disappeared or rollback could not be confirmed.
-        // Its outcome is uncertain: require a new adapter, never reconnect here.
-        $this->unusable = true;
-        $this->handle = null;
-        $this->level = 0;
+        return $this->transactions()->transaction($fn, $isolation);
     }
 
     /**
-     * Validates an isolation request and renders the driver statement.
-     * A null request passes through unchanged; misuse fails fast —
-     * isolation belongs to the outermost transaction only, and SQLite
-     * has no isolation dialect at all.
+     * The transaction machinery collaborator: created on first use so the
+     * constructor stays work-free (injected-handle wiring only).
      */
-    private function isolationStatement(?IsolationLevel $isolation): ?string
+    private function transactions(): PdoTransactions
     {
-        if (!$isolation instanceof IsolationLevel) {
-            return null;
-        }
-        if ($this->level > 0) {
-            throw new TransactionException(
-                'Isolation level may only be requested on the outermost transaction (current level: ' . $this->level . ').',
-            );
-        }
-        if ($this->config->driver === 'sqlite') {
-            throw new ConnectionException(
-                'SQLite does not support isolation levels; pass null instead of ' . $isolation->value . '.',
-            );
-        }
-
-        return 'SET TRANSACTION ISOLATION LEVEL ' . $isolation->value;
-    }
-
-    /**
-     * Opens the outermost transaction block, placing the isolation
-     * statement on the driver-correct side of BEGIN.
-     */
-    private function beginOutermost(\PDO $pdo, ?string $setIsolation): void
-    {
-        // P-6 (issue #172): a bare `SET TRANSACTION ISOLATION LEVEL` is
-        // scoped differently per driver — MySQL applies it to the NEXT
-        // transaction of the session (correct before BEGIN), while
-        // PostgreSQL applies it to the CURRENT transaction block and
-        // silently ignores it outside one (a no-op before BEGIN). The
-        // pgsql placement below stays valid until the transaction's
-        // first statement.
-        if ($setIsolation !== null && $this->config->driver === 'mysql') {
-            $this->runStatement($setIsolation);
-        }
-
-        try {
-            $pdo->beginTransaction();
-        } catch (\PDOException $e) {
-            throw new TransactionException('Failed to begin transaction: ' . $e->getMessage(), 0, $e);
-        }
-        if ($setIsolation !== null && $this->config->driver !== 'mysql') {
-            $this->applyPostBeginIsolation($pdo, $setIsolation);
-        }
-    }
-
-    /**
-     * Applies the isolation statement after BEGIN (the PostgreSQL
-     * dialect scope) and guarantees the freshly opened block never
-     * leaks: when the SET fails the level counter was never
-     * incremented, so a direct PDO rollback restores a consistent
-     * handle before the original failure escapes.
-     */
-    private function applyPostBeginIsolation(\PDO $pdo, string $setIsolation): void
-    {
-        try {
-            $this->runStatement($setIsolation);
-        } catch (QueryException $e) {
-            try {
-                $pdo->rollBack();
-            } catch (\Throwable) {
-                // Keep the original failure; cleanup is best-effort.
-            }
-
-            throw $e;
-        }
+        return $this->transactions ??= new PdoTransactions(
+            $this,
+            $this->pdo(...),
+            $this->config,
+            $this->invalidateHandle(...),
+        );
     }
 
     /**
@@ -322,30 +184,30 @@ final class PdoConnection implements ConnectionInterface
             return $this->pdo()->prepare($query->sql);
         } catch (\PDOException $e) {
             throw new QueryException(
-                'Preparation failed: ' . $e->getMessage() . ' (sql: ' . $query->sql . ')',
+                'Preparation failed: ' . $e->getMessage() . self::SQL_CONTEXT_SUFFIX . $query->sql . ')',
                 (int) $e->getCode(),
                 $e,
             );
         }
     }
 
-    private function runStatement(string $sql): void
-    {
-        try {
-            $this->pdo()->exec($sql);
-        } catch (\PDOException $e) {
-            throw new QueryException('Execution failed: ' . $e->getMessage() . ' (sql: ' . $sql . ')', 0, $e);
-        }
-    }
-
     private function pdo(): \PDO
     {
         if ($this->unusable) {
-            throw new ConnectionException('Connection is unusable after transaction cleanup failed; create a new connection.');
+            throw new ConnectionException(
+                'Connection is unusable after transaction cleanup failed; create a new connection.',
+            );
         }
         $this->handle ??= $this->connect();
 
         return $this->handle;
+    }
+
+    /** Uncertain transaction outcome: the adapter must never be reused. */
+    private function invalidateHandle(): void
+    {
+        $this->unusable = true;
+        $this->handle = null;
     }
 
     private function connect(): \PDO

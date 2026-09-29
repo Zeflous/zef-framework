@@ -24,8 +24,8 @@ namespace Zef\Framework\Message;
  */
 final class InMemoryMessageTransport implements MessageTransportInterface
 {
-    /** @var \SplQueue<array{MessageEnvelope, MessageContext, string}> */
-    private readonly \SplQueue $queue;
+    /** @var null|\SplQueue<array{MessageEnvelope, MessageContext, string}> */
+    private ?\SplQueue $queue = null;
     private int $sequence = 0;
 
     public function __construct(private readonly int $maxSize = 10_000)
@@ -33,17 +33,17 @@ final class InMemoryMessageTransport implements MessageTransportInterface
         if ($maxSize < 1) {
             throw new \InvalidArgumentException('Message transport capacity must be positive.');
         }
-        $this->queue = new \SplQueue();
     }
 
     #[\Override]
     public function send(MessageEnvelope $message, MessageContext $context): MessageResult
     {
-        if ($this->queue->count() >= $this->maxSize) {
+        if ($this->queue()->count() >= $this->maxSize) {
             throw new \OverflowException('Message transport capacity exceeded.');
         }
-        $transportId = sprintf('mem-%06d', ++$this->sequence);
-        $this->queue->enqueue([$message, $context, $transportId]);
+        ++$this->sequence;
+        $transportId = sprintf('mem-%06d', $this->sequence);
+        $this->queue()->enqueue([$message, $context, $transportId]);
 
         return new MessageResult($message->messageId, true, $transportId);
     }
@@ -51,18 +51,18 @@ final class InMemoryMessageTransport implements MessageTransportInterface
     /** Number of messages waiting for consumption. */
     public function size(): int
     {
-        return $this->queue->count();
+        return $this->queue()->count();
     }
 
     /** Dequeue the oldest published message, or null when the queue is empty. */
     public function receive(): ?ReceivedMessage
     {
-        if ($this->queue->isEmpty()) {
+        if ($this->queue()->isEmpty()) {
             return null;
         }
 
         /** @var array{MessageEnvelope, MessageContext, string} $item */
-        $item = $this->queue->dequeue();
+        $item = $this->queue()->dequeue();
 
         return new ReceivedMessage($item[0], $item[1], $item[2]);
     }
@@ -76,5 +76,16 @@ final class InMemoryMessageTransport implements MessageTransportInterface
         }
 
         return $messages;
+    }
+
+    /**
+     * The FIFO is pure internal scaffolding: created on first use so the
+     * constructor stays work-free (validation only).
+     *
+     * @return \SplQueue<array{MessageEnvelope, MessageContext, string}>
+     */
+    private function queue(): \SplQueue
+    {
+        return $this->queue ??= new \SplQueue();
     }
 }

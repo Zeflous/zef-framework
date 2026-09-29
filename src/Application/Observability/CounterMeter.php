@@ -85,49 +85,78 @@ final class CounterMeter implements MeterInterface
     {
         $clean = TelemetrySanitizer::attributes($attributes);
         if (str_starts_with($name, 'zef.http.') || str_starts_with($name, 'zef.container.')) {
-            $allowed = [];
-            foreach (['http.request.method', 'http.response.status_code'] as $dimension) {
-                if (array_key_exists($dimension, $clean)) {
-                    $allowed[$dimension] = $clean[$dimension];
-                }
-            }
-            if ($name === 'zef.http.errors.total' && array_key_exists('exception.type', $clean)) {
-                $exceptionType = $clean['exception.type'];
-                if (is_string($exceptionType)) {
-                    $allowed['exception.type'] = TelemetrySanitizer::string($exceptionType, 128);
-                }
-            }
-            if (
-                $name === 'zef.container.resolve.duration_seconds'
-                && array_key_exists('zef.service.id', $clean)
-            ) {
-                $service = $clean['zef.service.id'];
-                if (is_string($service)) {
-                    $allowed['zef.service.id'] = $this->boundedServiceDimension($service);
-                }
-            }
-            $clean = $allowed;
+            $clean = $this->boundedSystemAttributes($name, $clean);
         } elseif ($name === 'zef.lifecycle.events.total') {
-            $allowed = [];
-            if (array_key_exists('event.name', $clean)) {
-                $eventValue = $clean['event.name'];
-                $event = is_string($eventValue) ? $eventValue : '';
-                $allowed['event.name'] = in_array($event, [
-                    'worker.started', 'worker.ready', 'request.started', 'request.completed',
-                    'request.failed', 'worker.recovery.detected', 'worker.terminated',
-                    'telemetry.flush', 'telemetry.shutdown',
-                ], true) ? $event : 'other';
-            }
-            $clean = $allowed;
+            $clean = $this->boundedLifecycleAttributes($clean);
         }
+        // Other metric families keep their full (sanitized) attribute set.
+
         ksort($clean);
 
         return $clean;
     }
 
+    /**
+     * HTTP/container metrics are high-cardinality hot paths: only a fixed
+     * dimension allowlist survives normalization.
+     *
+     * @param array<string,mixed> $clean
+     *
+     * @return array<string,mixed>
+     */
+    private function boundedSystemAttributes(string $name, array $clean): array
+    {
+        $allowed = [];
+        foreach (['http.request.method', 'http.response.status_code'] as $dimension) {
+            if (array_key_exists($dimension, $clean)) {
+                $allowed[$dimension] = $clean[$dimension];
+            }
+        }
+        if ($name === 'zef.http.errors.total' && array_key_exists('exception.type', $clean)) {
+            $exceptionType = $clean['exception.type'];
+            if (is_string($exceptionType)) {
+                $allowed['exception.type'] = TelemetrySanitizer::string($exceptionType, 128);
+            }
+        }
+        if (
+            $name === 'zef.container.resolve.duration_seconds'
+            && array_key_exists('zef.service.id', $clean)
+        ) {
+            $service = $clean['zef.service.id'];
+            if (is_string($service)) {
+                $allowed['zef.service.id'] = $this->boundedServiceDimension($service);
+            }
+        }
+
+        return $allowed;
+    }
+
+    /**
+     * Lifecycle metrics only ever expose the bounded event.name dimension.
+     *
+     * @param array<string,mixed> $clean
+     *
+     * @return array<string,mixed>
+     */
+    private function boundedLifecycleAttributes(array $clean): array
+    {
+        $allowed = [];
+        if (array_key_exists('event.name', $clean)) {
+            $eventValue = $clean['event.name'];
+            $event = is_string($eventValue) ? $eventValue : '';
+            $allowed['event.name'] = in_array($event, [
+                'worker.started', 'worker.ready', 'request.started', 'request.completed',
+                'request.failed', 'worker.recovery.detected', 'worker.terminated',
+                'telemetry.flush', 'telemetry.shutdown',
+            ], true) ? $event : 'other';
+        }
+
+        return $allowed;
+    }
+
     private function boundedServiceDimension(string $value): string
     {
-        return preg_match('/^[a-z0-9._:-]{1,96}$/i', $value) === 1 ? $value : '[other]';
+        return preg_match('/^[\w.:-]{1,96}$/u', $value) === 1 ? $value : '[other]';
     }
 
     /** @param array<string,mixed> $attributes */

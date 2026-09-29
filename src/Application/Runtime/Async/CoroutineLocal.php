@@ -18,17 +18,15 @@ namespace Zef\Framework\Runtime\Async;
  * together with their state. Calls outside any coroutine are a programming
  * error and throw LogicException.
  */
-final readonly class CoroutineLocal
+final class CoroutineLocal
 {
     /**
-     * @var \WeakMap<\Fiber<mixed, mixed, mixed, mixed>, array<string, mixed>>
+     * Lazily-created backing store (see {@see store()}): the constructor
+     * stays free of object creation (S2830) and the map is built on first use.
+     *
+     * @var null|\WeakMap<\Fiber<mixed, mixed, mixed, mixed>, array<string, mixed>>
      */
-    private \WeakMap $store;
-
-    public function __construct()
-    {
-        $this->store = new \WeakMap();
-    }
+    private ?\WeakMap $store = null;
 
     /**
      * Reads $key from the current coroutine's scope, falling back to
@@ -50,10 +48,20 @@ final readonly class CoroutineLocal
             throw new \LogicException('CoroutineLocal can only be used inside a coroutine.');
         }
 
-        $scope = $this->store[$fiber] ?? [];
+        $scope = $this->store()[$fiber] ?? [];
         $scope[$key] = $value;
-        // @phpstan-ignore offsetAssign.dimType, assign.propertyType
-        $this->store[$fiber] = $scope;
+        // @phpstan-ignore offsetAssign.dimType
+        $this->store()[$fiber] = $scope;
+    }
+
+    /**
+     * The backing WeakMap, created on first use (never in the constructor).
+     *
+     * @return \WeakMap<\Fiber<mixed, mixed, mixed, mixed>, array<string, mixed>>
+     */
+    private function store(): \WeakMap
+    {
+        return $this->store ??= new \WeakMap();
     }
 
     /**
@@ -67,6 +75,6 @@ final readonly class CoroutineLocal
             throw new \LogicException('CoroutineLocal can only be used inside a coroutine.');
         }
 
-        return $this->store[$fiber] ?? [];
+        return $this->store()[$fiber] ?? [];
     }
 }
