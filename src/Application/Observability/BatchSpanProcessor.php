@@ -54,24 +54,35 @@ final class BatchSpanProcessor
         $policy = RetryBackoffPolicy::fromEnvironment();
         while ($this->queue !== []) {
             $batch = array_splice($this->queue, 0, min($this->batchSize, count($this->queue)));
-            $retryIndex = 0;
-            while (true) {
-                try {
-                    $this->exporter->export($batch);
+            $this->exportWithBackoff($batch, $policy);
+        }
+    }
 
-                    break;
-                } catch (\InvalidArgumentException) {
-                    break;
-                } catch (\Throwable) {
-                    if (!$policy->shouldRetry($retryIndex)) {
-                        break;
-                    }
-                    $sleep = $policy->delayMs($retryIndex);
-                    if ($sleep > 0) {
-                        $this->sleeper->sleepMilliseconds($sleep);
-                    }
-                    ++$retryIndex;
+    /**
+     * Exports one batch, retrying transport failures according to the
+     * shared backoff policy; invalid-argument failures abort the batch.
+     *
+     * @param list<SpanData> $batch
+     */
+    private function exportWithBackoff(array $batch, RetryBackoffPolicy $policy): void
+    {
+        $retryIndex = 0;
+        while (true) {
+            try {
+                $this->exporter->export($batch);
+
+                return;
+            } catch (\InvalidArgumentException) {
+                return;
+            } catch (\Throwable) {
+                if (!$policy->shouldRetry($retryIndex)) {
+                    return;
                 }
+                $sleep = $policy->delayMs($retryIndex);
+                if ($sleep > 0) {
+                    $this->sleeper->sleepMilliseconds($sleep);
+                }
+                ++$retryIndex;
             }
         }
     }
@@ -85,28 +96,41 @@ final class BatchSpanProcessor
         $deadline = microtime(true) + $env->readInt('ZEF_OTEL_SHUTDOWN_DRAIN_MS', 2000, 0, 60000) / 1000;
         while ($this->queue !== [] && microtime(true) < $deadline) {
             $batch = array_splice($this->queue, 0, min($this->batchSize, count($this->queue)));
-            for ($attempt = 0; $attempt < 3; ++$attempt) {
-                try {
-                    $this->exporter->export($batch);
-
-                    break;
-                } catch (\Throwable) {
-                    if ($attempt === 2 || microtime(true) >= $deadline) {
-                        break;
-                    }
-                    if (function_exists('usleep')) {
-                        usleep(50000);
-                    }
-                }
-            }
+            $this->exportBeforeDeadline($batch, $deadline);
         }
         $this->shutdown = true;
 
         try {
             $this->exporter->shutdown();
         } catch (\Throwable) {
+            // Shutdown is best-effort by OTel contract: a failing exporter
+            // must not prevent the processor from releasing its queue.
         }
         $this->queue = [];
+    }
+
+    /**
+     * Exports one batch during the shutdown drain window, bounded by three
+     * attempts per batch and the drain deadline.
+     *
+     * @param list<SpanData> $batch
+     */
+    private function exportBeforeDeadline(array $batch, float $deadline): void
+    {
+        for ($attempt = 0; $attempt < 3; ++$attempt) {
+            try {
+                $this->exporter->export($batch);
+
+                return;
+            } catch (\Throwable) {
+                if ($attempt === 2 || microtime(true) >= $deadline) {
+                    return;
+                }
+                if (function_exists('usleep')) {
+                    usleep(50000);
+                }
+            }
+        }
     }
 
     public function isInMemoryExporter(): bool
