@@ -184,6 +184,52 @@ final class ConfigV2SourcesLoaderTest extends TestCase
         }
     }
 
+    /**
+     * ZEF-DX-10 (#249 numbering, issue #250): read-side permission hygiene.
+     * Loose permissions WARN through the optional PSR-3 sink and never
+     * change the returned value; owner-only files stay silent.
+     */
+    public function testFileSecretsWarnOnLoosePermissionsWithoutThrowing(): void
+    {
+        if (\PHP_OS_FAMILY === 'Windows') {
+            self::markTestSkipped('POSIX permission bits are not meaningful on Windows.');
+        }
+        $dir = $this->workspace . '/secrets';
+        mkdir($dir, 0o700);
+        file_put_contents($dir . '/tight', 'keeper');
+        chmod($dir . '/tight', 0o600);
+        file_put_contents($dir . '/group_readable', 'g');
+        chmod($dir . '/group_readable', 0o640);
+        file_put_contents($dir . '/world_writable', 'w');
+        chmod($dir . '/world_writable', 0o666);
+
+        $logger = new CollectingLogger();
+        $provider = new FileSecretsProvider($dir, $logger);
+
+        // Values are returned unchanged regardless of posture.
+        self::assertSame('keeper', $provider->get('tight'));
+        self::assertSame('g', $provider->get('group_readable'));
+        self::assertSame('w', $provider->get('world_writable'));
+
+        // Exactly the two loose files warn; the owner-only one stays silent.
+        self::assertCount(2, $logger->warnings);
+        self::assertStringContainsString("key 'group_readable'", $logger->warnings[0]);
+        self::assertStringContainsString('0640', $logger->warnings[0]);
+        self::assertStringContainsString("key 'world_writable'", $logger->warnings[1]);
+        self::assertStringContainsString('0666', $logger->warnings[1]);
+
+        // A world-writable DIRECTORY warns once at construction (chmod
+        // explicitly: mkdir() applies the process umask to the mode).
+        $loose = $this->workspace . '/loose-dir';
+        mkdir($loose, 0o777);
+        chmod($loose, 0o777);
+        $dirLogger = new CollectingLogger();
+        new FileSecretsProvider($loose, $dirLogger);
+        self::assertCount(1, $dirLogger->warnings);
+        self::assertStringContainsString('world-writable', $dirLogger->warnings[0]);
+        self::assertStringContainsString('0777', $dirLogger->warnings[0]);
+    }
+
     // ---- ConfigLoader construction -------------------------------------------
 
     public function testLoaderRejectsNonSourceElements(): void

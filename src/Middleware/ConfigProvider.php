@@ -49,7 +49,13 @@ final readonly class ConfigProvider implements ConfigProviderInterface
                     'deps' => [LoggerInterface::class],
                 ],
                 'middleware.timing' => [
-                    'factory' => static fn (): TimingMiddleware => new TimingMiddleware(),
+                    // ZEF-DX-08 (issue #248): X-Response-Time is dev-only by
+                    // default (debug builds keep the development signal,
+                    // production gets no server-side timing side channel);
+                    // ZEF_TIMING_HEADER=1/0 forces either way.
+                    'factory' => fn (): TimingMiddleware => new TimingMiddleware(
+                        $this->env->readBool('ZEF_TIMING_HEADER', $this->devMode),
+                    ),
                     'deps' => [],
                 ],
                 'middleware.cors' => [
@@ -57,9 +63,12 @@ final readonly class ConfigProvider implements ConfigProviderInterface
                     'deps' => [],
                 ],
                 'middleware.security' => [
+                    // ZEF-DX-07 (issue #247): CSP and HSTS are secure-by-default
+                    // here too — ZEF_SECURITY_CSP=0 / ZEF_SECURITY_HSTS=0 is the
+                    // explicit opt-out for deployments that cannot take them.
                     'factory' => static fn (): SecurityHeadersMiddleware => new SecurityHeadersMiddleware([
-                        'hsts' => $env->readBool('ZEF_SECURITY_HSTS'),
-                        'csp' => $env->readBool('ZEF_SECURITY_CSP'),
+                        'hsts' => $env->readBool('ZEF_SECURITY_HSTS', true),
+                        'csp' => $env->readBool('ZEF_SECURITY_CSP', true),
                     ]),
                     'deps' => [],
                 ],

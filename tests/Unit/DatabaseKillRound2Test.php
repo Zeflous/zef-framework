@@ -221,9 +221,11 @@ final class DatabaseKillRound2Test extends TestCase
             self::fail('bad SQL must throw');
         } catch (QueryException $e) {
             self::assertMatchesRegularExpression(
-                '/^Preparation failed: .+ \(sql: SELECT \* FROM missing\)$/',
+                '/^Preparation failed: .+$/',
                 $e->getMessage(),
             );
+            self::assertSame('SELECT * FROM missing', $e->getSql());
+            self::assertStringNotContainsString('sql:', $e->getMessage());
         }
 
         try {
@@ -232,9 +234,10 @@ final class DatabaseKillRound2Test extends TestCase
             self::fail('duplicate insert must throw');
         } catch (QueryException $e) {
             self::assertMatchesRegularExpression(
-                '/^Execution failed: .+ \(sql: INSERT INTO t \(id\) VALUES \(1\)\)$/',
+                '/^Execution failed: .+$/',
                 $e->getMessage(),
             );
+            self::assertSame('INSERT INTO t (id) VALUES (1)', $e->getSql());
         }
     }
 

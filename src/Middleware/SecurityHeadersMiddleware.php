@@ -19,7 +19,15 @@ final readonly class SecurityHeadersMiddleware implements MiddlewareInterface
 {
     private const string DEFAULT_CSP = "default-src 'self'; frame-ancestors 'none'; base-uri 'self'";
 
-    /** @param array{hsts?:bool,csp?:bool,contentSecurityPolicy?:string,permissionsPolicy?:bool} $policy */
+    /**
+     * @param array{hsts?:bool,csp?:bool,contentSecurityPolicy?:string,permissionsPolicy?:bool} $policy
+     *
+     * ZEF-DX-07 (issue #247): CSP and HSTS are secure-by-default — an
+     * application that touches no environment variable at all gets BOTH
+     * headers (HSTS still scheme-gated per N-3 / issue #176, RFC 6797 §7.2).
+     * Opt out per deployment with 'csp' => false / 'hsts' => false, or per
+     * environment via ZEF_SECURITY_CSP=0 / ZEF_SECURITY_HSTS=0.
+     */
     public function __construct(private array $policy = []) {}
 
     #[\Override]
@@ -39,14 +47,14 @@ final readonly class SecurityHeadersMiddleware implements MiddlewareInterface
                 'camera=(), microphone=(), geolocation=(), payment=()',
             );
         }
-        if (($this->policy['csp'] ?? false) === true) {
+        if (($this->policy['csp'] ?? true) === true) {
             $response = $response->withHeader(
                 'Content-Security-Policy',
                 (string) ($this->policy['contentSecurityPolicy'] ?? self::DEFAULT_CSP),
             );
         }
         if (
-            ($this->policy['hsts'] ?? false) === true
+            ($this->policy['hsts'] ?? true) === true
             && strtolower($request->getUri()->getScheme()) === 'https'
         ) {
             // N-3 (issue #176): HSTS is deliberately scheme-gated while the

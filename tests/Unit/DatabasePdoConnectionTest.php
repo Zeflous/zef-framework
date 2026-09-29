@@ -235,7 +235,10 @@ final class DatabasePdoConnectionTest extends TestCase
             self::fail('bad SQL must surface as QueryException');
         } catch (QueryException $e) {
             self::assertStringContainsString('Preparation failed:', $e->getMessage());
-            self::assertStringContainsString('sql: SELECT * FROM missing_table', $e->getMessage());
+            // ZEF-DX-09 (#249): the SQL rides in structured context, never in
+            // the message (debug mode renders messages into HTTP bodies).
+            self::assertSame('SELECT * FROM missing_table', $e->getSql());
+            self::assertStringNotContainsString('sql:', $e->getMessage());
             self::assertInstanceOf(\PDOException::class, $e->getPrevious());
         }
 
