@@ -21,7 +21,7 @@ final class RequestScope implements ContainerInterface
 
     public function __construct(private readonly ContainerResolver $resolver)
     {
-        $this->context = new ResolutionContext($resolver, $this);
+        $this->context = $this->buildContext();
     }
 
     #[\Override]
@@ -87,6 +87,12 @@ final class RequestScope implements ContainerInterface
     public function isClosed(): bool
     {
         return $this->closed;
+    }
+
+    /** Scope and resolution context are born together; the helper keeps construction out of the constructor. */
+    private function buildContext(): ResolutionContext
+    {
+        return new ResolutionContext($this->resolver, $this);
     }
 }
 

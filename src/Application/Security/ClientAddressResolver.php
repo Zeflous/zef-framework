@@ -50,19 +50,20 @@ final class ClientAddressResolver
             return null;
         }
         $candidates = array_map(trim(...), explode(',', $forwarded));
+        $result = null;
         for ($i = count($candidates) - 1; $i >= 0; --$i) {
             $candidate = $candidates[$i];
             if ($candidate === '' || filter_var($candidate, FILTER_VALIDATE_IP) === false) {
-                return null;
+                break; // malformed entry: the chain is unusable
             }
-            if (TrustedProxyMatcher::matches($candidate, $trustedProxies)) {
-                continue;
-            }
+            if (!TrustedProxyMatcher::matches($candidate, $trustedProxies)) {
+                $result = $candidate;
 
-            return $candidate;
+                break;
+            }
         }
 
-        return null;
+        return $result;
     }
 
     private static function sanitize(string $ip): string
