@@ -14,7 +14,6 @@ use Zef\Framework\Console\ConsoleIO;
 use Zef\Framework\Console\GeneratorInterface;
 use Zef\Framework\Console\NamingRules;
 use Zef\Framework\Console\ScaffoldWriter;
-use Zef\Framework\Console\TemplateLoader;
 
 final readonly class ModuleGenerator implements GeneratorInterface
 {
@@ -22,7 +21,6 @@ final readonly class ModuleGenerator implements GeneratorInterface
         private string $root,
         private ConsoleIO $io,
         private ScaffoldWriter $writer,
-        private TemplateLoader $templates = new TemplateLoader(),
     ) {}
 
     public function generate(?string $rawName, array $argv = []): int
@@ -39,7 +37,7 @@ final readonly class ModuleGenerator implements GeneratorInterface
 
         $ns = "Zef\\Module\\{$pascal}";
         $this->writer->writeFiles([
-            "{$dir}/ConfigProvider.php" => $this->templates->render(<<<PHP
+            "{$dir}/ConfigProvider.php" => <<<PHP
                 <?php
 
                 declare(strict_types=1);
@@ -81,8 +79,8 @@ final readonly class ModuleGenerator implements GeneratorInterface
                     }
                 }
 
-                PHP),
-            "{$dir}/HomeHandler.php" => $this->templates->render(<<<PHP
+                PHP,
+            "{$dir}/HomeHandler.php" => <<<PHP
                 <?php
 
                 declare(strict_types=1);
@@ -111,7 +109,7 @@ final readonly class ModuleGenerator implements GeneratorInterface
                     }
                 }
 
-                PHP),
+                PHP,
         ]);
         $this->io->out(<<<TXT
 
