@@ -66,6 +66,50 @@ final class RouteGroupStack
     }
 
     /**
+     * Validates raw group attributes from Router::group() (prefix, name
+     * prefix, middleware list, priority) and pushes the merged entry.
+     *
+     * Attributes: 'prefix' (string starting with '/'), 'name' (route-name
+     * prefix), 'middleware' (list<string> service IDs), 'priority' (int
+     * added to each route's own priority). Nested groups merge attributes.
+     *
+     * @param array{prefix?:string,name?:string,middleware?:list<string>,priority?:int} $attributes
+     */
+    public function pushAttributes(array $attributes): void
+    {
+        $prefix = $attributes['prefix'] ?? '';
+        if (
+            !is_string($prefix)
+            || ($prefix !== '' && ($prefix[0] !== '/' || str_ends_with($prefix, '/')))
+        ) {
+            throw new \InvalidArgumentException(
+                "Route group prefix must start with '/' and not end with '/' (got '{$prefix}')."
+            );
+        }
+        $namePrefix = $attributes['name'] ?? '';
+        if (!is_string($namePrefix)) {
+            throw new \InvalidArgumentException('Route group name prefix must be a string.');
+        }
+        $middleware = $attributes['middleware'] ?? [];
+        if (!is_array($middleware)) {
+            throw new \InvalidArgumentException('Route group middleware must be a list of service IDs.');
+        }
+        $middlewareList = [];
+        foreach ($middleware as $mw) {
+            if (!is_string($mw) || $mw === '') {
+                throw new \InvalidArgumentException('Route group middleware entries must be non-empty service IDs.');
+            }
+            $middlewareList[] = $mw;
+        }
+        $priority = $attributes['priority'] ?? null;
+        if ($priority !== null && !is_int($priority)) {
+            throw new \InvalidArgumentException('Route group priority must be an int or null.');
+        }
+
+        $this->push($prefix, $namePrefix, $middlewareList, $priority);
+    }
+
+    /**
      * Pushes a validated group onto the stack, merging it with the
      * enclosing group (nested groups concatenate prefixes, name prefixes
      * and middleware; priority adds up).

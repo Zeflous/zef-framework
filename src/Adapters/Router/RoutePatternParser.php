@@ -28,7 +28,7 @@ final class RoutePatternParser
      * N-9 (issue #176): same empty-segment collapse as splitPath() so
      * patterns and request paths agree on "//".
      *
-     * @return list<self::Segment>
+     * @return list<Segment>
      */
     public static function parsePattern(string $pattern): array
     {
@@ -83,7 +83,7 @@ final class RoutePatternParser
     }
 
     /**
-     * @param list<self::Segment> $segments
+     * @param list<Segment> $segments
      */
     public static function canonicalSignature(string $method, array $segments): string
     {
@@ -101,7 +101,7 @@ final class RoutePatternParser
      * Validates dynamic-segment names: duplicates and unknown constraints
      * fail fast at registration time (moved verbatim from Router::add()).
      *
-     * @param list<self::Segment> $segments
+     * @param list<Segment> $segments
      */
     public static function assertUniqueParams(array $segments, RouteConstraintValidator $constraints): void
     {
@@ -134,7 +134,7 @@ final class RoutePatternParser
      * UrlGenerator, which rawurlencode()s every dynamic value. Static
      * segments keep comparing against the raw path text below.
      *
-     * @param list<self::Segment> $segments
+     * @param list<Segment> $segments
      *
      * @return array<string,string>|false|RouteConstraintException
      */
@@ -170,6 +170,7 @@ final class RoutePatternParser
             }
             if ($segment['value'] !== $value) {
                 $matched = false;
+
                 break;
             }
         }

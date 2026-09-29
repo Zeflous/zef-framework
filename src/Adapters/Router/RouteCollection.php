@@ -70,6 +70,7 @@ final class RouteCollection
             $method = $record['method'];
             $pattern = $record['pattern'];
             $collision = $this->signatureIndex[$signature];
+
             throw new \InvalidArgumentException(
                 "Duplicate/unreachable route [{$method}] {$pattern}; it collides with {$collision}."
             );
@@ -82,9 +83,8 @@ final class RouteCollection
                 ++$staticCount;
             } elseif (($segment['constraint'] ?? null) !== null) {
                 ++$constrainedCount;
-            } else {
-                // Dynamic segment without a constraint: neither counter applies.
             }
+            // Dynamic segment without a constraint: neither counter applies.
         }
 
         $sequence = $this->sequence;

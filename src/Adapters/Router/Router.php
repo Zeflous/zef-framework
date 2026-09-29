@@ -29,9 +29,6 @@ final class Router
 {
     private const string MSG_FROZEN = 'Router is frozen.';
 
-    private readonly RouteCollection $collection = new RouteCollection();
-    private readonly RouteGroupStack $groupStack = new RouteGroupStack();
-    private readonly RouteRadixIndex $radix = new RouteRadixIndex();
     private ?RouteMatcher $matcher = null;
     private ?string $fallbackHandler = null;
     private bool $frozen = false;
@@ -39,6 +36,9 @@ final class Router
     public function __construct(
         private readonly RouteConstraintValidator $constraints = new RouteConstraintValidator(),
         ?ArchitecturePolicy $policy = null,
+        private readonly RouteCollection $collection = new RouteCollection(),
+        private readonly RouteGroupStack $groupStack = new RouteGroupStack(),
+        private readonly RouteRadixIndex $radix = new RouteRadixIndex(),
     ) {
         if ($policy instanceof ArchitecturePolicy) {
             $this->collection->applyBudget($policy->maxRouteRegistrations);
@@ -85,7 +85,7 @@ final class Router
         // v2.10.0: merge enclosing group prefix into the pattern and the
         // name prefix into the name, so parsing/signatures/collisions all
         // see the final wire form.
-        [$pattern, $name] = $this->groupStack->applyTo($pattern, $name);
+        ['pattern' => $pattern, 'name' => $name] = $this->groupStack->applyTo($pattern, $name);
         $segments = RoutePatternParser::parsePattern($pattern);
         RoutePatternParser::assertUniqueParams($segments, $this->constraints);
 
@@ -106,11 +106,8 @@ final class Router
     }
 
     /**
-     * v2.10.0: register routes under shared attributes.
-     *
-     * Attributes: 'prefix' (string starting with '/'), 'name' (route-name
-     * prefix), 'middleware' (list<string> service IDs), 'priority' (int
-     * added to each route's own priority). Nested groups merge attributes.
+     * v2.10.0: register routes under shared attributes (validated and
+     * merged by {@see RouteGroupStack::pushAttributes()}).
      *
      * @param array{prefix?:string,name?:string,middleware?:list<string>,priority?:int} $attributes
      */
@@ -119,36 +116,9 @@ final class Router
         if ($this->frozen) {
             throw new \LogicException(self::MSG_FROZEN);
         }
-        $prefix = $attributes['prefix'] ?? '';
-        if (
-            !is_string($prefix)
-            || ($prefix !== '' && ($prefix[0] !== '/' || str_ends_with($prefix, '/')))
-        ) {
-            throw new \InvalidArgumentException(
-                "Route group prefix must start with '/' and not end with '/' (got '{$prefix}')."
-            );
-        }
-        $namePrefix = $attributes['name'] ?? '';
-        if (!is_string($namePrefix)) {
-            throw new \InvalidArgumentException('Route group name prefix must be a string.');
-        }
-        $middleware = $attributes['middleware'] ?? [];
-        if (!is_array($middleware)) {
-            throw new \InvalidArgumentException('Route group middleware must be a list of service IDs.');
-        }
-        $middlewareList = [];
-        foreach ($middleware as $mw) {
-            if (!is_string($mw) || $mw === '') {
-                throw new \InvalidArgumentException('Route group middleware entries must be non-empty service IDs.');
-            }
-            $middlewareList[] = $mw;
-        }
-        $priority = $attributes['priority'] ?? null;
-        if ($priority !== null && !is_int($priority)) {
-            throw new \InvalidArgumentException('Route group priority must be an int or null.');
-        }
 
-        $this->groupStack->push($prefix, $namePrefix, $middlewareList, $priority);
+        $this->groupStack->pushAttributes($attributes);
+
         try {
             $routes($this);
         } finally {
@@ -182,7 +152,6 @@ final class Router
         $this->frozen = true;
     }
 
-    /** @return list<RouteRecord> */
     public function getRoutes(): array
     {
         return $this->collection->sortedRoutes();
@@ -284,7 +253,10 @@ final class Router
             throw new \InvalidArgumentException('Compiled route data is missing the routes list.');
         }
         $router = new Router();
-        $router->collection->hydrateFromCompiled($data);
+
+        /** @var array<string,mixed> $payload */
+        $payload = $data;
+        $router->collection->hydrateFromCompiled($payload);
         foreach (($data['constraints'] ?? []) as $name => $regex) {
             if (is_string($name) && is_string($regex)) {
                 $router->constraints->addCustom($name, $regex);

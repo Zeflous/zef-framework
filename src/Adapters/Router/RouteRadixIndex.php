@@ -21,12 +21,8 @@ use Zef\Framework\Validation\RouteConstraintValidator;
  */
 final class RouteRadixIndex
 {
-    /**
-     * @var list<array{static:array<string,int>,dynamic:array<string,int>,routes:list<int>}>
-     */
-    private array $nodes = [
-        ['static' => [], 'dynamic' => [], 'routes' => []],
-    ];
+    /** @var list<RadixNode> */
+    private array $nodes = [];
 
     /**
      * Rebuilds the index from the (sorted) route records. Called once at
@@ -36,22 +32,18 @@ final class RouteRadixIndex
      */
     public function compile(array $routes): void
     {
-        $this->nodes = [['static' => [], 'dynamic' => [], 'routes' => []]];
+        $this->nodes = [new RadixNode()];
         foreach ($routes as $index => $route) {
             $nodeIndex = 0;
             foreach ($route['segments'] as $segment) {
                 if ($segment['dynamic']) {
-                    $edgeKey = $segment['constraint'] ?? '';
-                    $this->nodes[$nodeIndex]['dynamic'][$edgeKey] ??= $this->newRadixNode();
-                    $nodeIndex = $this->nodes[$nodeIndex]['dynamic'][$edgeKey];
+                    $nodeIndex = $this->descend($nodeIndex, $segment['constraint'] ?? '', true);
 
                     continue;
                 }
-                $edgeKey = $segment['value'];
-                $this->nodes[$nodeIndex]['static'][$edgeKey] ??= $this->newRadixNode();
-                $nodeIndex = $this->nodes[$nodeIndex]['static'][$edgeKey];
+                $nodeIndex = $this->descend($nodeIndex, $segment['value'], false);
             }
-            $this->nodes[$nodeIndex]['routes'][] = $index;
+            $this->nodes[$nodeIndex]->routes[] = $index;
         }
     }
 
@@ -89,11 +81,12 @@ final class RouteRadixIndex
     ): array {
         $next = [];
         foreach ($frontier as $nodeIndex) {
-            $staticChild = $this->nodes[$nodeIndex]['static'][$part] ?? null;
+            $node = $this->nodes[$nodeIndex];
+            $staticChild = $node->static[$part] ?? null;
             if ($staticChild !== null) {
                 $next[$staticChild] = true;
             }
-            foreach ($this->nodes[$nodeIndex]['dynamic'] as $constraint => $dynamicChild) {
+            foreach ($node->dynamic as $constraint => $dynamicChild) {
                 if (
                     $applyConstraints
                     && $constraint !== ''
@@ -117,7 +110,7 @@ final class RouteRadixIndex
     {
         $candidates = [];
         foreach ($frontier as $nodeIndex) {
-            foreach ($this->nodes[$nodeIndex]['routes'] as $routeIndex) {
+            foreach ($this->nodes[$nodeIndex]->routes as $routeIndex) {
                 $candidates[$routeIndex] = true;
             }
         }
@@ -130,11 +123,26 @@ final class RouteRadixIndex
         return $candidates;
     }
 
-    private function newRadixNode(): int
+    /**
+     * Follows (creating when absent) the $edgeKey edge — static or
+     * constraint-keyed dynamic — from the node at $nodeIndex and returns
+     * the child node index.
+     */
+    private function descend(int $nodeIndex, string $edgeKey, bool $dynamic): int
     {
-        $index = count($this->nodes);
-        $this->nodes[] = ['static' => [], 'dynamic' => [], 'routes' => []];
+        $node = $this->nodes[$nodeIndex];
+        $edges = $dynamic ? $node->dynamic : $node->static;
+        if (isset($edges[$edgeKey])) {
+            return $edges[$edgeKey];
+        }
+        $child = count($this->nodes);
+        $this->nodes[] = new RadixNode();
+        if ($dynamic) {
+            $node->dynamic[$edgeKey] = $child;
+        } else {
+            $node->static[$edgeKey] = $child;
+        }
 
-        return $index;
+        return $child;
     }
 }

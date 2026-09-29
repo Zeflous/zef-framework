@@ -28,8 +28,7 @@ final class RouteMatcher
         private readonly RouteCollection $collection,
         private readonly RouteConstraintValidator $constraints,
         private readonly RouteRadixIndex $radix,
-    ) {
-    }
+    ) {}
 
     /**
      * @return array{handler:string,module:?string,params:array<string,string>,pattern:string}
@@ -87,7 +86,7 @@ final class RouteMatcher
      * @param list<RouteRecord> $routes
      * @param list<string> $effectiveMethods
      *
-     * @return array{handler:string,module:?string,params:array<string,string>,pattern:string}|null
+     * @return null|array{handler:string,module:?string,params:array<string,string>,pattern:string}
      */
     private function constraintAwareHit(array $routes, array $effectiveMethods, string $path): ?array
     {
@@ -121,8 +120,6 @@ final class RouteMatcher
      *
      * @param list<RouteRecord> $routes
      * @param list<string> $effectiveMethods
-     *
-     * @return MethodNotAllowedException|RouteConstraintException|RouteNotFoundException
      */
     private function failureException(
         array $routes,
