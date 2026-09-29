@@ -6,7 +6,15 @@
             "src/Application",
             "src/Infrastructure",
             "src/Adapters",
-            "src/Middleware"
+            "src/Middleware",
+            // First-party ZEF trees outside src/. The Module System
+            // (modules/), the plugin surface (plugins/) and the application
+            // bootstrap (app/) are shipped code, but mutation testing
+            // previously measured none of them — a mutant that survived in a
+            // module handler was invisible to the aggregate MSI gate.
+            "modules",
+            "plugins",
+            "app"
         ]
     },
     "timeout": 90,

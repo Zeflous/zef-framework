@@ -86,9 +86,126 @@ if ($hits !== []) {
     $fail('abandoned package(s) required without ignore-list acknowledgement: ' . implode('; ', $hits));
 }
 
+/*
+ * Time-boxed allowlist enforcement.
+ *
+ * scripts/ci/abandoned-allowlist.json declares which abandoned packages are
+ * tolerated, why, and until when. It was previously never read by any code:
+ * the file documented a policy that nothing enforced, so an entry could sit
+ * past its expiry indefinitely and a new abandoned package could be added to
+ * the allowlist without the gate noticing. This block makes the file load-
+ * bearing:
+ *
+ *   1. every entry must carry a parseable `expires` date;
+ *   2. an entry past its expiry fails the build (forcing a re-review);
+ *   3. an allowlisted package that is NOT actually required is reported, so
+ *      the allowlist cannot accumulate stale entries.
+ */
+$allowlistPath = $root . '/scripts/ci/abandoned-allowlist.json';
+if (!is_file($allowlistPath)) {
+    $fail("abandoned allowlist not found at {$allowlistPath} — the policy file is required");
+}
+
+$allowlistRaw = @file_get_contents($allowlistPath);
+if ($allowlistRaw === false) {
+    $fail("abandoned allowlist not readable at {$allowlistPath}");
+}
+
+try {
+    $allowlist = json_decode($allowlistRaw, true, 512, JSON_THROW_ON_ERROR);
+} catch (\JsonException $e) {
+    $fail('abandoned allowlist is not valid JSON: ' . $e->getMessage());
+}
+
+$allowed = $allowlist['allowed'] ?? null;
+if (!is_array($allowed)) {
+    $fail('abandoned allowlist must contain an "allowed" array');
+}
+
+$today = new \DateTimeImmutable('today');
+$expired = [];
+$stale = [];
+$active = 0;
+
+/*
+ * The "is it still installed?" question must be asked of the LOCK file, not of
+ * composer.json. An abandoned package is typically a TRANSITIVE dependency
+ * (the allowlist's own entry is doctrine/annotations, pulled in by
+ * phpbench/phpbench), so it never appears in require/require-dev and a
+ * direct-dependency check would report every legitimate entry as stale.
+ * composer.lock lists the resolved set, which is what actually ships.
+ */
+$lockPath = $root . '/composer.lock';
+$installed = [];
+if (is_file($lockPath)) {
+    $lockRaw = @file_get_contents($lockPath);
+    if ($lockRaw !== false) {
+        try {
+            $lock = json_decode($lockRaw, true, 512, JSON_THROW_ON_ERROR);
+            foreach (['packages', 'packages-dev'] as $section) {
+                foreach (($lock[$section] ?? []) as $package) {
+                    if (isset($package['name']) && is_string($package['name'])) {
+                        $installed[strtolower($package['name'])] = true;
+                    }
+                }
+            }
+        } catch (\JsonException $e) {
+            $fail('composer.lock is not valid JSON: ' . $e->getMessage());
+        }
+    }
+}
+
+foreach ($allowed as $index => $entry) {
+    if (!is_array($entry) || !isset($entry['name']) || !is_string($entry['name'])) {
+        $fail(sprintf('abandoned allowlist entry #%d must be an object with a string "name"', $index));
+    }
+
+    $name = $entry['name'];
+    $expires = $entry['expires'] ?? null;
+    if (!is_string($expires) || $expires === '') {
+        $fail(sprintf('abandoned allowlist entry "%s" must carry an "expires" date (YYYY-MM-DD)', $name));
+    }
+
+    $expiry = \DateTimeImmutable::createFromFormat('!Y-m-d', $expires);
+    if ($expiry === false) {
+        $fail(sprintf('abandoned allowlist entry "%s" has an unparseable expires date: %s', $name, $expires));
+    }
+
+    if ($expiry < $today) {
+        $expired[] = sprintf('%s (expired %s)', $name, $expires);
+        continue;
+    }
+
+    // Stale = no longer present in the resolved dependency set at all. When the
+    // lock file is unavailable the check is skipped rather than guessed: a
+    // missing lock file is not evidence that an entry is stale.
+    if ($installed !== [] && !isset($installed[strtolower($name)])) {
+        $stale[] = $name;
+        continue;
+    }
+
+    $active++;
+}
+
+if ($expired !== []) {
+    $fail(
+        'abandoned allowlist entr(ies) past their expiry — re-review and either renew with a new date or remove: '
+        . implode('; ', $expired)
+    );
+}
+
+if ($stale !== []) {
+    $fail(
+        'abandoned allowlist entr(ies) no longer present in composer.lock — remove them: '
+        . implode('; ', $stale)
+    );
+}
+
 fwrite(STDOUT, sprintf(
-    "Audit OK: abandoned-policy=%s, %d package(s) checked, 0 unacknowledged watchlist hits.\n",
+    "Audit OK: abandoned-policy=%s, %d package(s) checked, 0 unacknowledged watchlist hits, "
+    . "%d active allowlist entr(ies), 0 expired.\n",
     $policy,
     count($required),
+    $active,
 ));
 exit(0);

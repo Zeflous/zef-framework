@@ -10,18 +10,8 @@ declare(strict_types=1);
 
 namespace Zef\Middleware;
 
-use Zef\Framework\Config\ConfigProviderInterface;
-use Zef\Framework\Foundation\Env;
-use Zef\Framework\Http\JsonResponse;
-use Zef\Framework\Http\Response;
-use Zef\Framework\Security\InMemoryRateLimiter;
-use Zef\Framework\Security\OriginPolicy;
-use Zef\Framework\Security\SecurityPolicy;
-use Zef\Framework\Security\SecurityRuntimeMiddleware;
-use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
-use Psr\Http\Server\MiddlewareInterface;
-use Psr\Http\Server\RequestHandlerInterface;
+use Zef\Framework\Observability\TelemetrySanitizer;
 
 /**
  * Retained for legacy modules; core now depends on Psr\Log\LoggerInterface.
@@ -32,14 +22,14 @@ final class ErrorLogger
 
     public function log(string $correlationId, \Throwable $e, ServerRequestInterface $request): void
     {
-        $message = \Zef\Framework\Observability\TelemetrySanitizer::redact($e->getMessage());
+        $message = TelemetrySanitizer::redact($e->getMessage());
         $entry = [
-            'timestamp'      => date(DATE_ATOM),
-            'level'          => 'error',
+            'timestamp' => date(DATE_ATOM),
+            'level' => 'error',
             'correlation_id' => $correlationId,
-            'method'         => $request->getMethod(),
-            'path'           => $request->getUri()->getPath(),
-            'exception'      => get_class($e),
+            'method' => $request->getMethod(),
+            'path' => $request->getUri()->getPath(),
+            'exception' => get_class($e),
         ];
         if ($this->includeMessage) {
             $entry['message'] = $message;

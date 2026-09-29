@@ -3,6 +3,11 @@ name: SBOM
 on:
   push:
     branches: ["main"]
+    # Release tags too: the SBOM is a release artifact, and a tag pushed
+    # without a preceding main-branch push (or with the main run superseded)
+    # would otherwise ship a release with no SBOM evidence for that commit.
+    tags:
+      - "v*.*.*"
   workflow_dispatch:
 
 permissions:

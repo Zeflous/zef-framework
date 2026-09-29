@@ -25,21 +25,7 @@ final class LocalStorageSymlinkTest extends TestCase
 
     protected function tearDown(): void
     {
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($this->base, \FilesystemIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-        foreach ($iterator as $item) {
-            if (!$item instanceof \SplFileInfo) {
-                continue;
-            }
-            if ($item->isLink() || !$item->isDir()) {
-                unlink($item->getPathname()); // nosemgrep: php.lang.security.unlink-use (test sandbox)
-            } else {
-                rmdir($item->getPathname());
-            }
-        }
-        rmdir($this->base);
+        $this->removeTree($this->base);
     }
 
     /**
@@ -131,6 +117,42 @@ final class LocalStorageSymlinkTest extends TestCase
         self::assertSame(['nested/normal.txt'], $storage->list());
         self::assertSame([], $storage->list('file-link'));
         self::assertSame('inside', $storage->get('nested/normal.txt'));
+    }
+
+    /**
+     * Removes a directory tree without ever following a symlink target.
+     *
+     * Windows reports directory symlinks as directories, so unlink() fails there
+     * with "Is a directory"; fall back to rmdir() for that case only.
+     */
+    private function removeTree(string $path): void
+    {
+        if (is_link($path)) {
+            if (@unlink($path)) { // nosemgrep: php.lang.security.unlink-use (test sandbox)
+                return;
+            }
+            @rmdir($path);
+
+            return;
+        }
+
+        if (!is_dir($path)) {
+            @unlink($path); // nosemgrep: php.lang.security.unlink-use (test sandbox)
+
+            return;
+        }
+
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($path, \FilesystemIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::CHILD_FIRST,
+        );
+        foreach ($iterator as $item) {
+            if (!$item instanceof \SplFileInfo) {
+                continue;
+            }
+            $this->removeTree($item->getPathname());
+        }
+        @rmdir($path);
     }
 
     private function createLink(string $target, string $link): void

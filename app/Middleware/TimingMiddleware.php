@@ -10,18 +10,12 @@ declare(strict_types=1);
 
 namespace Zef\Middleware;
 
-use Zef\Framework\Config\ConfigProviderInterface;
-use Zef\Framework\Foundation\Env;
-use Zef\Framework\Http\JsonResponse;
-use Zef\Framework\Http\Response;
-use Zef\Framework\Security\InMemoryRateLimiter;
-use Zef\Framework\Security\OriginPolicy;
-use Zef\Framework\Security\SecurityPolicy;
-use Zef\Framework\Security\SecurityRuntimeMiddleware;
+use Psr\Http\Message\MessageInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
+use Zef\Framework\Http\Response;
 
 final class TimingMiddleware implements MiddlewareInterface
 {
@@ -31,6 +25,20 @@ final class TimingMiddleware implements MiddlewareInterface
         $startNs = hrtime(true);
         $response = $handler->handle($request);
         $elapsedMs = round((hrtime(true) - $startNs) / 1_000_000, 2);
-        return $response->withHeader('X-Response-Time', $elapsedMs . 'ms');
+
+        return self::asResponse($response->withHeader('X-Response-Time', $elapsedMs . 'ms'));
+    }
+
+    /**
+     * PSR-7 declares `withHeader()` as returning `MessageInterface`, so a
+     * fluent header chain loses the `ResponseInterface` type even though the
+     * runtime object is always the same immutable response. Narrow it back
+     * explicitly instead of widening this method's return type.
+     */
+    private static function asResponse(MessageInterface $message): ResponseInterface
+    {
+        assert($message instanceof ResponseInterface);
+
+        return $message;
     }
 }
