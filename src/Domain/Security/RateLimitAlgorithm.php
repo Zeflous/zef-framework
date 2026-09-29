@@ -51,7 +51,7 @@ enum RateLimitAlgorithm: string
     public static function fromString(string $value): self
     {
         $normalised = strtolower(trim($value));
-        $algorithm = self::tryFrom($normalised);
+        $algorithm = static::tryFrom($normalised);
         if ($algorithm instanceof self) {
             return $algorithm;
         }
@@ -59,7 +59,7 @@ enum RateLimitAlgorithm: string
         throw new \InvalidArgumentException(sprintf(
             'Unknown rate limit algorithm "%s" (expected one of: %s).',
             $value,
-            implode(', ', array_map(static fn (self $case): string => $case->value, self::cases())),
+            implode(', ', array_map(static fn (self $case): string => $case->value, static::cases())),
         ));
     }
 }

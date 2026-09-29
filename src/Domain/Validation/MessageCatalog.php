@@ -40,7 +40,9 @@ final readonly class MessageCatalog
                     throw new \InvalidArgumentException('Catalog rule keys must be 1..64 byte strings.');
                 }
                 if (!is_string($template) || $template === '' || strlen($template) > self::MAX_TEMPLATE_BYTES) {
-                    throw new \InvalidArgumentException("Catalog template for '{$locale}/{$rule}' must be 1.." . self::MAX_TEMPLATE_BYTES . ' bytes.');
+                    throw new \InvalidArgumentException(
+                        "Catalog template for '{$locale}/{$rule}' must be 1.." . self::MAX_TEMPLATE_BYTES . ' bytes.'
+                    );
                 }
             }
         }
@@ -85,7 +87,9 @@ final readonly class MessageCatalog
                 throw new \InvalidArgumentException('Catalog rule keys must be 1..64 byte strings.');
             }
             if (!is_string($template) || $template === '' || strlen($template) > self::MAX_TEMPLATE_BYTES) {
-                throw new \InvalidArgumentException("Catalog template for '{$locale}/{$rule}' must be 1.." . self::MAX_TEMPLATE_BYTES . ' bytes.');
+                throw new \InvalidArgumentException(
+                    "Catalog template for '{$locale}/{$rule}' must be 1.." . self::MAX_TEMPLATE_BYTES . ' bytes.'
+                );
             }
             $merged[$locale][$rule] = $template;
         }

@@ -62,10 +62,8 @@ trait RequestTrait
         $n = clone $this;
         $n->uri = $uri;
         $existingHost = $this->getHeaderLine('Host');
-        if (!$preserveHost || $existingHost === '') {
-            if ($uri->getHost() !== '') {
-                $n = $n->withHeader('Host', $this->hostHeaderFromUri($uri));
-            }
+        if ((!$preserveHost || $existingHost === '') && $uri->getHost() !== '') {
+            $n = $n->withHeader('Host', $this->hostHeaderFromUri($uri));
         }
 
         return $n;
@@ -74,7 +72,13 @@ trait RequestTrait
     private function deriveRequestTarget(UriInterface $uri): string
     {
         $path = $uri->getPath();
-        $target = $path === '' ? '/' : ($path[0] === '/' ? $path : '/' . $path);
+        if ($path === '') {
+            $target = '/';
+        } elseif ($path[0] === '/') {
+            $target = $path;
+        } else {
+            $target = '/' . $path;
+        }
         if ($uri->getQuery() !== '') {
             $target .= '?' . $uri->getQuery();
         }

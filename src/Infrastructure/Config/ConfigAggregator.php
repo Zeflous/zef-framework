@@ -38,7 +38,9 @@ final class ConfigAggregator
         $moduleKey = strtolower($module);
         foreach ($this->providers as $existing) {
             if (strtolower($existing->getModuleName()) === $moduleKey) {
-                throw new InvalidConfigurationException("Duplicate module/provider '{$module}' (case-insensitive collision).");
+                throw new InvalidConfigurationException(
+                    "Duplicate module/provider '{$module}' (case-insensitive collision)."
+                );
             }
         }
         $this->providers[] = $provider;
@@ -54,7 +56,10 @@ final class ConfigAggregator
         // getConfig() re-entered merge() with $merged still empty and
         // recursed until memory exhaustion (OOM fatal, uncatchable).
         if ($this->merging) {
-            throw new \LogicException('Reentrant configuration read: a provider called ConfigAggregator::get()/all()/merge() while configuration is being merged.');
+            throw new \LogicException(
+                'Reentrant configuration read: a provider called ConfigAggregator::get()/all()/merge() '
+                . 'while configuration is being merged.'
+            );
         }
         $this->merging = true;
 
@@ -63,7 +68,9 @@ final class ConfigAggregator
             foreach ($this->providers as $provider) {
                 $cfg = $provider->getConfig();
                 if (!is_array($cfg)) {
-                    throw new InvalidConfigurationException("Config provider '{$provider->getModuleName()}' must return an array.");
+                    throw new InvalidConfigurationException(
+                        "Config provider '{$provider->getModuleName()}' must return an array."
+                    );
                 }
                 $this->merged[strtolower($provider->getModuleName())] = $cfg;
             }

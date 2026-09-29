@@ -12,6 +12,7 @@ namespace Zef\Framework\Http;
 
 use Psr\Http\Message\StreamInterface;
 use Zef\Framework\Exception\PayloadTooLargeException;
+use Zef\Framework\Exception\StreamNotWritableException;
 
 /**
  * Bug fix #1: seek/rewind now reset $observedBytes so read+rewind+read
@@ -31,7 +32,7 @@ final class LimitedInputStream implements StreamInterface
     {
         try {
             return $this->getContents();
-        } catch (PayloadTooLargeException|\Throwable) {
+        } catch (\Throwable) {
             return '';
         }
     }
@@ -114,7 +115,7 @@ final class LimitedInputStream implements StreamInterface
     #[\Override]
     public function write(string $string): int
     {
-        throw new \RuntimeException('Limited input stream is read-only.');
+        throw new StreamNotWritableException('Limited input stream is read-only.');
     }
 
     #[\Override]
