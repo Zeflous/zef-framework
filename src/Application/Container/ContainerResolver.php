@@ -23,9 +23,9 @@ final class ContainerResolver
     private ?ContainerInterface $rootContainer = null;
 
     /**
-     * @var \WeakMap<RequestScope,array<string,mixed>>
+     * @var null|\WeakMap<RequestScope,array<string,mixed>>
      */
-    private \WeakMap $scopeInstances;
+    private ?\WeakMap $scopeInstances = null;
     private readonly int $resolutionDepthLimit;
     private ?CompiledContainerPlan $plan = null;
 
@@ -36,7 +36,6 @@ final class ContainerResolver
         int $resolutionDepthLimit = 256,
     ) {
         $this->resolutionDepthLimit = max(1, $resolutionDepthLimit);
-        $this->scopeInstances = new \WeakMap();
     }
 
     public function bind(ContainerInterface $container): void
@@ -57,14 +56,16 @@ final class ContainerResolver
     public function createRequestScope(): RequestScope
     {
         $scope = new RequestScope($this);
-        $this->scopeInstances[$scope] = [];
+        $this->scopeInstances()[$scope] = [];
 
         return $scope;
     }
 
     public function releaseScope(RequestScope $scope): void
     {
-        unset($this->scopeInstances[$scope]);
+        if ($this->scopeInstances !== null) {
+            unset($this->scopeInstances[$scope]);
+        }
     }
 
     public function clearSingletons(): void
@@ -88,8 +89,8 @@ final class ContainerResolver
 
     public function resolveInContext(string $id, ResolutionContext $ctx, ?RequestScope $scope): mixed
     {
-        $plan = $this->plan;
-        if (!$plan instanceof CompiledContainerPlan) {
+        $activePlan = $this->plan;
+        if (!$activePlan instanceof CompiledContainerPlan) {
             $canonical = $this->graphValidator->resolveAlias($id, $this->registry->aliases());
             $definition = $this->registry->definitions()[$canonical] ?? null;
             if ($definition === null) {
@@ -97,94 +98,183 @@ final class ContainerResolver
             }
             $dependencies = $definition->dependencies;
         } else {
-            $canonical = $plan->canonical($id);
+            $canonical = $activePlan->canonical($id);
             if ($canonical === null) {
-                // @infection-ignore-all MethodCallRemoval — ekuivalen: kontrol jatuh ke throwNotFound identik pada null-check berikutnya; eksepsi sama
+                // @infection-ignore-all MethodCallRemoval — ekuivalen: kontrol jatuh ke
+                // throwNotFound identik pada null-check berikutnya; eksepsi sama
                 $this->throwNotFound($id);
             }
-            $definition = $plan->definitions[$canonical] ?? null;
+            $definition = $activePlan->definitions[$canonical] ?? null;
             if ($definition === null) {
                 $this->throwNotFound($id);
             }
-            $dependencies = $plan->dependenciesOf($canonical);
+            $dependencies = $activePlan->dependenciesOf($canonical);
         }
 
-        $lifetime = $definition->lifetime;
-        $shared = $definition->shared;
-
-        if ($lifetime === ServiceLifetime::SINGLETON && $shared && $this->registry->hasInstance($canonical)) {
-            return $this->registry->instance($canonical);
-        }
-        if ($lifetime === ServiceLifetime::REQUEST) {
-            if (!$scope instanceof RequestScope || $scope->isClosed()) {
-                throw new \LogicException("Request-scoped service '{$canonical}' resolved outside a request scope.");
-            }
-            if ($this->scopeHas($scope, $canonical)) {
-                return $this->scopeGet($scope, $canonical);
-            }
+        $hit = $this->cachedInstance($canonical, $definition, $scope);
+        if ($hit[0]) {
+            return $hit[1];
         }
 
+        return $this->instantiate($canonical, $ctx, $definition, $dependencies, $scope);
+    }
+
+    /**
+     * Cached instance for the canonical id, if one is already materialized
+     * for the definition's lifetime (singleton store or request scope).
+     *
+     * @return array{bool, mixed} [true, instance] on a cache hit
+     */
+    private function cachedInstance(
+        string $canonical,
+        ServiceDefinition $definition,
+        ?RequestScope $scope,
+    ): array {
+        if (
+            $definition->lifetime === ServiceLifetime::SINGLETON
+            && $definition->shared
+            && $this->registry->hasInstance($canonical)
+        ) {
+            return [true, $this->registry->instance($canonical)];
+        }
+        if ($definition->lifetime !== ServiceLifetime::REQUEST) {
+            return [false, null];
+        }
+        if (!$scope instanceof RequestScope || $scope->isClosed()) {
+            throw new \LogicException("Request-scoped service '{$canonical}' resolved outside a request scope.");
+        }
+        if ($this->scopeHas($scope, $canonical)) {
+            return [true, $this->scopeGet($scope, $canonical)];
+        }
+
+        return [false, null];
+    }
+
+    /**
+     * Instantiates the service: fires the resolving event, resolves the
+     * dependencies, invokes the factory under the initialization guard,
+     * fires the resolved event and caches the result per lifetime.
+     *
+     * @param array<mixed> $dependencies dependency ids of the canonical definition
+     */
+    private function instantiate(
+        string $canonical,
+        ResolutionContext $ctx,
+        ServiceDefinition $definition,
+        array $dependencies,
+        ?RequestScope $scope,
+    ): mixed {
         $ctx->push($canonical);
 
         try {
-            // v2.10.0: resolving event — fired only on actual instantiation
-            // (cache hits above return early), before deps are resolved.
-            if ($this->registry->hasResolvingListeners()) {
-                try {
-                    foreach ($this->registry->resolvingListeners() as $listener) {
-                        $listener($canonical, $dependencies);
-                    }
-                } catch (\Throwable $e) {
-                    throw new ServiceResolutionException($canonical, 'resolving listener failed: ' . $e->getMessage(), $e);
-                }
-            }
-            $deps = [];
-            foreach ($dependencies as $dep) {
-                $deps[] = $ctx->get($dep);
-            }
-            if (!is_callable($definition->factory)) {
-                throw new ServiceResolutionException($canonical, 'factory is not callable.');
-            }
-            $factory = $definition->factory;
-
-            try {
-                $instance = $this->initializationGuard->synchronized(
-                    $canonical,
-                    fn () => $factory($ctx, ...$deps),
-                );
-            } catch (\Throwable $e) {
-                if ($e instanceof ServiceResolutionException) {
-                    throw $e;
-                }
-
-                throw new ServiceResolutionException($canonical, $e->getMessage(), $e);
-            }
+            $this->fireResolvingListeners($canonical, $dependencies);
+            $instance = $this->invokeFactory($canonical, $ctx, $definition, $dependencies);
             if ($instance === null) {
                 throw new ServiceResolutionException($canonical, 'factory returned null.');
             }
-            // v2.10.0: resolved event — a non-null return value replaces the
-            // instance before it is cached (runtime decorator-style hook).
-            if ($this->registry->hasResolvedListeners()) {
-                try {
-                    foreach ($this->registry->resolvedListeners() as $listener) {
-                        $replacement = $listener($canonical, $instance);
-                        if ($replacement !== null) {
-                            $instance = $replacement;
-                        }
-                    }
-                } catch (\Throwable $e) {
-                    throw new ServiceResolutionException($canonical, 'resolved listener failed: ' . $e->getMessage(), $e);
-                }
-            }
-            if ($lifetime === ServiceLifetime::SINGLETON && $shared) {
-                $this->registry->setInstance($canonical, $instance);
-            } elseif ($lifetime === ServiceLifetime::REQUEST && $scope instanceof RequestScope) {
-                $this->scopeSet($scope, $canonical, $instance);
-            }
+            $instance = $this->fireResolvedListeners($canonical, $instance);
+            $this->cacheInstance($canonical, $definition, $scope, $instance);
 
             return $instance;
         } finally {
             $ctx->pop($canonical);
+        }
+    }
+
+    /**
+     * @param array<mixed> $dependencies dependency ids of the canonical definition
+     */
+    private function fireResolvingListeners(string $canonical, array $dependencies): void
+    {
+        // v2.10.0: resolving event — fired only on actual instantiation
+        // (cache hits return early), before deps are resolved.
+        if (!$this->registry->hasResolvingListeners()) {
+            return;
+        }
+        try {
+            foreach ($this->registry->resolvingListeners() as $listener) {
+                $listener($canonical, $dependencies);
+            }
+        } catch (\Throwable $e) {
+            throw new ServiceResolutionException(
+                $canonical,
+                'resolving listener failed: ' . $e->getMessage(),
+                $e,
+            );
+        }
+    }
+
+    /**
+     * @param array<mixed> $dependencies dependency ids of the canonical definition
+     */
+    private function invokeFactory(
+        string $canonical,
+        ResolutionContext $ctx,
+        ServiceDefinition $definition,
+        array $dependencies,
+    ): mixed {
+        $deps = [];
+        foreach ($dependencies as $dep) {
+            $deps[] = $ctx->get($dep);
+        }
+        if (!is_callable($definition->factory)) {
+            throw new ServiceResolutionException($canonical, 'factory is not callable.');
+        }
+        $factory = $definition->factory;
+
+        try {
+            return $this->initializationGuard->synchronized(
+                $canonical,
+                fn () => $factory($ctx, ...$deps),
+            );
+        } catch (\Throwable $e) {
+            if ($e instanceof ServiceResolutionException) {
+                throw $e;
+            }
+
+            throw new ServiceResolutionException($canonical, $e->getMessage(), $e);
+        }
+    }
+
+    /**
+     * v2.10.0: resolved event — a non-null return value replaces the
+     * instance before it is cached (runtime decorator-style hook).
+     */
+    private function fireResolvedListeners(string $canonical, mixed $instance): mixed
+    {
+        if (!$this->registry->hasResolvedListeners()) {
+            return $instance;
+        }
+        try {
+            foreach ($this->registry->resolvedListeners() as $listener) {
+                $replacement = $listener($canonical, $instance);
+                if ($replacement !== null) {
+                    $instance = $replacement;
+                }
+            }
+        } catch (\Throwable $e) {
+            throw new ServiceResolutionException(
+                $canonical,
+                'resolved listener failed: ' . $e->getMessage(),
+                $e,
+            );
+        }
+
+        return $instance;
+    }
+
+    private function cacheInstance(
+        string $canonical,
+        ServiceDefinition $definition,
+        ?RequestScope $scope,
+        mixed $instance,
+    ): void {
+        if ($definition->lifetime === ServiceLifetime::SINGLETON && $definition->shared) {
+            $this->registry->setInstance($canonical, $instance);
+        } elseif ($definition->lifetime === ServiceLifetime::REQUEST && $scope instanceof RequestScope) {
+            $this->scopeSet($scope, $canonical, $instance);
+        } else {
+            /* transient (or request-scoped with no active scope): never cached */
         }
     }
 
@@ -207,12 +297,14 @@ final class ContainerResolver
     {
         try {
             if ($this->plan instanceof CompiledContainerPlan) {
-                // @infection-ignore-all ReturnRemoval — ekuivalen: jalur validator memberi jawaban sama untuk id yang dikenal dan tidak dikenal; terverifikasi kurikulum freeze
+                // @infection-ignore-all ReturnRemoval — ekuivalen: jalur validator memberi jawaban
+                // sama untuk id yang dikenal dan tidak dikenal; terverifikasi kurikulum freeze
                 return $this->plan->canonical($id) !== null;
             }
             $canonical = $this->graphValidator->resolveAlias($id, $this->registry->aliases());
 
-            // @infection-ignore-all LogicalAnd — ekuivalen: entri lifetime selalu datang dengan factory pada registry; hasil konjungsi dan disjungsi berimpit
+            // @infection-ignore-all LogicalAnd — ekuivalen: entri lifetime selalu datang dengan
+            // factory pada registry; hasil konjungsi dan disjungsi berimpit
             return isset($this->registry->lifetimeOf()[$canonical]) && $this->registry->hasFactory($canonical);
         } catch (\Throwable) {
             return false;
@@ -235,22 +327,39 @@ final class ContainerResolver
 
     private function scopeHas(RequestScope $scope, string $id): bool
     {
-        return isset($this->scopeInstances[$scope]) && array_key_exists($id, $this->scopeInstances[$scope]);
+        $instances = $this->scopeInstances;
+
+        return $instances !== null
+            && isset($instances[$scope])
+            && array_key_exists($id, $instances[$scope]);
     }
 
     private function scopeGet(RequestScope $scope, string $id): mixed
     {
-        if (!isset($this->scopeInstances[$scope]) || !array_key_exists($id, $this->scopeInstances[$scope])) {
+        $instances = $this->scopeInstances;
+        if ($instances === null
+            || !isset($instances[$scope])
+            || !array_key_exists($id, $instances[$scope])
+        ) {
             throw new \LogicException("No instance for '{$id}' in the active request scope.");
         }
 
-        return $this->scopeInstances[$scope][$id];
+        return $instances[$scope][$id];
     }
 
     private function scopeSet(RequestScope $scope, string $id, mixed $value): void
     {
-        $state = $this->scopeInstances[$scope] ?? [];
+        $instances = $this->scopeInstances();
+        $state = $instances[$scope] ?? [];
         $state[$id] = $value;
-        $this->scopeInstances[$scope] = $state;
+        $instances[$scope] = $state;
+    }
+
+    /**
+     * @return \WeakMap<RequestScope,array<string,mixed>>
+     */
+    private function scopeInstances(): \WeakMap
+    {
+        return $this->scopeInstances ??= new \WeakMap();
     }
 }
