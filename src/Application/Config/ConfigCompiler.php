@@ -81,6 +81,16 @@ final readonly class ConfigCompiler
             // below still runs (the historical behaviour).
             chmod($tmp, $this->fileMode);
         }
+        // php:S2002: the rename's failure modes are guarded explicitly — a
+        // directory target would make PHP emit a warning instead of just
+        // returning false, so it is refused up front with the same message.
+        if (is_dir($targetFile)) {
+            if (is_file($tmp)) {
+                unlink($tmp); // nosemgrep: php.lang.security.unlink-use
+            }
+
+            throw new InvalidConfigurationException("Failed to publish compiled config '{$targetFile}'.");
+        }
         if (!rename($tmp, $targetFile)) {
             // Cleanup of $tmp, a name this method generated itself
             // ('.' . $basename . '.' . bin2hex(random_bytes(6)) . '.tmp'). No
