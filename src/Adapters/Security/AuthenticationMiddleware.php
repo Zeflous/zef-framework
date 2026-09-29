@@ -38,7 +38,7 @@ final readonly class AuthenticationMiddleware implements MiddlewareInterface
         $method = strtoupper($request->getMethod());
         $credential = $this->extractCredential($request);
         $earlyDenial = $this->earlyDenial($path, $method, $credential, $request);
-        if ($earlyDenial !== null) {
+        if ($earlyDenial instanceof ResponseInterface) {
             return $earlyDenial;
         }
         $authentication = $this->credentialProvider->resolve(

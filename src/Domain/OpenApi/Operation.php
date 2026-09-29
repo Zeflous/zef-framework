@@ -38,13 +38,13 @@ final readonly class Operation
         public bool $deprecated = false,
         public array $security = [],
     ) {
-        self::assertMethod($method);
-        self::assertPath($path);
-        self::assertOperationId($operationId);
-        self::assertResponses($operationId, $responses);
-        self::assertTags($operationId, $tags);
-        self::assertParameters($operationId, $parameters);
-        self::assertSecurity($operationId, $security);
+        $this->assertMethod($method);
+        $this->assertPath($path);
+        $this->assertOperationId($operationId);
+        $this->assertResponses($operationId, $responses);
+        $this->assertTags($operationId, $tags);
+        $this->assertParameters($operationId, $parameters);
+        $this->assertSecurity($operationId, $security);
     }
 
     /**
@@ -99,21 +99,21 @@ final readonly class Operation
         return $out;
     }
 
-    private static function assertMethod(string $method): void
+    private function assertMethod(string $method): void
     {
         if (!in_array(strtoupper($method), self::METHODS, true)) {
             throw new SchemaDefinitionException("Operation method '{$method}' is not a documentable HTTP method.");
         }
     }
 
-    private static function assertPath(string $path): void
+    private function assertPath(string $path): void
     {
         if ($path === '' || $path[0] !== '/') {
             throw new SchemaDefinitionException("Operation path '{$path}' must begin with '/'.");
         }
     }
 
-    private static function assertOperationId(string $operationId): void
+    private function assertOperationId(string $operationId): void
     {
         if (preg_match('/^[A-Za-z0-9._-]{1,128}$/', $operationId) !== 1) {
             throw new SchemaDefinitionException("Operation id '{$operationId}' must match [A-Za-z0-9._-]{1,128}.");
@@ -123,7 +123,7 @@ final readonly class Operation
     /**
      * @param array<int|string, Response> $responses
      */
-    private static function assertResponses(string $operationId, array $responses): void
+    private function assertResponses(string $operationId, array $responses): void
     {
         if ($responses === []) {
             throw new SchemaDefinitionException("Operation '{$operationId}' must define at least one response.");
@@ -141,7 +141,7 @@ final readonly class Operation
     /**
      * @param list<string> $tags
      */
-    private static function assertTags(string $operationId, array $tags): void
+    private function assertTags(string $operationId, array $tags): void
     {
         foreach ($tags as $tag) {
             if (!is_string($tag) || trim($tag) === '') {
@@ -153,7 +153,7 @@ final readonly class Operation
     /**
      * @param list<Parameter> $parameters
      */
-    private static function assertParameters(string $operationId, array $parameters): void
+    private function assertParameters(string $operationId, array $parameters): void
     {
         foreach ($parameters as $parameter) {
             if (!$parameter instanceof Parameter) {
@@ -167,7 +167,7 @@ final readonly class Operation
     /**
      * @param list<SecurityRequirement> $security
      */
-    private static function assertSecurity(string $operationId, array $security): void
+    private function assertSecurity(string $operationId, array $security): void
     {
         foreach ($security as $requirement) {
             if (!$requirement instanceof SecurityRequirement) {

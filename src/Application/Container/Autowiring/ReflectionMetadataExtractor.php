@@ -83,7 +83,7 @@ final class ReflectionMetadataExtractor
      */
     private function resolveType(string $owner, ?\ReflectionType $type): array
     {
-        if ($type === null) {
+        if (!$type instanceof \ReflectionType) {
             // Untyped parameter: only default/null fallback applies.
             return [null, true, null];
         }

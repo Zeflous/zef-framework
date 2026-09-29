@@ -43,7 +43,7 @@ final readonly class SortSpec
             $resolved[] = $key;
         }
         if ($resolved === [] && $defaultFields !== []) {
-            $resolved = self::defaultKeys($defaultFields, $defaultDesc);
+            $resolved = $this->defaultKeys($defaultFields, $defaultDesc);
         }
         $this->keys = $resolved;
     }
@@ -127,7 +127,7 @@ final readonly class SortSpec
      *
      * @return list<SortKey>
      */
-    private static function defaultKeys(array $defaultFields, bool $defaultDesc): array
+    private function defaultKeys(array $defaultFields, bool $defaultDesc): array
     {
         $resolved = [];
         foreach ($defaultFields as $field) {
@@ -195,13 +195,7 @@ final readonly class SortSpec
      */
     private static function hasKey(array $keys, string $candidate): bool
     {
-        foreach ($keys as $existing) {
-            if ($existing->field === $candidate) {
-                return true;
-            }
-        }
-
-        return false;
+        return array_any($keys, fn (SortKey $existing): bool => $existing->field === $candidate);
     }
 
     private function valueOf(mixed $row, string $field): mixed

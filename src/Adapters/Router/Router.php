@@ -269,9 +269,7 @@ final class Router
 
     private function matcher(): RouteMatcher
     {
-        if ($this->matcher === null) {
-            $this->matcher = new RouteMatcher($this->collection, $this->constraints, $this->radix);
-        }
+        $this->matcher ??= new RouteMatcher($this->collection, $this->constraints, $this->radix);
 
         return $this->matcher;
     }

@@ -25,7 +25,7 @@ abstract class Repository
         string $table,
     ) {
         // Validate eagerly so a typo surfaces at construction, not first query.
-        self::assertValidTable($table);
+        $this->assertValidTable($table);
         $this->table = $table;
     }
 
@@ -146,7 +146,7 @@ abstract class Repository
      * Eager table-name validation delegated to the query builder's own
      * identifier grammar (throws {@see QueryException} on a bad name).
      */
-    private static function assertValidTable(string $table): void
+    private function assertValidTable(string $table): void
     {
         new QueryBuilder()->quoteIdentifier($table, 'table');
     }

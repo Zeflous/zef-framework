@@ -15,6 +15,10 @@ namespace Zef\Framework\OpenApi;
  *     query list;
  *   - JSON request bodies embed the schema example/default when present;
  *   - security schemes map onto Postman's collection-level auth section.
+ *
+ * Example synthesis ({@see PostmanSchemaExamples}) and auth mapping
+ * ({@see PostmanAuthBuilder}) live in dedicated collaborators so this
+ * class stays within the class-size budget.
  */
 final class PostmanCollectionExporter
 {
@@ -36,16 +40,16 @@ final class PostmanCollectionExporter
      */
     public function export(array $spec): array
     {
-        $info = is_array($spec['info'] ?? null) ? $spec['info'] : [];
-        $paths = is_array($spec['paths'] ?? null) ? $spec['paths'] : [];
-        $components = is_array($spec['components'] ?? null) ? $spec['components'] : [];
-        $securitySchemes = is_array($components['securitySchemes'] ?? null) ? $components['securitySchemes'] : [];
+        $info = $this->arrayValue($spec, 'info');
+        $paths = $this->arrayValue($spec, 'paths');
+        $components = $this->arrayValue($spec, 'components');
+        $securitySchemes = $this->arrayValue($components, 'securitySchemes');
 
         $collection = [
             'info' => [
-                'name' => is_string($info['title'] ?? null) ? $info['title'] : 'ZEF API',
+                'name' => $this->stringValue($info, 'title', 'ZEF API'),
                 'schema' => self::POSTMAN_SCHEMA,
-                'description' => is_string($info['description'] ?? null) ? $info['description'] : '',
+                'description' => $this->stringValue($info, 'description', ''),
             ],
             'item' => $this->buildItems($paths),
         ];
@@ -53,12 +57,38 @@ final class PostmanCollectionExporter
             $collection['info']['version'] = $info['version'];
         }
 
-        $auth = $this->buildAuth($securitySchemes);
+        $auth = PostmanAuthBuilder::build($securitySchemes);
         if ($auth !== null) {
             $collection['auth'] = $auth;
         }
 
         return $collection;
+    }
+
+    /**
+     * Defensive read of a spec section: non-arrays read as empty.
+     *
+     * @param array<array-key, mixed> $source
+     *
+     * @return array<array-key, mixed>
+     */
+    private function arrayValue(array $source, string $key): array
+    {
+        $value = $source[$key] ?? null;
+
+        return is_array($value) ? $value : [];
+    }
+
+    /**
+     * Defensive read of an info field: non-strings read as the default.
+     *
+     * @param array<array-key, mixed> $source
+     */
+    private function stringValue(array $source, string $key, string $default): string
+    {
+        $value = $source[$key] ?? null;
+
+        return is_string($value) ? $value : $default;
     }
 
     /**
@@ -194,7 +224,7 @@ final class PostmanCollectionExporter
             $description = $operation['summary'];
         }
         if (is_string($operation['description'] ?? null) && $operation['description'] !== '') {
-            $description = $description === ''
+            return $description === ''
                 ? $operation['description']
                 : $description . "\n\n" . $operation['description'];
         }
@@ -220,7 +250,7 @@ final class PostmanCollectionExporter
             }
             $schema = is_array($content[$mediaType]['schema'] ?? null) ? $content[$mediaType]['schema'] : [];
             $raw = json_encode(
-                $this->exampleFromSchema($schema),
+                PostmanSchemaExamples::exampleFromSchema($schema),
                 JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR,
             );
 
@@ -232,177 +262,5 @@ final class PostmanCollectionExporter
         }
 
         return ['mode' => 'raw', 'raw' => '{}', 'options' => ['raw' => ['language' => 'json']]];
-    }
-
-    /**
-     * Build a deterministic minimal example value from a schema array.
-     *
-     * @param array<array-key, mixed> $schema
-     */
-    private function exampleFromSchema(array $schema): mixed
-    {
-        $literal = $this->literalExample($schema);
-        if ($literal !== null) {
-            return $literal;
-        }
-        $type = is_string($schema['type'] ?? null) ? $schema['type'] : 'object';
-
-        return match ($type) {
-            'object' => $this->objectExample($schema),
-            'array' => $this->arrayExample($schema),
-            'integer', 'number' => isset($schema['minimum']) && is_numeric($schema['minimum'])
-                ? $schema['minimum']
-                : 1,
-            'boolean' => true,
-            default => $this->stringExample($schema),
-        };
-    }
-
-    /**
-     * Explicit example/default/first-enum literal, or null when the schema
-     * has none (null-valued entries count as absent, mirroring isset()).
-     *
-     * @param array<array-key, mixed> $schema
-     */
-    private function literalExample(array $schema): mixed
-    {
-        if (isset($schema['example'])) {
-            return $schema['example'];
-        }
-        if (isset($schema['default'])) {
-            return $schema['default'];
-        }
-        $enum = $schema['enum'] ?? null;
-        if (is_array($enum) && isset($enum[0])) {
-            return $enum[0];
-        }
-
-        return null;
-    }
-
-    /**
-     * @param array<array-key, mixed> $schema
-     *
-     * @return array<string, mixed>|\stdClass
-     */
-    private function objectExample(array $schema): array|\stdClass
-    {
-        $properties = is_array($schema['properties'] ?? null) ? $schema['properties'] : [];
-        $out = [];
-        foreach ($properties as $name => $property) {
-            if (is_string($name) && is_array($property)) {
-                $out[$name] = $this->exampleFromSchema($property);
-            }
-        }
-
-        return $out === [] ? new \stdClass() : $out;
-    }
-
-    /**
-     * @param array<array-key, mixed> $schema
-     *
-     * @return list<mixed>
-     */
-    private function arrayExample(array $schema): array
-    {
-        $items = is_array($schema['items'] ?? null) ? $schema['items'] : [];
-
-        return [$this->exampleFromSchema($items)];
-    }
-
-    /**
-     * @param array<array-key, mixed> $schema
-     */
-    private function stringExample(array $schema): string
-    {
-        return ($schema['format'] ?? null) === 'uuid'
-            ? '00000000-0000-4000-8000-000000000000'
-            : 'string';
-    }
-
-    /**
-     * First recognized security scheme as Postman collection-level auth.
-     *
-     * @param array<array-key, mixed> $securitySchemes
-     *
-     * @return null|array<string, mixed>
-     */
-    private function buildAuth(array $securitySchemes): ?array
-    {
-        foreach ($securitySchemes as $scheme) {
-            if (!is_array($scheme)) {
-                continue;
-            }
-            $auth = $this->authForScheme($scheme);
-            if ($auth !== null) {
-                return $auth;
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * @param array<array-key, mixed> $scheme
-     *
-     * @return null|array<string, mixed>
-     */
-    private function authForScheme(array $scheme): ?array
-    {
-        $type = is_string($scheme['type'] ?? null) ? $scheme['type'] : '';
-        if ($type === 'http') {
-            return $this->httpAuth($scheme);
-        }
-        if ($type === 'apiKey') {
-            return $this->apiKeyAuth($scheme);
-        }
-
-        return null;
-    }
-
-    /**
-     * @param array<array-key, mixed> $scheme
-     *
-     * @return null|array<string, mixed>
-     */
-    private function httpAuth(array $scheme): ?array
-    {
-        $httpScheme = is_string($scheme['scheme'] ?? null) ? $scheme['scheme'] : '';
-        if ($httpScheme === 'bearer') {
-            return [
-                'type' => 'bearer',
-                'bearer' => [['key' => 'token', 'value' => '<bearer-token>', 'type' => 'string']],
-            ];
-        }
-        if ($httpScheme === 'basic') {
-            return [
-                'type' => 'basic',
-                'basic' => [
-                    ['key' => 'username', 'value' => '<username>', 'type' => 'string'],
-                    ['key' => 'password', 'value' => '<password>', 'type' => 'string'],
-                ],
-            ];
-        }
-
-        return null;
-    }
-
-    /**
-     * @param array<array-key, mixed> $scheme
-     *
-     * @return array<string, mixed>
-     */
-    private function apiKeyAuth(array $scheme): array
-    {
-        $in = is_string($scheme['in'] ?? null) ? $scheme['in'] : 'header';
-
-        return [
-            'type' => 'apikey',
-            'apikey' => [
-                ['key' => 'in', 'value' => $in, 'type' => 'string'],
-                ['key' => 'key', 'value' => '<api-key-name>', 'type' => 'string'],
-                ['key' => 'value', 'value' => '<api-key-value>', 'type' => 'string'],
-            ],
-        ];
     }
 }

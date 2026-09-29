@@ -90,7 +90,7 @@ final class ResponseEmitter
         $body = $response->getBody();
 
         try {
-            if (!$suppressBody && self::bodyEligible($response)) {
+            if (!$suppressBody && $this->bodyEligible($response)) {
                 if (!$body->isReadable()) {
                     throw new UnreadableResponseBodyException('Response body stream is not readable.');
                 }
@@ -107,7 +107,7 @@ final class ResponseEmitter
      * Whether the status code carries a payload at all (1xx is
      * informational-only; 204/205/304 forbid a body by RFC 9110).
      */
-    private static function bodyEligible(MessageInterface $response): bool
+    private function bodyEligible(MessageInterface $response): bool
     {
         $status = $response->getStatusCode();
 
