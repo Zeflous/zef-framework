@@ -153,7 +153,18 @@ final readonly class PdoJobQueue implements JobQueueInterface
             $claimed = $this->connection->transaction(function () use ($now): false|JobEnvelope|null {
                 $rows = $this->connection->fetchAll(
                     QueryBuilder::table($this->table)
-                        ->select('seq', 'job_id', 'job_type', 'payload', 'available_at', 'priority', 'attempt', 'correlation_id', 'trace_parent', 'headers')
+                        ->select(
+                            'seq',
+                            'job_id',
+                            'job_type',
+                            'payload',
+                            'available_at',
+                            'priority',
+                            'attempt',
+                            'correlation_id',
+                            'trace_parent',
+                            'headers',
+                        )
                         ->where('available_at', '<=', $now)
                         ->orderBy('priority', 'DESC')
                         ->orderBy('available_at', 'ASC')

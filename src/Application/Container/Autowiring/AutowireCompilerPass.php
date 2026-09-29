@@ -76,7 +76,9 @@ final class AutowireCompilerPass
 
         foreach ($classes as $index => $class) {
             if (!is_string($class) || $class === '') {
-                throw new InvalidConfigurationException("Cannot autowire classes[{$index}]: expected a class-name string.");
+                throw new InvalidConfigurationException(
+                    "Cannot autowire classes[{$index}]: expected a class-name string.",
+                );
             }
             $this->autowireClass($container, $class, [], $resolver);
         }
@@ -210,7 +212,9 @@ final class AutowireCompilerPass
             if (str_starts_with($id, self::VALUE_SERVICE_PREFIX)) {
                 continue;
             }
-            // @infection-ignore-all LogicalOrAllSubExprNegation — ekuivalen: negasi ganda identik untuk id class/interface/bukan-keduanya; is_a menutup sisa kasus
+            // @infection-ignore-all LogicalOrAllSubExprNegation
+            // ekuivalen: negasi ganda identik untuk id class/interface/bukan-keduanya;
+            // is_a menutup sisa kasus
             if ((class_exists($id) || interface_exists($id)) && is_a($id, $type, true)) {
                 $ids[] = $id;
 
@@ -222,7 +226,9 @@ final class AutowireCompilerPass
             }
         }
 
-        // @infection-ignore-all UnwrapArrayUnique,UnwrapArrayValues — ekuivalen: id dari kunci map terkumpul paling sekali; kunci numerik sudah berurutan
+        // @infection-ignore-all UnwrapArrayUnique,UnwrapArrayValues
+        // ekuivalen: id dari kunci map terkumpul paling sekali; kunci numerik
+        // sudah berurutan
         return array_values(array_unique($ids));
     }
 

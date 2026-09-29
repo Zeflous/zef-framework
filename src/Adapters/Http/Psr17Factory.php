@@ -75,7 +75,11 @@ final class Psr17Factory implements RequestFactoryInterface, ResponseFactoryInte
         }
         $warning = null;
         set_error_handler(static function (int $severity, string $message) use (&$warning): bool {
-            $warning = $message;
+            // Only warning-grade diagnostics carry a useful fopen() failure
+            // reason; lower-severity noise must not overwrite the real cause.
+            if (($severity & (E_WARNING | E_NOTICE)) !== 0) {
+                $warning = $message;
+            }
 
             return true;
         });
