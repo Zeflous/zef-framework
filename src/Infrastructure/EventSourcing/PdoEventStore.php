@@ -13,7 +13,6 @@ namespace Zef\Framework\EventSourcing;
 use Zef\Framework\Database\ConnectionInterface;
 use Zef\Framework\Database\QueryBuilder;
 use Zef\Framework\Database\QueryException;
-use Zef\Framework\Database\SqlQuery;
 use Zef\Framework\Database\SqlState;
 
 /**
@@ -70,36 +69,28 @@ final readonly class PdoEventStore implements EventStoreInterface
         string $table = 'zef_events',
         ?\Closure $clock = null,
     ) {
-        new QueryBuilder()->quoteIdentifier($table, 'table');
+        $this->assertValidTableName($table);
         $this->table = $table;
         $this->clock = $clock ?? static fn (): int => (int) (microtime(true) * 1_000_000_000);
     }
 
     /**
-     * Create the events table (portable DDL, safe to run repeatedly).
+     * Create the events table (portable DDL, safe to run repeatedly) —
+     * assembled and executed by {@see PdoEventStoreSchema}, the schema
+     * collaborator split out of this class (php:S2042).
      */
     public function createSchema(): void
     {
-        $this->connection->execute(SqlQuery::raw(
-            'CREATE TABLE IF NOT EXISTS "' . $this->table . '" ('
-            . '"global_sequence" BIGINT NOT NULL, '
-            . '"event_id" VARCHAR(64) NOT NULL, '
-            . '"aggregate_type" VARCHAR(128) NOT NULL, '
-            . '"aggregate_id" VARCHAR(128) NOT NULL, '
-            . '"version" BIGINT NOT NULL, '
-            . '"event_type" VARCHAR(191) NOT NULL, '
-            . '"payload" TEXT NOT NULL, '
-            . '"metadata" TEXT NOT NULL, '
-            . '"recorded_at" BIGINT NOT NULL, '
-            . 'CONSTRAINT "uq_' . $this->table . '_stream" UNIQUE ("aggregate_type", "aggregate_id", "version"), '
-            . 'CONSTRAINT "uq_' . $this->table . '_event_id" UNIQUE ("event_id"), '
-            . 'CONSTRAINT "uq_' . $this->table . '_global" UNIQUE ("global_sequence"))',
-        ));
+        PdoEventStoreSchema::create($this->connection, $this->table);
     }
 
     #[\Override]
-    public function appendToStream(string $aggregateType, string $aggregateId, int $expectedVersion, PendingEvent ...$events): array
-    {
+    public function appendToStream(
+        string $aggregateType,
+        string $aggregateId,
+        int $expectedVersion,
+        PendingEvent ...$events
+    ): array {
         EventGrammar::assertAggregateType($aggregateType);
         EventGrammar::assertAggregateType($aggregateId, 'aggregate ID');
         if ($expectedVersion < 0) {
@@ -138,7 +129,7 @@ final readonly class PdoEventStore implements EventStoreInterface
         }
 
         $query = QueryBuilder::table($this->table)
-            ->select('global_sequence', 'event_id', 'aggregate_type', 'aggregate_id', 'version', 'event_type', 'payload', 'metadata', 'recorded_at')
+            ->select(...PdoEventStoreSchema::STORED_EVENT_COLUMNS)
             ->where('aggregate_type', '=', $aggregateType)
             ->where('aggregate_id', '=', $aggregateId)
         ;
@@ -164,7 +155,7 @@ final readonly class PdoEventStore implements EventStoreInterface
             throw new EventSourcingException("limit must be >= 1 when provided (got {$limit}).");
         }
         $qb = QueryBuilder::table($this->table)
-            ->select('global_sequence', 'event_id', 'aggregate_type', 'aggregate_id', 'version', 'event_type', 'payload', 'metadata', 'recorded_at')
+            ->select(...PdoEventStoreSchema::STORED_EVENT_COLUMNS)
             ->where('global_sequence', '>=', $fromGlobalSequence)
             ->orderBy('global_sequence', 'ASC')
         ;
@@ -173,6 +164,16 @@ final readonly class PdoEventStore implements EventStoreInterface
         }
 
         return array_map($this->hydrate(...), $this->connection->fetchAll($qb->build()));
+    }
+
+    /**
+     * Reject malformed table names early: the QueryBuilder's identifier
+     * quoting doubles as the grammar check (it throws on invalid
+     * identifiers), keeping the store's SQL fully quoted from the start.
+     */
+    private function assertValidTableName(string $table): void
+    {
+        new QueryBuilder()->quoteIdentifier($table, 'table');
     }
 
     /**
@@ -196,12 +197,14 @@ final readonly class PdoEventStore implements EventStoreInterface
         $version = $expectedVersion;
         $created = [];
         foreach ($events as $pending) {
+            ++$version;
+            ++$sequence;
             $created[] = new StoredEvent(
                 eventId: bin2hex(random_bytes(16)),
                 aggregateType: $aggregateType,
                 aggregateId: $aggregateId,
-                version: ++$version,
-                globalSequence: ++$sequence,
+                version: $version,
+                globalSequence: $sequence,
                 eventType: $pending->eventType,
                 payload: $pending->payload,
                 metadata: $pending->metadata,

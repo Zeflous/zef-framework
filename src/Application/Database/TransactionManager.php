@@ -85,7 +85,10 @@ final class TransactionManager implements TransactionManagerInterface
         ++$this->scopeDepth;
 
         try {
-            $result = $this->connection->transaction(static fn (ConnectionInterface $conn): mixed => $fn($conn), $isolation);
+            $result = $this->connection->transaction(
+                static fn (ConnectionInterface $conn): mixed => $fn($conn),
+                $isolation,
+            );
         } catch (\Throwable $e) {
             --$this->scopeDepth;
             $this->hooks = array_slice($this->hooks, 0, $hookCheckpoint);

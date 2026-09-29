@@ -21,9 +21,17 @@ final class FieldRules
 {
     private const int MAX_PATTERN_LENGTH = 2048;
     private const int MAX_PATTERN_SUBJECT = 4096;
+    private const string UUID_PATTERN = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/Di';
 
     /**
-     * @var list<array{rule:string,params:array<string,mixed>,check:callable(mixed):bool,message:string,skipNull:bool,skipEmpty:bool}>
+     * @var list<array{
+     *     rule: string,
+     *     params: array<string, mixed>,
+     *     check: callable(mixed): bool,
+     *     message: string,
+     *     skipNull: bool,
+     *     skipEmpty: bool,
+     * }>
      */
     private array $rules = [];
     private bool $nullableChain = false;
@@ -34,7 +42,13 @@ final class FieldRules
 
     public function required(string $message = 'is required.'): self
     {
-        return $this->add('required', static fn (mixed $v): bool => !in_array($v, [null, '', []], true), $message, false, false);
+        return $this->add(
+            'required',
+            static fn (mixed $v): bool => !in_array($v, [null, '', []], true),
+            $message,
+            false,
+            false,
+        );
     }
 
     /** Value must be absent-or-null-safe string after casting checks below. */
@@ -45,12 +59,22 @@ final class FieldRules
 
     public function typeInt(string $message = 'must be an integer.'): self
     {
-        return $this->add('type', static fn (mixed $v): bool => is_int($v) || (is_string($v) && preg_match('/^-?\d{1,18}$/', $v) === 1), $message, params: ['kind' => 'integer']);
+        return $this->add(
+            'type',
+            static fn (mixed $v): bool => is_int($v) || (is_string($v) && preg_match('/^-?\d{1,18}$/', $v) === 1),
+            $message,
+            params: ['kind' => 'integer'],
+        );
     }
 
     public function typeNumeric(string $message = 'must be numeric.'): self
     {
-        return $this->add('type', static fn (mixed $v): bool => is_int($v) || is_float($v) || (is_string($v) && is_numeric($v)), $message, params: ['kind' => 'numeric']);
+        return $this->add(
+            'type',
+            static fn (mixed $v): bool => is_int($v) || is_float($v) || (is_string($v) && is_numeric($v)),
+            $message,
+            params: ['kind' => 'numeric'],
+        );
     }
 
     public function minLength(int $min, string $message = 'is too short.'): self
@@ -59,7 +83,12 @@ final class FieldRules
             throw new \InvalidArgumentException('minLength must be >= 0.');
         }
 
-        return $this->add('min_length', static fn (mixed $v): bool => is_string($v) && mb_strlen($v) >= $min, $message, params: ['min' => $min]);
+        return $this->add(
+            'min_length',
+            static fn (mixed $v): bool => is_string($v) && mb_strlen($v) >= $min,
+            $message,
+            params: ['min' => $min],
+        );
     }
 
     public function maxLength(int $max, string $message = 'is too long.'): self
@@ -68,27 +97,52 @@ final class FieldRules
             throw new \InvalidArgumentException('maxLength must be >= 1.');
         }
 
-        return $this->add('max_length', static fn (mixed $v): bool => is_string($v) && mb_strlen($v) <= $max, $message, params: ['max' => $max]);
+        return $this->add(
+            'max_length',
+            static fn (mixed $v): bool => is_string($v) && mb_strlen($v) <= $max,
+            $message,
+            params: ['max' => $max],
+        );
     }
 
     public function min(float|int $bound, string $message = 'is too small.'): self
     {
-        return $this->add('min', static fn (mixed $v): bool => is_numeric($v) && (float) $v >= $bound, $message, params: ['bound' => $bound]);
+        return $this->add(
+            'min',
+            static fn (mixed $v): bool => is_numeric($v) && (float) $v >= $bound,
+            $message,
+            params: ['bound' => $bound],
+        );
     }
 
     public function max(float|int $bound, string $message = 'is too large.'): self
     {
-        return $this->add('max', static fn (mixed $v): bool => is_numeric($v) && (float) $v <= $bound, $message, params: ['bound' => $bound]);
+        return $this->add(
+            'max',
+            static fn (mixed $v): bool => is_numeric($v) && (float) $v <= $bound,
+            $message,
+            params: ['bound' => $bound],
+        );
     }
 
     public function email(string $message = 'is not a valid email address.'): self
     {
-        return $this->add('email', static fn (mixed $v): bool => is_string($v) && filter_var($v, FILTER_VALIDATE_EMAIL) !== false, $message, params: ['format' => 'email']);
+        return $this->add(
+            'email',
+            static fn (mixed $v): bool => is_string($v) && filter_var($v, FILTER_VALIDATE_EMAIL) !== false,
+            $message,
+            params: ['format' => 'email'],
+        );
     }
 
     public function uuid(string $message = 'is not a valid UUID.'): self
     {
-        return $this->add('uuid', static fn (mixed $v): bool => is_string($v) && preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/Di', $v) === 1, $message, params: ['format' => 'uuid']);
+        return $this->add(
+            'uuid',
+            static fn (mixed $v): bool => is_string($v) && preg_match(self::UUID_PATTERN, $v) === 1,
+            $message,
+            params: ['format' => 'uuid'],
+        );
     }
 
     /** @param list<int|string> $allowed */
@@ -100,7 +154,12 @@ final class FieldRules
             }
         }
 
-        return $this->add('in', static fn (mixed $v): bool => in_array($v, $allowed, true), $message, params: ['allowed' => $allowed]);
+        return $this->add(
+            'in',
+            static fn (mixed $v): bool => in_array($v, $allowed, true),
+            $message,
+            params: ['allowed' => $allowed],
+        );
     }
 
     public function pattern(string $regex, string $message = 'does not match the required format.'): self
@@ -169,7 +228,11 @@ final class FieldRules
             }
             $passed = ($rule['check'])($value);
             if ($passed !== true) {
-                $errors[] = new ValidationError($this->field, "Field '{$this->field}' {$rule['message']}", $rule['rule']);
+                $errors[] = new ValidationError(
+                    $this->field,
+                    "Field '{$this->field}' {$rule['message']}",
+                    $rule['rule'],
+                );
             }
         }
 
@@ -179,9 +242,22 @@ final class FieldRules
     /**
      * @param array<string, mixed> $params
      */
-    private function add(string $rule, callable $check, string $message, bool $skipNull = true, bool $skipEmpty = true, array $params = []): self
-    {
-        $this->rules[] = ['rule' => $rule, 'params' => $params, 'check' => $check, 'message' => $message, 'skipNull' => $skipNull, 'skipEmpty' => $skipEmpty];
+    private function add(
+        string $rule,
+        callable $check,
+        string $message,
+        bool $skipNull = true,
+        bool $skipEmpty = true,
+        array $params = [],
+    ): self {
+        $this->rules[] = [
+            'rule' => $rule,
+            'params' => $params,
+            'check' => $check,
+            'message' => $message,
+            'skipNull' => $skipNull,
+            'skipEmpty' => $skipEmpty,
+        ];
 
         return $this;
     }

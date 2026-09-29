@@ -25,7 +25,11 @@ final class JsonSpecificationSerializer
         try {
             return json_encode($spec, $flags, 512);
         } catch (\JsonException $exception) {
-            throw new SpecificationException('Failed to serialize specification to JSON: ' . $exception->getMessage(), $exception->getCode(), previous: $exception);
+            throw new SpecificationException(
+                'Failed to serialize specification to JSON: ' . $exception->getMessage(),
+                $exception->getCode(),
+                previous: $exception,
+            );
         }
     }
 
@@ -37,7 +41,11 @@ final class JsonSpecificationSerializer
         try {
             $decoded = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
         } catch (\JsonException $exception) {
-            throw new SpecificationException('Invalid JSON specification: ' . $exception->getMessage(), $exception->getCode(), previous: $exception);
+            throw new SpecificationException(
+                'Invalid JSON specification: ' . $exception->getMessage(),
+                $exception->getCode(),
+                previous: $exception,
+            );
         }
         if (!is_array($decoded)) {
             throw new SpecificationException('A specification document must deserialize to an object/array.');

@@ -8,7 +8,7 @@ declare(strict_types=1);
  * hexagonal refactor (move-only, no behavioural changes).
  *
  * Issue #36 exit ramp: relocated Application -> Domain with the same
- * FQN and namespace (classmap + PSR-4 multi-directory both resolve it),
+ * FQCN and namespace (classmap + PSR-4 multi-directory both resolve it),
  * so every consumer — the Domain security policy aggregator
  * (SecurityPolicy, same namespace) and the middleware origin checks —
  * is untouched. The class is a pure origin-normalisation policy helper:
@@ -23,6 +23,12 @@ use Zef\Framework\Exception\InvalidConfigurationException;
 
 final class OriginPolicy
 {
+    /** Single DNS label per RFC 1123: alphanumeric edges, inner hyphens. */
+    private const string HOST_LABEL = '[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?';
+
+    private const string HOST_NAME_PATTERN = '/^(?=.{1,253}$)' . self::HOST_LABEL
+        . '(?:\.' . self::HOST_LABEL . ')*$/';
+
     /** @param list<string> $allowedOrigins */
     public static function assertAllowed(?string $origin, array $allowedOrigins): void
     {
@@ -44,45 +50,78 @@ final class OriginPolicy
         if (preg_match('/[\r\n]/', $origin) === 1) {
             throw new \InvalidArgumentException('Malformed Origin header.');
         }
-        $parts = parse_url($origin);
-        if (
-            $parts === false
-            || !isset($parts['scheme'], $parts['host'])
-            || isset($parts['user'], $parts['pass'])
-            || isset($parts['query'])
-            || isset($parts['fragment'])
-            || (isset($parts['path']) && $parts['path'] !== '')
-        ) {
-            throw new \InvalidArgumentException('Malformed Origin header.');
-        }
-        $scheme = strtolower((string) $parts['scheme']);
-        // parse_url keeps IPv6 hosts bracketed ('[::1]'); strip them so
-        // the IP / hostname grammar below sees the bare address.
-        $host = strtolower((string) $parts['host']);
-        if (str_starts_with($host, '[') && str_ends_with($host, ']')) {
-            $host = substr($host, 1, -1);
-        }
-        $port = isset($parts['port']) ? (int) $parts['port'] : null;
+        [$scheme, $host, $port] = self::parseOrigin($origin);
         if (!in_array($scheme, ['http', 'https'], true)) {
             throw new \InvalidArgumentException('Unsupported Origin scheme.');
         }
-        if (
-            filter_var($host, FILTER_VALIDATE_IP) === false
-            && preg_match(
-                '/^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)(?:\.(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?))*$/',
-                $host,
-            ) !== 1
-        ) {
-            throw new \InvalidArgumentException('Malformed Origin host.');
-        }
-        if ($port !== null && $port < 1) {
-            throw new \InvalidArgumentException('Malformed Origin port.');
-        }
-        if (($scheme === 'http' && $port === 80) || ($scheme === 'https' && $port === 443)) {
-            $port = null;
-        }
+        $host = self::normalizeIpv6Host($host);
+        self::assertHostGrammar($host);
+        $port = self::normalizePort($port, $scheme);
 
         return $scheme . '://' . (str_contains($host, ':') ? '[' . $host . ']' : $host)
             . ($port === null ? '' : ':' . $port);
+    }
+
+    /**
+     * Parse the Origin grammar: scheme + host + optional port only —
+     * credentials, query, fragment and path are all malformed here.
+     *
+     * @return array{string, string, null|int} [lowercase scheme, lowercase host, port]
+     */
+    private static function parseOrigin(string $origin): array
+    {
+        $parts = parse_url($origin);
+        $hasCredentials = isset($parts['user'], $parts['pass']);
+        $hasExtraComponents = isset($parts['query'])
+            || isset($parts['fragment'])
+            || (isset($parts['path']) && $parts['path'] !== '');
+        if (
+            $parts === false
+            || !isset($parts['scheme'], $parts['host'])
+            || $hasCredentials
+            || $hasExtraComponents
+        ) {
+            throw new \InvalidArgumentException('Malformed Origin header.');
+        }
+
+        return [
+            strtolower((string) $parts['scheme']),
+            strtolower((string) $parts['host']),
+            isset($parts['port']) ? (int) $parts['port'] : null,
+        ];
+    }
+
+    private static function normalizeIpv6Host(string $host): string
+    {
+        // parse_url keeps IPv6 hosts bracketed ('[::1]'); strip them so the
+        // IP / hostname grammar below sees the bare address.
+        if (str_starts_with($host, '[') && str_ends_with($host, ']')) {
+            return substr($host, 1, -1);
+        }
+
+        return $host;
+    }
+
+    private static function assertHostGrammar(string $host): void
+    {
+        $isValidIp = filter_var($host, FILTER_VALIDATE_IP) !== false;
+        if (!$isValidIp && preg_match(self::HOST_NAME_PATTERN, $host) !== 1) {
+            throw new \InvalidArgumentException('Malformed Origin host.');
+        }
+    }
+
+    private static function normalizePort(?int $port, string $scheme): ?int
+    {
+        if ($port !== null && $port < 1) {
+            throw new \InvalidArgumentException('Malformed Origin port.');
+        }
+
+        // A port equal to the scheme's default is indistinguishable from
+        // no port at all per PSR-7 "SHOULD omit".
+        return match (true) {
+            $scheme === 'http' && $port === 80 => null,
+            $scheme === 'https' && $port === 443 => null,
+            default => $port,
+        };
     }
 }

@@ -43,12 +43,12 @@ final readonly class FilterCondition
         if (!in_array($this->op, self::OPS, true)) {
             throw new \InvalidArgumentException("Unknown filter operator '{$this->op}'.");
         }
-        if ($this->op === self::IN) {
-            if (!is_array($this->value) || $this->value === []) {
-                throw new \InvalidArgumentException("Filter operator 'in' requires a non-empty list of values.");
-            }
-        } elseif (is_array($this->value)) {
+        if ($this->op === self::IN && (!is_array($this->value) || $this->value === [])) {
+            throw new \InvalidArgumentException("Filter operator 'in' requires a non-empty list of values.");
+        }
+        if ($this->op !== self::IN && is_array($this->value)) {
             throw new \InvalidArgumentException("Filter operator '{$this->op}' requires a scalar value.");
         }
+        // scalar value with a scalar operator: the valid combination
     }
 }

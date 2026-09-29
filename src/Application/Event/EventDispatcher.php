@@ -39,11 +39,13 @@ final class EventDispatcher implements EventBusInterface, ListenerProviderInterf
         if ($eventClass === '' || (!class_exists($eventClass) && !interface_exists($eventClass))) {
             throw new \InvalidArgumentException("Unknown event class '{$eventClass}'.");
         }
+        $registrationSequence = $this->sequence;
+        ++$this->sequence;
         $this->listeners[$eventClass][] = new EventRegistration(
             $eventClass,
             $listener,
             $priority,
-            $this->sequence++,
+            $registrationSequence,
         );
         $this->resolved = [];
     }

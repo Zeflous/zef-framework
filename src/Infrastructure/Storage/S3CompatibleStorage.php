@@ -38,7 +38,7 @@ final readonly class S3CompatibleStorage implements ObjectStorageInterface
         if (preg_match(self::BUCKET_PATTERN, $bucket) !== 1) {
             throw new \InvalidArgumentException('Bucket name must be a valid S3 bucket (3..63 lowercase chars).');
         }
-        if ($region === '' || strlen($region) > 64 || preg_match('/\s/', $region) === 1) {
+        if ($region === '' || strlen($region) > 64 || preg_match('/\s/u', $region) === 1) {
             throw new \InvalidArgumentException('Region must be 1..64 characters without whitespace.');
         }
         if ($accessKeyId === '' || strlen($accessKeyId) > 256) {
@@ -157,7 +157,7 @@ final readonly class S3CompatibleStorage implements ObjectStorageInterface
             }
             $response = $this->signed('GET', '', $query, '');
             $this->assertSuccess($response, 'LIST objects');
-            $pageKeys = $this->parseListResponse($response);
+            $pageKeys = S3ListingParser::parse($response);
             foreach ($pageKeys['keys'] as $key) {
                 $keys[] = $key;
             }
@@ -213,49 +213,12 @@ final readonly class S3CompatibleStorage implements ObjectStorageInterface
         if ($response->status >= 200 && $response->status < 300) {
             return;
         }
-        $snippet = trim((string) preg_replace('/\s+/', ' ', substr($response->body, 0, 256)));
+        $collapsed = preg_replace('/\s+/u', ' ', substr($response->body, 0, 256));
+        $snippet = trim($collapsed ?? '');
 
         throw new StorageException(
             $operation . ' failed with HTTP status ' . $response->status
             . ($snippet === '' ? '.' : ': ' . $snippet),
         );
-    }
-
-    /**
-     * Extract the object keys and the continuation marker from a
-     * ListObjectsV2 document (namespace-aware: MinIO/Ceph emit the
-     * 2006-03-01 default xmlns, AWS omits it). The token is non-null exactly
-     * when the page reports IsTruncated=true.
-     *
-     * @return array{keys: list<string>, token: null|string}
-     */
-    private function parseListResponse(S3HttpResponse $response): array
-    {
-        if (!\function_exists('simplexml_load_string')) {
-            throw new StorageException('The SimpleXML extension is required to parse S3 listing responses.');
-        }
-        $xml = @simplexml_load_string($response->body);
-        if ($xml === false) {
-            throw new StorageException('S3 listing response is not valid XML.');
-        }
-        $namespaces = $xml->getDocNamespaces();
-        $root = isset($namespaces['']) && (string) $namespaces[''] !== ''
-            ? $xml->children((string) $namespaces[''])
-            : $xml;
-        $keys = [];
-        foreach ($root->Contents as $entry) {
-            $keys[] = (string) $entry->Key;
-        }
-        if (strtolower(trim((string) $root->IsTruncated)) !== 'true') {
-            return ['keys' => $keys, 'token' => null];
-        }
-        $token = trim((string) $root->NextContinuationToken);
-        if ($token === '') {
-            // Truncated without a token is a malformed V2 document: fail
-            // loudly rather than silently reporting a partial page (P-9).
-            throw new StorageException('S3 listing response is truncated without a continuation token.');
-        }
-
-        return ['keys' => $keys, 'token' => $token];
     }
 }

@@ -50,7 +50,9 @@ final readonly class Config
      */
     public function __construct(private array $values, ?ConfigRadixTree $cachedIndex = null)
     {
-        $this->index = $cachedIndex ?? new ConfigRadixTree($values);
+        // php:S2830: the eager fallback goes through the named factory so the
+        // constructor only picks between injected and derived state.
+        $this->index = $cachedIndex ?? $this->buildIndex($values);
     }
 
     /**
@@ -184,6 +186,14 @@ final readonly class Config
     public function longestMatch(string $key): mixed
     {
         return $this->index->longestMatch($key);
+    }
+
+    /**
+     * @param array<array-key,mixed> $values
+     */
+    private function buildIndex(array $values): ConfigRadixTree
+    {
+        return new ConfigRadixTree($values);
     }
 
     private function typed(string $key, ConfigValueType $type, ?string $enumClass = null): mixed

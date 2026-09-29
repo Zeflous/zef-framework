@@ -58,7 +58,7 @@ final readonly class PdoJobIdempotencyStore implements JobIdempotencyStoreInterf
         string $table = 'zef_job_idempotency',
         ?\Closure $clock = null,
     ) {
-        new QueryBuilder()->quoteIdentifier($table, 'table');
+        $this->assertValidTableName($table);
         $this->table = $table;
         $this->clock = $clock ?? time(...);
     }
@@ -68,13 +68,12 @@ final readonly class PdoJobIdempotencyStore implements JobIdempotencyStoreInterf
      */
     public function createSchema(): void
     {
-        $this->connection->execute(SqlQuery::raw(
-            'CREATE TABLE IF NOT EXISTS "' . $this->table . '" ('
-            . '"idem_key" VARCHAR(255) NOT NULL, '
-            . '"value" TEXT NOT NULL, '
-            . '"expires_at" BIGINT NOT NULL, '
-            . 'CONSTRAINT "uq_' . $this->table . '_key" UNIQUE ("idem_key"))',
-        ));
+        $this->connection->execute(SqlQuery::raw(implode('', [
+            'CREATE TABLE IF NOT EXISTS "' . $this->table . '" ("idem_key" VARCHAR(255) NOT NULL, ',
+            '"value" TEXT NOT NULL, ',
+            '"expires_at" BIGINT NOT NULL, ',
+            'CONSTRAINT "uq_' . $this->table . '_key" UNIQUE ("idem_key"))',
+        ])));
     }
 
     #[\Override]
@@ -123,6 +122,16 @@ final readonly class PdoJobIdempotencyStore implements JobIdempotencyStoreInterf
     }
 
     /**
+     * Reject malformed table names early: the QueryBuilder's identifier
+     * quoting doubles as the grammar check (it throws on invalid
+     * identifiers), keeping the store's SQL fully quoted from the start.
+     */
+    private function assertValidTableName(string $table): void
+    {
+        new QueryBuilder()->quoteIdentifier($table, 'table');
+    }
+
+    /**
      * Live cached record for $key, or null when absent/expired.
      * The record wrapper distinguishes a stored JSON null from a cache miss.
      *
@@ -150,18 +159,26 @@ final readonly class PdoJobIdempotencyStore implements JobIdempotencyStoreInterf
         try {
             return ['value' => json_decode($this->str($row['value'] ?? null), true, 512, \JSON_THROW_ON_ERROR)];
         } catch (\JsonException $error) {
-            throw new \RuntimeException('Stored idempotency value is not valid JSON.', 0, $error);
+            throw JobIdempotencyException::corruptValue($error);
         }
     }
 
     private function str(mixed $value): string
     {
-        return is_string($value) ? $value : (is_scalar($value) ? (string) $value : '');
+        if (is_string($value)) {
+            return $value;
+        }
+
+        return is_scalar($value) ? (string) $value : '';
     }
 
     private function intVal(mixed $value): int
     {
-        return is_int($value) ? $value : (is_numeric($value) ? (int) $value : 0);
+        if (is_int($value)) {
+            return $value;
+        }
+
+        return is_numeric($value) ? (int) $value : 0;
     }
 
     private function sweep(string $key): void

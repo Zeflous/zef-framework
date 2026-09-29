@@ -12,6 +12,7 @@ use Zef\Framework\Container\Autowiring\ReflectionMetadataExtractor;
 use Zef\Framework\Container\CompiledContainerPlan;
 use Zef\Framework\Container\Container;
 use Zef\Framework\Container\ContainerCompiler;
+use Zef\Framework\Container\NamespaceLayer;
 use Zef\Framework\Container\NamespaceRadixTree;
 use Zef\Framework\Container\RequestScope;
 use Zef\Framework\Container\ServiceDefinition;
@@ -433,10 +434,12 @@ final class EdgeMatrixF10ContainerTest extends TestCase
 
     private function reflectTree(Container $container): NamespaceRadixTree
     {
-        $prop = new \ReflectionProperty(Container::class, 'namespaceTree');
+        // php:S2042 decomposition moved the tree into the NamespaceLayer collaborator.
+        $layer = new \ReflectionProperty(Container::class, 'namespaces');
+        $tree = new \ReflectionProperty(NamespaceLayer::class, 'namespaceTree');
 
         // @phpstan-ignore-next-line — data refleksi/JSON tak-tiped disengaja di kurikulum edge-case
-        return $prop->getValue($container);
+        return $tree->getValue($layer->getValue($container));
     }
 }
 

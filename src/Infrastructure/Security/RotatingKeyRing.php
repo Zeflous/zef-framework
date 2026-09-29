@@ -48,7 +48,7 @@ final class RotatingKeyRing implements EncryptionInterface
         private readonly int $activeIndex = 0,
     ) {
         $keys = array_values($keys);
-        if (count($keys) < 1) {
+        if (count($keys) < 1) { // not empty(): phpstan-strict-rules forbids it
             throw new \InvalidArgumentException('RotatingKeyRing requires at least one key.');
         }
         if (count($keys) > self::MAX_KEYS) {
@@ -99,6 +99,10 @@ final class RotatingKeyRing implements EncryptionInterface
             }
         }
 
-        throw new \RuntimeException('Decryption failed with any of the ' . $this->keyCount . ' ring key(s).' . ($lastError instanceof \RuntimeException ? ' Last error: ' . $lastError->getMessage() : ''), previous: $lastError);
+        throw new DecryptionException(
+            'Decryption failed with any of the ' . $this->keyCount . ' ring key(s).'
+            . ($lastError instanceof \RuntimeException ? ' Last error: ' . $lastError->getMessage() : ''),
+            previous: $lastError,
+        );
     }
 }

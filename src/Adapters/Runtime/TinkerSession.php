@@ -115,14 +115,13 @@ final class TinkerSession
 
     private function render(mixed $result): string
     {
-        if ($result === null) {
-            return 'null';
-        }
-
-        try {
-            $exported = var_export($result, true);
-        } catch (\Throwable) {
-            return '<unprintable:' . get_debug_type($result) . '>';
+        $exported = 'null';
+        if ($result !== null) {
+            try {
+                $exported = var_export($result, true);
+            } catch (\Throwable) {
+                $exported = '<unprintable:' . get_debug_type($result) . '>';
+            }
         }
         if (strlen($exported) > $this->maxOutputLength) {
             return substr($exported, 0, $this->maxOutputLength) . '…';

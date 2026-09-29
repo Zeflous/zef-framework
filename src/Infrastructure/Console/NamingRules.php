@@ -33,7 +33,7 @@ final class NamingRules
 
     public static function className(?string $raw, string $label = 'class name'): string
     {
-        if ($raw === null || preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $raw) !== 1) {
+        if ($raw === null || preg_match('/^[A-Za-z_]\w*$/', $raw) !== 1) {
             // The `?? ''` is a no-op for string rendering (null concat == '');
             // kept for explicitness. @infection-ignore-all
             throw new InvalidNameException(

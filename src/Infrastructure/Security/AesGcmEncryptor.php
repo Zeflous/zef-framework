@@ -37,7 +37,9 @@ final readonly class AesGcmEncryptor implements EncryptionInterface
     {
         $decoded = $this->decodeKey($key);
         if (strlen($decoded) !== 32) {
-            throw new \InvalidArgumentException('Encryption key must decode to exactly 32 bytes (AES-256), got ' . strlen($decoded) . '.');
+            throw new \InvalidArgumentException(
+                'Encryption key must decode to exactly 32 bytes (AES-256), got ' . strlen($decoded) . '.'
+            );
         }
         $this->key = $decoded;
     }
@@ -58,7 +60,7 @@ final readonly class AesGcmEncryptor implements EncryptionInterface
             self::TAG_BYTES,
         );
         if ($cipherText === false || $tag === '') {
-            throw new \RuntimeException('Encryption failed: ' . openssl_error_string());
+            throw new EncryptionException('Encryption failed: ' . openssl_error_string());
         }
 
         return self::VERSION
@@ -72,13 +74,13 @@ final readonly class AesGcmEncryptor implements EncryptionInterface
     {
         $parts = explode('.', $payload);
         if (count($parts) !== 4 || $parts[0] !== self::VERSION) {
-            throw new \RuntimeException('Malformed encryption payload (unknown format or version).');
+            throw new EncryptionException('Malformed encryption payload (unknown format or version).');
         }
         $iv = $this->b64urlDecode($parts[1]);
         $tag = $this->b64urlDecode($parts[2]);
         $cipherText = $this->b64urlDecode($parts[3]);
         if (strlen($iv) !== self::IV_BYTES || strlen($tag) !== self::TAG_BYTES) {
-            throw new \RuntimeException('Malformed encryption payload (IV/tag length).');
+            throw new EncryptionException('Malformed encryption payload (IV/tag length).');
         }
         $plain = openssl_decrypt(
             $cipherText,
@@ -89,7 +91,7 @@ final readonly class AesGcmEncryptor implements EncryptionInterface
             $tag,
         );
         if ($plain === false) {
-            throw new \RuntimeException('Decryption failed (tampered data or wrong key).');
+            throw new EncryptionException('Decryption failed (tampered data or wrong key).');
         }
 
         return $plain;
@@ -97,23 +99,26 @@ final readonly class AesGcmEncryptor implements EncryptionInterface
 
     private function decodeKey(string $key): string
     {
-        if ($key === '') {
-            return '';
-        }
-        if (preg_match('/^[0-9a-f]{64}$/i', $key) === 1) {
-            $raw = hex2bin($key);
+        return match (true) {
+            $key === '' => '',
+            preg_match('/^[0-9a-f]{64}$/i', $key) === 1 => $this->decodeHexKey($key),
+            preg_match('/^[A-Za-z0-9+\/=_-]{43,44}$/', $key) === 1 => $this->decodeBase64Key($key) ?? $key,
+            default => $key, // raw bytes
+        };
+    }
 
-            return $raw === false ? $key : $raw;
-        }
-        // base64 (standard or url-safe) attempt: only when it round-trips.
-        if (preg_match('/^[A-Za-z0-9+\/=_-]{43,44}$/', $key) === 1) {
-            $raw = base64_decode(strtr($key, '-_', '+/'), true);
-            if ($raw !== false) {
-                return $raw;
-            }
-        }
+    private function decodeHexKey(string $key): string
+    {
+        $raw = hex2bin($key);
 
-        return $key; // raw bytes
+        return $raw === false ? $key : $raw;
+    }
+
+    private function decodeBase64Key(string $key): ?string
+    {
+        $raw = base64_decode(strtr($key, '-_', '+/'), true);
+
+        return $raw === false ? null : $raw;
     }
 
     private function b64url(string $raw): string

@@ -67,10 +67,9 @@ final readonly class RouteDefinition
         if (!is_string($method) || !is_string($path) || !is_string($handler)) {
             throw new \InvalidArgumentException('Route definition method, path, and handler must be strings.');
         }
-        if (
-            (!is_int($priority) && !is_float($priority) && !is_string($priority))
-            || (is_string($priority) && !is_numeric($priority))
-        ) {
+        $isNonNumericPriority = !is_int($priority) && !is_float($priority) && !is_string($priority);
+        $isUnparsableStringPriority = is_string($priority) && !is_numeric($priority);
+        if ($isNonNumericPriority || $isUnparsableStringPriority) {
             throw new \InvalidArgumentException('Route definition priority must be numeric.');
         }
         $name = $config['name'] ?? null;

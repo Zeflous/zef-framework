@@ -33,18 +33,22 @@ final class RouteConstraintValidator
 
     public function addCustom(string $name, string $regex): void
     {
-        if ($name === '' || preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $name) !== 1) {
+        if ($name === '' || preg_match('/^[A-Za-z_]\w*$/', $name) !== 1) {
             throw new InvalidConfigurationException("Invalid route constraint name '{$name}'.");
         }
         if ($regex === '' || strlen($regex) > 2048) {
-            throw new InvalidConfigurationException("Invalid route constraint regex '{$name}': pattern length must be between 1 and 2048 bytes.");
+            throw new InvalidConfigurationException(
+                "Invalid route constraint regex '{$name}': pattern length must be between 1 and 2048 bytes.",
+            );
         }
         if (preg_match('/\((?:\?:|\?>|\?<[^>]+>)?[^)]*[+*][^)]*\)[+*](?:[?+])?/', $regex) === 1) {
-            throw new InvalidConfigurationException("Invalid route constraint regex '{$name}': nested quantified groups are not permitted by the ReDoS safety policy.");
+            $reason = 'nested quantified groups are not permitted by the ReDoS safety policy.';
+
+            throw new InvalidConfigurationException("Invalid route constraint regex '{$name}': {$reason}");
         }
         set_error_handler(
             static function (int $severity, string $message, string $file, int $line): bool {
-                throw new \ErrorException($message, 0, $severity, $file, $line);
+                throw new RouteConstraintPatternException($message, 0, $severity, $file, $line);
             }
         );
 
@@ -52,15 +56,25 @@ final class RouteConstraintValidator
             try {
                 $result = preg_match($regex, '');
             } catch (\ValueError $e) {
-                throw new InvalidConfigurationException("Invalid route constraint regex '{$name}': {$e->getMessage()}", 0, $e);
+                throw new InvalidConfigurationException(
+                    "Invalid route constraint regex '{$name}': {$e->getMessage()}",
+                    0,
+                    $e,
+                );
             }
         } catch (\ErrorException $e) {
-            throw new InvalidConfigurationException("Invalid route constraint regex '{$name}': {$e->getMessage()}", 0, $e);
+            throw new InvalidConfigurationException(
+                "Invalid route constraint regex '{$name}': {$e->getMessage()}",
+                0,
+                $e,
+            );
         } finally {
             restore_error_handler();
         }
         if ($result === false) {
-            throw new InvalidConfigurationException("Invalid route constraint regex '{$name}': " . preg_last_error_msg());
+            throw new InvalidConfigurationException(
+                "Invalid route constraint regex '{$name}': " . preg_last_error_msg(),
+            );
         }
         $this->custom[$name] = $regex;
         unset($this->compiled[$name]);
@@ -76,7 +90,11 @@ final class RouteConstraintValidator
         } catch (InvalidConfigurationException $e) {
             throw $e;
         } catch (\Throwable $e) {
-            throw new InvalidConfigurationException("Route constraint '{$type}' failed during evaluation: {$e->getMessage()}", 0, $e);
+            throw new InvalidConfigurationException(
+                "Route constraint '{$type}' failed during evaluation: {$e->getMessage()}",
+                0,
+                $e,
+            );
         }
     }
 
@@ -113,8 +131,12 @@ final class RouteConstraintValidator
                 'int' => static fn (string $v): bool => $v !== '' && preg_match('/^\d+$/D', $v) === 1,
                 'uint' => static fn (string $v): bool => $v !== '' && $v[0] !== '0' && preg_match('/^\d+$/D', $v) === 1,
                 'alpha' => static fn (string $v): bool => $v !== '' && preg_match('/^[a-zA-Z]+$/D', $v) === 1,
-                'slug' => static fn (string $v): bool => $v !== '' && preg_match('/^[a-z0-9]+(?:-[a-z0-9]+)*$/D', $v) === 1,
-                'uuid' => static fn (string $v): bool => preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/Di', $v) === 1,
+                'slug' => static fn (string $v): bool => $v !== ''
+                    && preg_match('/^[a-z0-9]+(?:-[a-z0-9]+)*$/D', $v) === 1,
+                'uuid' => static fn (string $v): bool => preg_match(
+                    '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/Di',
+                    $v,
+                ) === 1,
                 'hex' => static fn (string $v): bool => $v !== '' && preg_match('/^[0-9a-f]+$/Di', $v) === 1,
                 default => throw new InvalidConfigurationException("Unknown route constraint type '{$type}'."),
             };
@@ -124,7 +146,9 @@ final class RouteConstraintValidator
         return static function (string $value) use ($regex, $type): bool {
             $matched = preg_match($regex, $value);
             if ($matched === false) {
-                throw new InvalidConfigurationException("Route constraint '{$type}' failed during evaluation: " . preg_last_error_msg());
+                throw new InvalidConfigurationException(
+                    "Route constraint '{$type}' failed during evaluation: " . preg_last_error_msg(),
+                );
             }
 
             return $matched === 1;

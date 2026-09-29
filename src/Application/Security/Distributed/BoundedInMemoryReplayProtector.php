@@ -32,12 +32,27 @@ final class BoundedInMemoryReplayProtector implements ReplayProtectorInterface
     #[\Override]
     public function check(?string $replayId, int $nowMs): ReplayResult
     {
+        $decision = $this->shapeDecision($replayId)
+            ?? $this->admissionDecision((string) $replayId, $nowMs);
+
+        return new ReplayResult($decision);
+    }
+
+    /** Structural fast paths: absent id is not checkable, a malformed id is rejected outright. */
+    private function shapeDecision(?string $replayId): ?ReplayDecision
+    {
         if ($replayId === null) {
-            return new ReplayResult(ReplayDecision::NOT_REQUIRED);
+            return ReplayDecision::NOT_REQUIRED;
         }
         if ($replayId === '' || strlen($replayId) > SecurityRequest::MAX_REPLAY_ID_BYTES) {
-            return new ReplayResult(ReplayDecision::REJECTED);
+            return ReplayDecision::REJECTED;
         }
+
+        return null;
+    }
+
+    private function admissionDecision(string $replayId, int $nowMs): ReplayDecision
+    {
         $cutoff = $nowMs - $this->windowMs;
         // N-6 (issue #176): the stale sweep is lazy — it only runs under
         // capacity pressure, so the steady-state check is O(1) instead of
@@ -48,24 +63,31 @@ final class BoundedInMemoryReplayProtector implements ReplayProtectorInterface
         // capacity. The array stays bounded by $capacity either way,
         // because admission requires a free slot.
         $seenAt = $this->seen[$replayId] ?? null;
+        if ($seenAt !== null && $seenAt >= $cutoff) {
+            return ReplayDecision::DUPLICATE;
+        }
         if ($seenAt !== null) {
-            if ($seenAt >= $cutoff) {
-                return new ReplayResult(ReplayDecision::DUPLICATE);
-            }
             unset($this->seen[$replayId]);
         }
-        if (count($this->seen) >= $this->capacity) {
-            foreach ($this->seen as $id => $at) {
-                if ($at < $cutoff) {
-                    unset($this->seen[$id]);
-                }
-            }
-            if (count($this->seen) >= $this->capacity) {
-                return new ReplayResult(ReplayDecision::UNAVAILABLE);
-            }
+        if (!$this->hasFreeSlot($cutoff)) {
+            return ReplayDecision::UNAVAILABLE;
         }
         $this->seen[$replayId] = $nowMs;
 
-        return new ReplayResult(ReplayDecision::ACCEPT);
+        return ReplayDecision::ACCEPT;
+    }
+
+    private function hasFreeSlot(int $cutoff): bool
+    {
+        if (count($this->seen) < $this->capacity) {
+            return true;
+        }
+        foreach ($this->seen as $id => $at) {
+            if ($at < $cutoff) {
+                unset($this->seen[$id]);
+            }
+        }
+
+        return count($this->seen) < $this->capacity;
     }
 }

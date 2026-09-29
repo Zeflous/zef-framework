@@ -46,7 +46,11 @@ use Zef\Framework\Exception\InvalidConfigurationException;
  */
 final class ConfigMigrator
 {
-    /** @var array<int, list<callable(array<array-key,mixed>):array<array-key,mixed>>> target version => ordered steps */
+    private const string DOWNGRADE_NOT_SUPPORTED = <<<'MSG'
+        Config data is schema version %d, newer than the target version %d — downgrade migration is not supported.
+        MSG;
+
+    /** @var array<int, list<callable(array<array-key,mixed>):array<array-key,mixed>>> steps per target version */
     private array $steps = [];
 
     /**
@@ -84,18 +88,17 @@ final class ConfigMigrator
             );
         }
         if ($toVersion < $fromVersion) {
-            throw new InvalidConfigurationException(
-                "Config data is schema version {$fromVersion}, newer than the target version "
-                . "{$toVersion} — downgrade migration is not supported."
-            );
+            throw $this->downgradeNotSupported($fromVersion, $toVersion);
         }
         for ($version = $fromVersion; $version < $toVersion; ++$version) {
             $target = $version + 1;
             if (!isset($this->steps[$target])) {
-                throw new InvalidConfigurationException(
-                    "No registered config migration step to schema version {$target} "
-                    . "(data is v{$fromVersion}, schema is v{$toVersion})."
-                );
+                throw new InvalidConfigurationException(sprintf(
+                    'No registered config migration step to schema version %d (data is v%d, schema is v%d).',
+                    $target,
+                    $fromVersion,
+                    $toVersion,
+                ));
             }
             foreach ($this->steps[$target] as $step) {
                 $values = $step($values);
@@ -119,5 +122,14 @@ final class ConfigMigrator
     public function stepCounts(): array
     {
         return array_map(count(...), $this->steps);
+    }
+
+    private function downgradeNotSupported(int $fromVersion, int $toVersion): InvalidConfigurationException
+    {
+        return new InvalidConfigurationException(sprintf(
+            self::DOWNGRADE_NOT_SUPPORTED,
+            $fromVersion,
+            $toVersion,
+        ));
     }
 }

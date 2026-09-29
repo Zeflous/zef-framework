@@ -22,6 +22,11 @@ final class YamlSpecificationSerializer
 {
     private const int MAX_DEPTH = 512;
 
+    private const array RESERVED_WORDS = [
+        'null', '~', 'true', 'false', 'yes', 'no', 'on', 'off',
+        'y', 'n', 'nan', '.inf', '-.inf',
+    ];
+
     /**
      * @param array<string, mixed> $spec
      */
@@ -41,37 +46,54 @@ final class YamlSpecificationSerializer
     private function emitArray(array $value, int $depth): array
     {
         if ($depth > self::MAX_DEPTH) {
-            throw new SpecificationException('YAML serialization exceeded the maximum nesting depth of ' . self::MAX_DEPTH . '.');
+            throw new SpecificationException(
+                'YAML serialization exceeded the maximum nesting depth of ' . self::MAX_DEPTH . '.',
+            );
         }
 
         $lines = [];
         foreach ($value as $key => $item) {
-            $keyLine = $this->emitKey($key) . ':';
-            if (is_array($item)) {
-                if ($item === []) {
-                    $lines[] = $keyLine . ' []';
+            $lines = [...$lines, ...$this->emitEntry($key, $item, $depth)];
+        }
 
-                    continue;
-                }
-                if (array_is_list($item)) {
-                    $lines[] = $keyLine;
-                    foreach ($item as $listItem) {
-                        $lines = [...$lines, ...array_map(
-                            static fn (string $line): string => '  ' . $line,
-                            $this->emitListItem($listItem, $depth),
-                        )];
-                    }
+        return $lines;
+    }
 
-                    continue;
-                }
-                $lines[] = $keyLine;
-                foreach ($this->emitArray($item, $depth + 1) as $child) {
-                    $lines[] = '  ' . $child;
-                }
+    /**
+     * YAML lines for one `key: item` mapping entry.
+     *
+     * @return list<string>
+     */
+    private function emitEntry(int|string $key, mixed $item, int $depth): array
+    {
+        $keyLine = $this->emitKey($key) . ':';
 
-                continue;
-            }
-            $lines[] = $keyLine . ' ' . $this->emitScalar($item);
+        return match (true) {
+            !is_array($item) => [$keyLine . ' ' . $this->emitScalar($item)],
+            $item === [] => [$keyLine . ' []'],
+            array_is_list($item) => [$keyLine, ...$this->emitListItems($item, $depth)],
+            default => [$keyLine, ...array_map(
+                static fn (string $child): string => '  ' . $child,
+                $this->emitArray($item, $depth + 1),
+            )],
+        };
+    }
+
+    /**
+     * Indented YAML lines for the items of a list value.
+     *
+     * @param array<array-key, mixed> $items
+     *
+     * @return list<string>
+     */
+    private function emitListItems(array $items, int $depth): array
+    {
+        $lines = [];
+        foreach ($items as $listItem) {
+            $lines = [...$lines, ...array_map(
+                static fn (string $line): string => '  ' . $line,
+                $this->emitListItem($listItem, $depth),
+            )];
         }
 
         return $lines;
@@ -116,20 +138,18 @@ final class YamlSpecificationSerializer
 
     private function emitScalar(mixed $value): string
     {
-        if ($value === null) {
-            return 'null';
-        }
-        if (is_bool($value)) {
-            return $value ? 'true' : 'false';
-        }
-        if (is_int($value) || is_float($value)) {
-            return (string) $value;
-        }
-        if (!is_string($value)) {
-            throw new SpecificationException('YAML emitter supports scalars and arrays only; got ' . get_debug_type($value) . '.');
+        if (is_string($value)) {
+            return $this->quoteString($value);
         }
 
-        return $this->quoteString($value);
+        return match (true) {
+            $value === null => 'null',
+            is_bool($value) => $value ? 'true' : 'false',
+            is_int($value), is_float($value) => (string) $value,
+            default => throw new SpecificationException(
+                'YAML emitter supports scalars and arrays only; got ' . get_debug_type($value) . '.',
+            ),
+        };
     }
 
     private function quoteString(string $value): string
@@ -153,17 +173,23 @@ final class YamlSpecificationSerializer
         if (preg_match('/^\s/u', $value) === 1 || preg_match('/\s$/u', $value) === 1) {
             return true;
         }
-        if (preg_match('/[\x00-\x1F\x7F]/', $value) === 1) {
-            return true;
-        }
-        if (is_numeric($value)) {
-            return true;
-        }
-        $lower = strtolower($value);
-        if (in_array($lower, ['null', '~', 'true', 'false', 'yes', 'no', 'on', 'off', 'y', 'n', 'nan', '.inf', '-.inf'], true)) {
+        $unstructured = preg_match('/[\x00-\x1F\x7F]/', $value) === 1
+            || is_numeric($value)
+            || $this->isReservedWord($value);
+        if ($unstructured) {
             return true;
         }
 
-        return preg_match('/^[\[\]{}#&*!|>\'%@`,:\-]/', $value) === 1 || str_contains($value, ': ') || str_contains($value, ' #') || str_contains($value, '"');
+        return preg_match('/^[\[\]{}#&*!|>\'%@`,:\-]/', $value) === 1
+            || str_contains($value, ': ')
+            || str_contains($value, ' #')
+            || str_contains($value, '"');
+    }
+
+    private function isReservedWord(string $value): bool
+    {
+        $lower = strtolower($value);
+
+        return in_array($lower, self::RESERVED_WORDS, true);
     }
 }

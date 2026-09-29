@@ -44,7 +44,7 @@ final readonly class PdoSnapshotStore implements SnapshotStoreInterface
         private ConnectionInterface $connection,
         string $table = 'zef_snapshots',
     ) {
-        new QueryBuilder()->quoteIdentifier($table, 'table');
+        $this->assertValidTable($table);
         $this->table = $table;
     }
 
@@ -53,15 +53,14 @@ final readonly class PdoSnapshotStore implements SnapshotStoreInterface
      */
     public function createSchema(): void
     {
-        $this->connection->execute(SqlQuery::raw(
-            'CREATE TABLE IF NOT EXISTS "' . $this->table . '" ('
-            . '"aggregate_type" VARCHAR(128) NOT NULL, '
-            . '"aggregate_id" VARCHAR(128) NOT NULL, '
-            . '"version" BIGINT NOT NULL, '
-            . '"state" TEXT NOT NULL, '
-            . '"created_at" BIGINT NOT NULL, '
-            . 'CONSTRAINT "uq_' . $this->table . '_identity" UNIQUE ("aggregate_type", "aggregate_id"))',
-        ));
+        $this->connection->execute(SqlQuery::raw(implode('', [
+            'CREATE TABLE IF NOT EXISTS "' . $this->table . '" ("aggregate_type" VARCHAR(128) NOT NULL, ',
+            '"aggregate_id" VARCHAR(128) NOT NULL, ',
+            '"version" BIGINT NOT NULL, ',
+            '"state" TEXT NOT NULL, ',
+            '"created_at" BIGINT NOT NULL, ',
+            'CONSTRAINT "uq_' . $this->table . '_identity" UNIQUE ("aggregate_type", "aggregate_id"))',
+        ])));
     }
 
     #[\Override]
@@ -124,6 +123,12 @@ final readonly class PdoSnapshotStore implements SnapshotStoreInterface
                 ->where('aggregate_id', '=', $aggregateId)
                 ->build(),
         ) > 0;
+    }
+
+    /** Validates $table through the shared identifier grammar (throws on bad names). */
+    private function assertValidTable(string $table): void
+    {
+        new QueryBuilder()->quoteIdentifier($table, 'table');
     }
 
     private function doSave(Snapshot $snapshot): void

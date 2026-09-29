@@ -17,6 +17,9 @@ use Zef\Framework\Exception\InvalidFactoryException;
  */
 final readonly class ServiceDefinition
 {
+    /**
+     * @param list<string> $dependencies canonical dependency ids (validated non-empty below)
+     */
     public function __construct(
         public string $id,
         public mixed $factory,
@@ -67,10 +70,15 @@ final readonly class ServiceDefinition
             throw new InvalidFactoryException("Factory for '{$id}' is invalid: tags must be an array.");
         }
 
+        // The constructor validates every dependency is a non-empty string,
+        // so the narrowed list below matches the enforced runtime shape.
+        /** @var list<string> $dependencyIds */
+        $dependencyIds = array_values($deps);
+
         return new self(
             id: $id,
             factory: $config['factory'],
-            dependencies: array_values($deps),
+            dependencies: $dependencyIds,
             module: $module,
             lifetime: $lifetime,
             shared: $config['shared'] ?? ($lifetime === ServiceLifetime::SINGLETON),

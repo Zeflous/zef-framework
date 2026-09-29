@@ -75,12 +75,14 @@ final readonly class PluginGenerator implements GeneratorInterface
                                 'lifetime' => ServiceLifetime::SINGLETON,
                             ],
                             '{$module}.handler.index' => [
-                                'factory' => static fn (ContainerInterface \$c, {$name}Service \$svc): {$name}Handler => new {$name}Handler(\$svc),
+                                'factory' => static fn (ContainerInterface \$c, {$name}Service \$svc): {$name}Handler
+                                    => new {$name}Handler(\$svc),
                                 'deps'    => ['{$module}.service.{$snake}'],
                             ],
                         ],
                         'routes' => [
-                            ['method' => 'GET', 'path' => '/{$module}', 'handler' => '{$module}.handler.index', 'priority' => 100],
+                            ['method' => 'GET', 'path' => '/{$module}',
+                            'handler' => '{$module}.handler.index', 'priority' => 100],
                         ],
                     ];
                 }

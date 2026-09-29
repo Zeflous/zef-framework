@@ -56,12 +56,13 @@ final readonly class TieredCache implements CacheInterface
     public function set(string $key, mixed $value, ?int $ttlSeconds = null): void
     {
         $this->l2->set($key, $value, $ttlSeconds);
-        $l1Ttl = $ttlSeconds;
-        if ($l1Ttl === null) {
-            $l1Ttl = $this->l1TtlSeconds;
-        } elseif ($this->l1TtlSeconds !== null) {
-            $l1Ttl = min($ttlSeconds, $this->l1TtlSeconds);
-        }
+        // Caller TTL wins when no L1 cap is configured; otherwise the
+        // promotion can never outlive the hotter tier's budget.
+        $l1Ttl = match (true) {
+            $ttlSeconds === null => $this->l1TtlSeconds,
+            $this->l1TtlSeconds !== null => min($ttlSeconds, $this->l1TtlSeconds),
+            default => $ttlSeconds,
+        };
         $this->l1->set($key, $value, $l1Ttl);
     }
 

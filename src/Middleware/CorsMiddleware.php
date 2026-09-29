@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 namespace Zef\Middleware;
 
+use Psr\Http\Message\MessageInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -56,42 +57,92 @@ final readonly class CorsMiddleware implements MiddlewareInterface
     #[\Override]
     public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
-        if ($this->allowedOrigins === []) {
-            return $handler->handle($request);
+        $preflight = $this->preflightResponse($request);
+        if ($preflight instanceof ResponseInterface) {
+            return $preflight;
         }
-        $requestOrigin = trim($request->getHeaderLine('Origin'));
-        if ($this->allowAll) {
-            $originAllowed = true;
-        } elseif ($requestOrigin === '') {
-            return $handler->handle($request);
-        } else {
-            $originAllowed = $this->originIsAllowed($requestOrigin);
-            if (!$originAllowed) {
-                if (strtoupper($request->getMethod()) === 'OPTIONS') {
-                    return new Response(204, ['Vary' => 'Origin']);
-                }
 
-                return $handler->handle($request);
-            }
+        $response = $handler->handle($request);
+        $origin = $this->negotiatedOrigin($request);
+        if ($origin === null) {
+            return $response;
         }
-        $allowOrigin = $this->allowAll ? '*' : $requestOrigin;
-        if (strtoupper($request->getMethod()) === 'OPTIONS') {
-            return new Response(204, [
-                'Access-Control-Allow-Origin' => $allowOrigin,
-                'Access-Control-Allow-Methods' => $this->allowMethods,
-                'Access-Control-Allow-Headers' => $this->allowHeaders,
-                'Access-Control-Max-Age' => '600',
-                'Vary' => 'Origin',
-            ]);
+
+        return $this->decorateWithCorsHeaders($response, $origin);
+    }
+
+    /**
+     * Returns the 204 response for a CORS preflight (or a rejected OPTIONS
+     * request), or null when the request should continue through the handler.
+     */
+    private function preflightResponse(ServerRequestInterface $request): ?ResponseInterface
+    {
+        if (!$this->isOptions($request) || $this->allowedOrigins === []) {
+            return null;
         }
-        $response = $handler->handle($request)
-            ->withHeader('Access-Control-Allow-Origin', $allowOrigin)
+        $echo = $this->negotiatedOrigin($request);
+        if ($echo === null) {
+            return $this->disallowedPreflightResponse($request);
+        }
+
+        return new Response(204, [
+            'Access-Control-Allow-Origin' => $echo,
+            'Access-Control-Allow-Methods' => $this->allowMethods,
+            'Access-Control-Allow-Headers' => $this->allowHeaders,
+            'Access-Control-Max-Age' => '600',
+            'Vary' => 'Origin',
+        ]);
+    }
+
+    /**
+     * A disallowed-origin OPTIONS request is answered with a bare Vary
+     * response; an absent Origin header falls through to the handler.
+     */
+    private function disallowedPreflightResponse(ServerRequestInterface $request): ?ResponseInterface
+    {
+        if (trim($request->getHeaderLine('Origin')) === '') {
+            return null;
+        }
+
+        return new Response(204, ['Vary' => 'Origin']);
+    }
+
+    /**
+     * Returns the origin value that must be echoed back in CORS headers, or
+     * null when the response must not be decorated (CORS disabled, no Origin
+     * header, or an origin the policy does not allow).
+     */
+    private function negotiatedOrigin(ServerRequestInterface $request): ?string
+    {
+        $origin = trim($request->getHeaderLine('Origin'));
+        if ($this->allowAll && $this->allowedOrigins !== []) {
+            return '*';
+        }
+        if ($this->allowedOrigins === [] || $origin === '' || !$this->originIsAllowed($origin)) {
+            return null;
+        }
+
+        return $origin;
+    }
+
+    private function decorateWithCorsHeaders(MessageInterface $response, string $origin): MessageInterface
+    {
+        $response = $response
+            ->withHeader('Access-Control-Allow-Origin', $origin)
             ->withHeader('Access-Control-Allow-Methods', $this->allowMethods)
             ->withHeader('Access-Control-Allow-Headers', $this->allowHeaders)
         ;
-        $vary = $response->getHeader('Vary');
+
+        return $response->withHeader('Vary', implode(', ', $this->mergedVaryTokens($response)));
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function mergedVaryTokens(MessageInterface $response): array
+    {
         $tokens = [];
-        foreach ($vary as $line) {
+        foreach ($response->getHeader('Vary') as $line) {
             foreach (explode(',', $line) as $token) {
                 $token = trim($token);
                 if ($token !== '') {
@@ -101,7 +152,12 @@ final readonly class CorsMiddleware implements MiddlewareInterface
         }
         $tokens['origin'] = 'Origin';
 
-        return $response->withHeader('Vary', implode(', ', array_values($tokens)));
+        return array_values($tokens);
+    }
+
+    private function isOptions(ServerRequestInterface $request): bool
+    {
+        return strtoupper($request->getMethod()) === 'OPTIONS';
     }
 
     private function originIsAllowed(string $origin): bool

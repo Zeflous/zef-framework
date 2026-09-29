@@ -49,7 +49,7 @@ final class ResolutionContext implements ContainerInterface
 
             throw new ServiceCircularDependencyException($chain);
         }
-        // @infection-ignore-all TrueValue — ekuivalen: deteksi sirkular membaca isset(loading[id]); isset(false) bernilai true
+        // @infection-ignore-all TrueValue — ekuivalen: isset() hanya membaca kunci; nilai tak dibaca
         $this->loading[$id] = true;
     }
 

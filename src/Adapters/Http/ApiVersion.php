@@ -23,6 +23,13 @@ final readonly class ApiVersion
     public const string SOURCE_QUERY = 'query';
     public const string SOURCE_DEFAULT = 'default';
 
+    private const array VALID_SOURCES = [
+        self::SOURCE_PATH,
+        self::SOURCE_HEADER,
+        self::SOURCE_QUERY,
+        self::SOURCE_DEFAULT,
+    ];
+
     public function __construct(
         public string $version,
         public string $source,
@@ -30,7 +37,7 @@ final readonly class ApiVersion
         if ($this->version === '') {
             throw new \InvalidArgumentException('API version must not be empty.');
         }
-        if (!in_array($this->source, [self::SOURCE_PATH, self::SOURCE_HEADER, self::SOURCE_QUERY, self::SOURCE_DEFAULT], true)) {
+        if (!in_array($this->source, self::VALID_SOURCES, true)) {
             throw new \InvalidArgumentException("Unknown API version source '{$this->source}'.");
         }
     }

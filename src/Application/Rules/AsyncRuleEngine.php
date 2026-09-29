@@ -9,7 +9,6 @@ declare(strict_types=1);
 
 namespace Zef\Framework\Rules;
 
-use Zef\Framework\Runtime\Async\CancellationTokenInterface;
 use Zef\Framework\Runtime\Async\CancellationTokenSource;
 use Zef\Framework\Runtime\Async\FiberScheduler;
 use Zef\Framework\Runtime\Async\Semaphore;
@@ -68,7 +67,11 @@ final readonly class AsyncRuleEngine implements AsyncRuleEngineInterface
 
         foreach ($rules as $rule) {
             if (!$rule instanceof RuleInterface) {
-                throw new \InvalidArgumentException(sprintf('rule at index %d must implement RuleInterface, got %s.', $position, get_debug_type($rule)));
+                throw new \InvalidArgumentException(sprintf(
+                    'rule at index %d must implement RuleInterface, got %s.',
+                    $position,
+                    get_debug_type($rule),
+                ));
             }
 
             $list[] = $rule;
@@ -80,7 +83,11 @@ final readonly class AsyncRuleEngine implements AsyncRuleEngineInterface
         }
 
         if (!\Fiber::getCurrent() instanceof \Fiber) {
-            throw new \LogicException('AsyncRuleEngine::evaluate() must be called from inside a coroutine driven by its FiberScheduler; use AsyncRuleEngine::run() for a blocking top-level evaluation.');
+            $detail = 'driven by its FiberScheduler; use AsyncRuleEngine::run() for a blocking top-level evaluation.';
+
+            throw new \LogicException(
+                "AsyncRuleEngine::evaluate() must be called from inside a coroutine {$detail}",
+            );
         }
 
         // "Unlimited" is realised as one permit per rule: the pool can never
@@ -101,13 +108,25 @@ final readonly class AsyncRuleEngine implements AsyncRuleEngineInterface
         $inFlight = [];
 
         foreach ($list as $index => $rule) {
+            $inputs = new RuleEvaluationInputs(
+                $index,
+                $rule,
+                $subject,
+                $token,
+                $options,
+                $semaphore,
+                $cancellationSource,
+            );
             $bodies[$index] = $this->scheduler->spawn(
-                function () use ($index, $rule, $subject, $token, $options, $semaphore, $cancellationSource, $failFast, &$results, &$bodies, &$inFlight): void {
-                    $results[$index] = $this->executeRule($index, $rule, $subject, $token, $options, $semaphore, $cancellationSource, $inFlight)->forRule($rule->name());
+                function () use ($inputs, $failFast, &$results, &$bodies, &$inFlight): void {
+                    $results[$inputs->index] = $this
+                        ->executeRule($inputs, $inFlight)
+                        ->forRule($inputs->rule->name())
+                    ;
 
-                    if ($failFast && $results[$index]->isFailed()) {
-                        $cancellationSource->cancel();
-                        $this->interruptPeers($bodies, $inFlight, $index);
+                    if ($failFast && $results[$inputs->index]->isFailed()) {
+                        $inputs->cancellationSource->cancel();
+                        $this->interruptPeers($bodies, $inFlight, $inputs->index);
                     }
                 },
                 sprintf('rule-%s', $rule->name()),
@@ -121,7 +140,9 @@ final readonly class AsyncRuleEngine implements AsyncRuleEngineInterface
                 // The body was cancelled before its first step (or its inner
                 // task escaped a TaskCancelledException); every other path
                 // records a verdict itself.
-                $results[$index] ??= RuleVerdict::skip(sprintf(self::SKIPPED_BY_FAIL_FAST, $list[$index]->name()))->forRule($list[$index]->name());
+                $results[$index] ??= RuleVerdict::skip(
+                    sprintf(self::SKIPPED_BY_FAIL_FAST, $list[$index]->name()),
+                )->forRule($list[$index]->name());
             } catch (\Throwable $exception) {
                 // Defensive: bodies are total by construction; this keeps the
                 // one-verdict-per-rule invariant intact even on engine bugs.
@@ -158,31 +179,23 @@ final readonly class AsyncRuleEngine implements AsyncRuleEngineInterface
      *
      * @param array<int, TaskInterface> $inFlight
      */
-    private function executeRule(
-        int $index,
-        RuleInterface $rule,
-        mixed $subject,
-        CancellationTokenInterface $token,
-        RuleEngineOptions $options,
-        Semaphore $semaphore,
-        CancellationTokenSource $cancellationSource,
-        array &$inFlight,
-    ): RuleVerdict {
-        $timeout = $options->perRuleTimeout();
+    private function executeRule(RuleEvaluationInputs $inputs, array &$inFlight): RuleVerdict
+    {
+        $timeout = $inputs->options->perRuleTimeout();
 
         try {
-            $semaphore->acquire();
+            $inputs->semaphore->acquire();
 
             try {
                 $inner = $this->scheduler->spawn(
-                    static fn (): RuleVerdict => $rule->evaluate($subject, $token),
-                    sprintf('eval-%s', $rule->name()),
+                    static fn (): RuleVerdict => $inputs->rule->evaluate($inputs->subject, $inputs->token),
+                    sprintf('eval-%s', $inputs->rule->name()),
                 );
 
                 // Registered for fail-fast interruption regardless of the
                 // deadline: an awaiting body is always interrupted through
                 // its inner task so a graceful rule keeps its own verdict.
-                $inFlight[$index] = $inner;
+                $inFlight[$inputs->index] = $inner;
 
                 $guard = null;
 
@@ -190,7 +203,7 @@ final readonly class AsyncRuleEngine implements AsyncRuleEngineInterface
                     $guard = $this->scheduler->delay(
                         $timeout,
                         static fn (): bool => $inner->cancel(),
-                        sprintf('eval-%s-deadline', $rule->name()),
+                        sprintf('eval-%s-deadline', $inputs->rule->name()),
                     );
                 }
 
@@ -211,23 +224,32 @@ final readonly class AsyncRuleEngine implements AsyncRuleEngineInterface
                     // done task returns false without side effects).
                     $inner->cancel();
 
-                    unset($inFlight[$index]);
+                    unset($inFlight[$inputs->index]);
                 }
             } finally {
-                $semaphore->release();
+                $inputs->semaphore->release();
             }
         } catch (TaskCancelledException) {
-            if ($cancellationSource->isCancellationRequested()) {
-                return RuleVerdict::skip(sprintf(self::SKIPPED_BY_FAIL_FAST, $rule->name()));
-            }
-
-            // No cancellation request means the per-rule deadline guard was
-            // the canceller — a rule that throws TaskCancelledException for
-            // its own reasons is reported the same way (see RuleInterface).
-            return RuleVerdict::timeout($rule->name(), $timeout ?? 0.0);
+            return $this->cancelledVerdict($inputs);
         } catch (\Throwable $exception) {
             return RuleVerdict::fromThrowable($exception);
         }
+    }
+
+    /**
+     * Maps a cancellation surfacing at the rule body into its verdict: an
+     * evaluation-wide cancellation request means fail-fast won the race
+     * (the rule is Skipped); otherwise the per-rule deadline guard was the
+     * canceller — a rule that throws TaskCancelledException for its own
+     * reasons is reported the same way (see RuleInterface).
+     */
+    private function cancelledVerdict(RuleEvaluationInputs $inputs): RuleVerdict
+    {
+        if ($inputs->cancellationSource->isCancellationRequested()) {
+            return RuleVerdict::skip(sprintf(self::SKIPPED_BY_FAIL_FAST, $inputs->rule->name()));
+        }
+
+        return RuleVerdict::timeout($inputs->rule->name(), $inputs->options->perRuleTimeout() ?? 0.0);
     }
 
     /**
