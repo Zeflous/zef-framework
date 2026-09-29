@@ -46,7 +46,7 @@ use Zef\Framework\Exception\InvalidConfigurationException;
  */
 final class ConfigMigrator
 {
-    /** @var array<int, list<callable(array<array-key,mixed>):array<array-key,mixed>>> target version => ordered steps */
+    /** @var array<int, list<callable(array<array-key,mixed>):array<array-key,mixed>>> steps per target version */
     private array $steps = [];
 
     /**
@@ -84,18 +84,21 @@ final class ConfigMigrator
             );
         }
         if ($toVersion < $fromVersion) {
-            throw new InvalidConfigurationException(
-                "Config data is schema version {$fromVersion}, newer than the target version "
-                . "{$toVersion} — downgrade migration is not supported."
-            );
+            throw new InvalidConfigurationException(sprintf(
+                'Config data is schema version %d, newer than the target version %d — downgrade migration is not supported.',
+                $fromVersion,
+                $toVersion,
+            ));
         }
         for ($version = $fromVersion; $version < $toVersion; ++$version) {
             $target = $version + 1;
             if (!isset($this->steps[$target])) {
-                throw new InvalidConfigurationException(
-                    "No registered config migration step to schema version {$target} "
-                    . "(data is v{$fromVersion}, schema is v{$toVersion})."
-                );
+                throw new InvalidConfigurationException(sprintf(
+                    'No registered config migration step to schema version %d (data is v%d, schema is v%d).',
+                    $target,
+                    $fromVersion,
+                    $toVersion,
+                ));
             }
             foreach ($this->steps[$target] as $step) {
                 $values = $step($values);

@@ -58,8 +58,7 @@ final class Env implements EnvInterface
         bool $strict = false,
     ): int {
         @trigger_error(
-            'Env::int() is deprecated since v2.28.0 and will be removed in v3.0. '
-            . 'Inject EnvInterface and call readInt() instead.',
+            'Env::int() is deprecated since v2.28.0 and will be removed in v3.0. Inject EnvInterface and call readInt() instead.',
             E_USER_DEPRECATED,
         );
 
@@ -73,8 +72,7 @@ final class Env implements EnvInterface
     public static function bool(string $name, bool $default = false): bool
     {
         @trigger_error(
-            'Env::bool() is deprecated since v2.28.0 and will be removed in v3.0. '
-            . 'Inject EnvInterface and call readBool() instead.',
+            'Env::bool() is deprecated since v2.28.0 and will be removed in v3.0. Inject EnvInterface and call readBool() instead.',
             E_USER_DEPRECATED,
         );
 
@@ -88,8 +86,7 @@ final class Env implements EnvInterface
     public static function string(string $name, string $default = ''): string
     {
         @trigger_error(
-            'Env::string() is deprecated since v2.28.0 and will be removed in v3.0. '
-            . 'Inject EnvInterface and call readString() instead.',
+            'Env::string() is deprecated since v2.28.0 and will be removed in v3.0. Inject EnvInterface and call readString() instead.',
             E_USER_DEPRECATED,
         );
 
@@ -105,8 +102,7 @@ final class Env implements EnvInterface
     public static function csv(string $name): array
     {
         @trigger_error(
-            'Env::csv() is deprecated since v2.28.0 and will be removed in v3.0. '
-            . 'Inject EnvInterface and call readCsv() instead.',
+            'Env::csv() is deprecated since v2.28.0 and will be removed in v3.0. Inject EnvInterface and call readCsv() instead.',
             E_USER_DEPRECATED,
         );
 

@@ -434,7 +434,7 @@ if (!function_exists('zef_framework_autoload')) {
                 "Zef\\Framework\\Runtime\\Async\\HrMonotonicClock" => __DIR__ . '/../src/Application/Runtime/Async/HrMonotonicClock.php',
                 "Zef\\Framework\\Runtime\\Async\\MonotonicClockInterface" => __DIR__ . '/../src/Domain/Runtime/Async/MonotonicClockInterface.php',
                 "Zef\\Framework\\Runtime\\Async\\Semaphore" => __DIR__ . '/../src/Application/Runtime/Async/Semaphore.php',
-                "Zef\\Framework\\Runtime\\Async\\SuspendFail" => __DIR__ . '/../src/Application/Runtime/Async/SuspendPayload.php',
+                "Zef\\Framework\\Runtime\\Async\\SuspendFail" => __DIR__ . '/../src/Application/Runtime/Async/SuspendFail.php',
                 "Zef\\Framework\\Runtime\\Async\\SuspendValue" => __DIR__ . '/../src/Application/Runtime/Async/SuspendPayload.php',
                 "Zef\\Framework\\Runtime\\Async\\SuspensionHandle" => __DIR__ . '/../src/Application/Runtime/Async/SuspensionHandle.php',
                 "Zef\\Framework\\Runtime\\Async\\TaskCancelledException" => __DIR__ . '/../src/Domain/Runtime/Async/TaskCancelledException.php',

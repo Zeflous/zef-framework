@@ -25,7 +25,8 @@ final class FailFastInitializationGuard implements InitializationGuard
         if (isset($this->active[$key])) {
             throw new ConcurrentServiceInitializationException($key);
         }
-        // @infection-ignore-all TrueValue — ekuivalen: guard membaca isset(active[key]); isset(false) bernilai true sehingga deteksi independen nilai
+        // @infection-ignore-all TrueValue — ekuivalen: guard membaca isset(active[key]);
+        // isset(false) bernilai true sehingga deteksi independen nilai
         $this->active[$key] = true;
 
         try {
