@@ -11,7 +11,6 @@ declare(strict_types=1);
 namespace Zef\Framework\Observability;
 
 use Psr\Log\LoggerInterface;
-use Psr\Log\NullLogger;
 use Zef\Framework\Foundation\Env;
 use Zef\Framework\Foundation\EnvInterface;
 
@@ -63,47 +62,7 @@ final class Telemetry
         ?OtlpExporterFactoryInterface $exporterFactory = null,
         ?EnvInterface $env = null,
     ): self {
-        $env ??= new Env();
-        $enabled = $env->readBool('ZEF_OTEL_ENABLED', false);
-        $logger ??= new NullLogger();
-        if (!$enabled) {
-            return new self(
-                new NoopTracer(),
-                new CounterMeter(),
-                new BatchSpanProcessor(new InMemorySpanExporter()),
-                null,
-                null,
-                false,
-                $env,
-            );
-        }
-        $endpoint = trim($env->readString('ZEF_OTEL_EXPORTER_OTLP_ENDPOINT'));
-        if ($endpoint !== '') {
-            self::validateEndpoint($endpoint);
-        }
-        $timeout = $env->readInt('ZEF_OTEL_EXPORT_TIMEOUT_MS', 500, 1, 10000, true);
-        $queue = $env->readInt('ZEF_OTEL_MAX_QUEUE', 1024, 1, 8192, true);
-        $batch = $env->readInt('ZEF_OTEL_BATCH_SIZE', 128, 1, $queue, true);
-        $env->readInt('ZEF_OTEL_RETRY_ATTEMPTS', 2, 0, 10, true);
-        $env->readInt('ZEF_OTEL_RETRY_DELAY_MS', 100, 0, 10000, true);
-        $env->readInt('ZEF_OTEL_RETRY_DELAY_CAP_MS', 1000, 0, 60000, true);
-        $env->readInt('ZEF_OTEL_SHUTDOWN_DRAIN_MS', 2000, 0, 60000, true);
-        $resource = [
-            'service.name' => $env->readString('ZEF_OTEL_SERVICE_NAME', 'zef-application'),
-            'telemetry.sdk.name' => 'zef-observability',
-            'telemetry.sdk.language' => 'php',
-        ];
-        $exporter = $endpoint !== '' && $exporterFactory instanceof OtlpExporterFactoryInterface
-            ? $exporterFactory->create($endpoint, $resource, $timeout)
-            : null;
-        $spanExporter = $exporter ?? new InMemorySpanExporter();
-        $processor = new BatchSpanProcessor($spanExporter, $queue, $batch);
-        $t = new self(new Tracer($processor), new CounterMeter(), $processor, $exporter, $exporter, true, $env);
-        if ($registerShutdownHook) {
-            register_shutdown_function($t->shutdown(...));
-        }
-
-        return $t;
+        return TelemetryFactory::fromEnvironment($logger, $registerShutdownHook, $exporterFactory, $env);
     }
 
     /** @param array<string,mixed> $attributes */
@@ -167,6 +126,8 @@ final class Telemetry
         try {
             $this->processor->shutdown();
         } catch (\Throwable) {
+            // Processor shutdown is best-effort: a failing span exporter
+            // must not prevent the queued metric/log drain below.
         }
         $this->enqueueDelivery();
         $env = $this->env ?? new Env();
@@ -181,6 +142,8 @@ final class Telemetry
         try {
             $this->metricExporter?->shutdown();
         } catch (\Throwable) {
+            // Metric exporter shutdown is best-effort: the drain loop above
+            // already shipped everything it could within the deadline.
         }
 
         try {
@@ -188,6 +151,8 @@ final class Telemetry
                 $this->logExporter->shutdown();
             }
         } catch (\Throwable) {
+            // Log exporter shutdown is best-effort, same reasoning as the
+            // metric exporter above — shutdown() must never throw.
         }
         $this->logs = [];
         $this->metricDeliveryQueue = [];
@@ -210,10 +175,10 @@ final class Telemetry
             $this->metricDeliveryQueue[] = $this->meter->snapshot();
         }
         if ($this->logs !== []) {
-            $logs = $this->logs;
+            $pending = $this->logs;
             $this->logs = [];
             if (count($this->logDeliveryQueue) < 1024) {
-                $this->logDeliveryQueue[] = $logs;
+                $this->logDeliveryQueue[] = $pending;
             }
         }
     }
@@ -221,25 +186,28 @@ final class Telemetry
     private function drainDelivery(): void
     {
         while ($this->metricDeliveryQueue !== []) {
-            $metrics = array_shift($this->metricDeliveryQueue);
+            $batch = array_shift($this->metricDeliveryQueue);
             if (!$this->metricExporter instanceof MetricExporterInterface) {
                 continue;
             }
 
             try {
-                $this->metricExporter->exportMetrics($metrics);
+                $this->metricExporter->exportMetrics($batch);
             } catch (\Throwable) {
+                // Exporter failures must not abort the drain loop: the
+                // remaining batches still get their chance to ship.
             }
         }
         while ($this->logDeliveryQueue !== []) {
-            $logs = array_shift($this->logDeliveryQueue);
+            $batch = array_shift($this->logDeliveryQueue);
             if (!$this->logExporter instanceof LogExporterInterface) {
                 continue;
             }
 
             try {
-                $this->logExporter->exportLogs($logs);
+                $this->logExporter->exportLogs($batch);
             } catch (\Throwable) {
+                // Same best-effort contract for log batches.
             }
         }
     }
@@ -247,36 +215,25 @@ final class Telemetry
     private function drainOne(): void
     {
         if ($this->metricDeliveryQueue !== [] && $this->metricExporter instanceof MetricExporterInterface) {
-            $metrics = array_shift($this->metricDeliveryQueue);
+            $batch = array_shift($this->metricDeliveryQueue);
 
             try {
-                $this->metricExporter->exportMetrics($metrics);
+                $this->metricExporter->exportMetrics($batch);
             } catch (\Throwable) {
+                // Failed metric export: stop this round; shutdown()'s loop
+                // retries on the next tick before the deadline.
                 return;
             }
         }
         if ($this->logDeliveryQueue !== [] && $this->logExporter instanceof LogExporterInterface) {
-            $logs = array_shift($this->logDeliveryQueue);
+            $batch = array_shift($this->logDeliveryQueue);
 
             try {
-                $this->logExporter->exportLogs($logs);
+                $this->logExporter->exportLogs($batch);
             } catch (\Throwable) {
+                // Best-effort log export: a failure here is swallowed so the
+                // shutdown loop keeps draining the metric side.
             }
-        }
-    }
-
-    private static function validateEndpoint(string $endpoint): void
-    {
-        $parts = parse_url($endpoint);
-        if (
-            !is_array($parts)
-            || !isset($parts['scheme'], $parts['host'])
-            || !in_array(strtolower((string) $parts['scheme']), ['http', 'https'], true)
-        ) {
-            throw new \InvalidArgumentException('ZEF_OTEL_EXPORTER_OTLP_ENDPOINT must be an absolute HTTP/HTTPS URI.');
-        }
-        if (isset($parts['user']) || isset($parts['pass'])) {
-            throw new \InvalidArgumentException('ZEF_OTEL_EXPORTER_OTLP_ENDPOINT must not contain embedded credentials.');
         }
     }
 }

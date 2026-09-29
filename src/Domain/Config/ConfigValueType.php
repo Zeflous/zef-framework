@@ -82,8 +82,11 @@ enum ConfigValueType: string
     public function rejectionHint(mixed $raw): string
     {
         if ($raw === '' && $this !== self::String) {
-            return ' (empty strings only satisfy string keys; remove the empty'
-                . ' environment variable or set a concrete value)';
+            // One glued literal: a single string would run past the 120-column limit.
+            return implode('', [
+                ' (empty strings only satisfy string keys; remove the empty',
+                ' environment variable or set a concrete value)',
+            ]);
         }
 
         return '';

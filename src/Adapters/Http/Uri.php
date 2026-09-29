@@ -16,11 +16,6 @@ use Zef\Framework\Validation\TrustedHostValidator;
 
 final class Uri implements UriInterface
 {
-    private const string PATH_ALLOWED = ":/@!$&'()*+,;=-._~";
-    private const string QUERY_FRAGMENT_ALLOWED = ":/?@!$&'()*+,;=-._~";
-    private const string USERINFO_ALLOWED = "!$&'()*+,;=:";
-    private const string SCHEME_PATTERN = '/^[A-Za-z][A-Za-z0-9+.-]*\z/';
-
     private string $scheme = '';
     private string $userInfo = '';
     private string $host = '';
@@ -34,33 +29,16 @@ final class Uri implements UriInterface
         if ($uri === '') {
             return;
         }
-        $this->assertNoControls($uri, 'URI');
-        $parts = parse_url($uri);
-        if ($parts === false) {
-            throw new \InvalidArgumentException("Unable to parse URI '{$uri}'.");
-        }
-        $this->scheme = strtolower((string) ($parts['scheme'] ?? ''));
-        $this->assertScheme($this->scheme);
-        $user = isset($parts['user']) ? (string) $parts['user'] : '';
-        $pass = array_key_exists('pass', $parts) ? (string) $parts['pass'] : null;
-        $this->userInfo = $this->encodeComponent($user, self::USERINFO_ALLOWED);
-        if ($pass !== null) {
-            $this->userInfo .= ':' . $this->encodeComponent($pass, "!$&'()*+,;=");
-        }
-        // Bug fix #2: parse_url returns '[::1]' WITH brackets for IPv6 hosts.
-        // Strip them before assertHost() which uses FILTER_VALIDATE_IP.
-        $rawHost = strtolower((string) ($parts['host'] ?? ''));
-        if (str_starts_with($rawHost, '[') && str_ends_with($rawHost, ']')) {
-            $rawHost = substr($rawHost, 1, -1);
-        }
-        $this->host = $rawHost;
-        $this->assertHost($this->host);
-        $this->port = isset($parts['port']) ? (int) $parts['port'] : null;
-        new PortRangeValidator()->assert($this->port);
-        $this->path = $this->encodeComponent((string) ($parts['path'] ?? ''), self::PATH_ALLOWED);
-        $this->query = $this->encodeComponent((string) ($parts['query'] ?? ''), self::QUERY_FRAGMENT_ALLOWED);
-        $this->fragment = $this->encodeComponent((string) ($parts['fragment'] ?? ''), self::QUERY_FRAGMENT_ALLOWED);
-        new TrustedHostValidator($this->trustedHosts)->assertTrusted($this->host);
+        $parts = UriGrammar::parse($uri);
+        $this->scheme = $parts['scheme'];
+        $this->userInfo = $parts['userInfo'];
+        $this->host = $parts['host'];
+        $this->port = $parts['port'];
+        $this->path = $parts['path'];
+        $this->query = $parts['query'];
+        $this->fragment = $parts['fragment'];
+        $this->assertPortInRange($this->port);
+        $this->assertTrustedHost($this->host);
     }
 
     /**
@@ -74,11 +52,11 @@ final class Uri implements UriInterface
         $authority = $this->getAuthority();
         if ($authority !== '') {
             $uri .= '//' . $authority;
-            $path = $this->path;
-            if ($path !== '' && $path[0] !== '/') {
-                $path = '/' . $path;
+            $effectivePath = $this->path;
+            if ($effectivePath !== '' && $effectivePath[0] !== '/') {
+                $effectivePath = '/' . $effectivePath;
             }
-            $uri .= $path;
+            $uri .= $effectivePath;
         } else {
             $uri .= $this->path;
         }
@@ -108,7 +86,7 @@ final class Uri implements UriInterface
             ? '[' . $this->host . ']'
             : $this->host;
         $authority = ($this->userInfo !== '' ? $this->userInfo . '@' : '') . $displayHost;
-        if ($this->port !== null && !$this->isDefaultPortForScheme($this->port)) {
+        if ($this->port !== null && !UriGrammar::isDefaultPortForScheme($this->scheme, $this->port)) {
             $authority .= ':' . $this->port;
         }
 
@@ -138,7 +116,7 @@ final class Uri implements UriInterface
     #[\Override]
     public function getPort(): ?int
     {
-        if ($this->port === null || $this->isDefaultPortForScheme($this->port)) {
+        if ($this->port === null || UriGrammar::isDefaultPortForScheme($this->scheme, $this->port)) {
             return null;
         }
 
@@ -166,8 +144,8 @@ final class Uri implements UriInterface
     #[\Override]
     public function withScheme(string $scheme): UriInterface
     {
-        $this->assertNoControls($scheme, 'URI scheme');
-        $this->assertScheme($scheme);
+        UriGrammar::assertNoControls($scheme, 'URI scheme');
+        UriGrammar::assertScheme($scheme);
         $n = clone $this;
         $n->scheme = strtolower($scheme);
 
@@ -177,13 +155,15 @@ final class Uri implements UriInterface
     #[\Override]
     public function withUserInfo(string $user, ?string $password = null): UriInterface
     {
-        $this->assertNoControls($user, 'URI user info');
+        UriGrammar::assertNoControls($user, 'URI user info');
         if ($password !== null) {
-            $this->assertNoControls($password, 'URI user info');
+            UriGrammar::assertNoControls($password, 'URI user info');
         }
         $n = clone $this;
-        $n->userInfo = $this->encodeComponent($user, self::USERINFO_ALLOWED)
-            . ($password !== null ? ':' . $this->encodeComponent($password, "!$&'()*+,;=") : '');
+        $passPart = $password !== null
+            ? ':' . UriGrammar::encodeComponent($password, UriGrammar::USERINFO_PASS_ALLOWED)
+            : '';
+        $n->userInfo = UriGrammar::encodeComponent($user, UriGrammar::USERINFO_ALLOWED) . $passPart;
 
         return $n;
     }
@@ -195,10 +175,10 @@ final class Uri implements UriInterface
         if (str_starts_with($host, '[') && str_ends_with($host, ']')) {
             $host = substr($host, 1, -1);
         }
-        $this->assertHost($host);
+        UriGrammar::assertHost($host);
         $n = clone $this;
         $n->host = strtolower($host);
-        new TrustedHostValidator($this->trustedHosts)->assertTrusted($n->host);
+        $this->assertTrustedHost($n->host);
 
         return $n;
     }
@@ -206,7 +186,7 @@ final class Uri implements UriInterface
     #[\Override]
     public function withPort(?int $port): UriInterface
     {
-        new PortRangeValidator()->assert($port);
+        $this->assertPortInRange($port);
         $n = clone $this;
         $n->port = $port;
 
@@ -216,9 +196,9 @@ final class Uri implements UriInterface
     #[\Override]
     public function withPath(string $path): UriInterface
     {
-        $this->assertNoControls($path, 'URI path');
+        UriGrammar::assertNoControls($path, 'URI path');
         $n = clone $this;
-        $n->path = $this->encodeComponent($path, self::PATH_ALLOWED);
+        $n->path = UriGrammar::encodeComponent($path, UriGrammar::PATH_ALLOWED);
 
         return $n;
     }
@@ -226,9 +206,9 @@ final class Uri implements UriInterface
     #[\Override]
     public function withQuery(string $query): UriInterface
     {
-        $this->assertNoControls($query, 'URI query');
+        UriGrammar::assertNoControls($query, 'URI query');
         $n = clone $this;
-        $n->query = $this->encodeComponent($query, self::QUERY_FRAGMENT_ALLOWED);
+        $n->query = UriGrammar::encodeComponent($query, UriGrammar::QUERY_FRAGMENT_ALLOWED);
 
         return $n;
     }
@@ -236,97 +216,20 @@ final class Uri implements UriInterface
     #[\Override]
     public function withFragment(string $fragment): UriInterface
     {
-        $this->assertNoControls($fragment, 'URI fragment');
+        UriGrammar::assertNoControls($fragment, 'URI fragment');
         $n = clone $this;
-        $n->fragment = $this->encodeComponent($fragment, self::QUERY_FRAGMENT_ALLOWED);
+        $n->fragment = UriGrammar::encodeComponent($fragment, UriGrammar::QUERY_FRAGMENT_ALLOWED);
 
         return $n;
     }
 
-    private function assertNoControls(string $value, string $label): void
+    private function assertPortInRange(?int $port): void
     {
-        if (preg_match('/[\x00-\x1F\x7F]/', $value) === 1) {
-            throw new \InvalidArgumentException("Invalid {$label} control characters.");
-        }
+        new PortRangeValidator()->assert($port);
     }
 
-    private function assertScheme(string $scheme): void
+    private function assertTrustedHost(string $host): void
     {
-        if ($scheme !== '' && preg_match(self::SCHEME_PATTERN, $scheme) !== 1) {
-            throw new \InvalidArgumentException('Invalid URI scheme.');
-        }
-    }
-
-    private function encodeComponent(string $value, string $allowed): string
-    {
-        $result = '';
-        $len = strlen($value);
-        for ($i = 0; $i < $len; ++$i) {
-            $ch = $value[$i];
-            $o = ord($ch);
-            if (
-                $ch === '%'
-                && $i + 2 < $len
-                && ctype_xdigit($value[$i + 1])
-                && ctype_xdigit($value[$i + 2])
-            ) {
-                $result .= '%' . strtoupper($value[$i + 1] . $value[$i + 2]);
-                $i += 2;
-
-                continue;
-            }
-            if (
-                ($o >= 65 && $o <= 90)
-                || ($o >= 97 && $o <= 122)
-                || ($o >= 48 && $o <= 57)
-                || str_contains('-._~' . $allowed, $ch)
-            ) {
-                $result .= $ch;
-
-                continue;
-            }
-            $result .= sprintf('%%%02X', $o);
-        }
-
-        return $result;
-    }
-
-    /**
-     * A port equal to the scheme's default (http:80, https:443) is
-     * indistinguishable from no port at all per PSR-7 "SHOULD omit".
-     */
-    private function isDefaultPortForScheme(int $port): bool
-    {
-        return ($this->scheme === 'http' && $port === 80)
-            || ($this->scheme === 'https' && $port === 443);
-    }
-
-    private function assertHost(string $host): void
-    {
-        if ($host === '') {
-            return;
-        }
-        $this->assertNoControls($host, 'URI host');
-        if (str_contains($host, ':')) {
-            if (filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) === false) {
-                throw new \InvalidArgumentException('Invalid URI host.');
-            }
-
-            return;
-        }
-        if (filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false) {
-            return;
-        }
-        // RFC 3986 reg-name also permits '_' (common for intranet hosts,
-        // RFC 9110 Host = reg-name); the DNS-only class rejected it.
-        if (
-            strlen($host) > 253
-            || preg_match(
-                '/^(?=.{1,253}$)(?:[A-Za-z0-9_](?:[A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?)(?:\.(?:[A-Za-z0-9_](?:[A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?))*$/',
-                $host,
-            ) !== 1
-        ) {
-            throw new \InvalidArgumentException('Invalid URI host.');
-        }
+        new TrustedHostValidator($this->trustedHosts)->assertTrusted($host);
     }
 }

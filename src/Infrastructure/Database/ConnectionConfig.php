@@ -42,54 +42,14 @@ final readonly class ConnectionConfig
      */
     public static function fromArray(array $config): self
     {
-        $driver = $config['driver'] ?? null;
-        if (!is_string($driver) || !in_array($driver, self::DRIVERS, true)) {
-            throw new ConnectionException(
-                "Unknown database driver '" . (is_scalar($driver) ? (string) $driver : get_debug_type($driver))
-                . "' (allowed: " . implode(', ', self::DRIVERS) . ').',
-            );
-        }
-
-        $dbname = $config['dbname'] ?? null;
-        if (!is_string($dbname) || $dbname === '') {
-            throw new ConnectionException("Database name (dbname) must be a non-empty string for driver '{$driver}'.");
-        }
-        if ($driver === 'sqlite' && $dbname !== ':memory:' && preg_match('/^[\x20-\x7E]{1,4096}$/', $dbname) !== 1) {
-            throw new ConnectionException("SQLite database path must be ':memory:' or printable ASCII (got non-printable input).");
-        }
-
-        $host = null;
-        $port = null;
-        if ($driver !== 'sqlite') {
-            $host = $config['host'] ?? null;
-            if (!is_string($host) || $host === '' || strlen($host) > 255 || preg_match('/^\S+$/', $host) !== 1) {
-                throw new ConnectionException("Host must be a non-empty string without whitespace for driver '{$driver}'.");
-            }
-            $port = self::normalizePort($config['port'] ?? null, $driver);
-        }
-
-        $user = $config['user'] ?? null;
-        if ($user !== null && !is_string($user)) {
-            throw new ConnectionException('User must be a string or null.');
-        }
-        $password = $config['password'] ?? null;
-        if ($password !== null && !is_string($password)) {
-            throw new ConnectionException('Password must be a string or null.');
-        }
-
-        $charset = $config['charset'] ?? null;
-        if ($charset !== null && !is_string($charset)) {
-            throw new ConnectionException('Charset must be a string or null.');
-        }
-        if ($charset === null && $driver === 'mysql') {
-            $charset = 'utf8mb4';
-        }
-
-        $options = $config['options'] ?? [];
-        if (!is_array($options)) {
-            throw new ConnectionException('Options must be an array.');
-        }
-        $options = self::normalizeOptions($options);
+        $driver = self::assertDriver($config);
+        $dbname = self::assertDbname($config, $driver);
+        $host = $driver === 'sqlite' ? null : self::assertHost($config, $driver);
+        $port = $driver === 'sqlite' ? null : self::normalizePort($config['port'] ?? null, $driver);
+        $user = self::assertOptionalString($config, 'user', 'User');
+        $password = self::assertOptionalString($config, 'password', 'Password');
+        $charset = self::assertCharset($config, $driver);
+        $options = self::assertOptions($config);
 
         return new self($driver, $host, $port, $dbname, $user, $password, $charset, $options);
     }
@@ -100,10 +60,104 @@ final readonly class ConnectionConfig
             'mysql' => 'mysql:host=' . $this->host . ';port=' . $this->port
                 . ';dbname=' . $this->dbname . ($this->charset !== null ? ';charset=' . $this->charset : ''),
             'pgsql' => 'pgsql:host=' . $this->host . ';port=' . $this->port
-                . ';dbname=' . $this->dbname . ($this->charset !== null ? ';options=\'--client_encoding=' . $this->charset . '\'' : ''),
+                . ';dbname=' . $this->dbname
+                . ($this->charset !== null ? ';options=\'--client_encoding=' . $this->charset . '\'' : ''),
             'sqlite' => 'sqlite:' . $this->dbname,
             default => throw new ConnectionException("Unsupported database driver '{$this->driver}'."),
         };
+    }
+
+    /**
+     * @param array<string, mixed> $config
+     */
+    private static function assertDriver(array $config): string
+    {
+        $driver = $config['driver'] ?? null;
+        if (!is_string($driver) || !in_array($driver, self::DRIVERS, true)) {
+            throw new ConnectionException(
+                "Unknown database driver '" . (is_scalar($driver) ? (string) $driver : get_debug_type($driver))
+                . "' (allowed: " . implode(', ', self::DRIVERS) . ').',
+            );
+        }
+
+        return $driver;
+    }
+
+    /**
+     * @param array<string, mixed> $config
+     */
+    private static function assertDbname(array $config, string $driver): string
+    {
+        $dbname = $config['dbname'] ?? null;
+        if (!is_string($dbname) || $dbname === '') {
+            throw new ConnectionException("Database name (dbname) must be a non-empty string for driver '{$driver}'.");
+        }
+        if ($driver === 'sqlite' && $dbname !== ':memory:' && preg_match('/^[\x20-\x7E]{1,4096}$/', $dbname) !== 1) {
+            throw new ConnectionException(
+                "SQLite database path must be ':memory:' or printable ASCII (got non-printable input).",
+            );
+        }
+
+        return $dbname;
+    }
+
+    /**
+     * @param array<string, mixed> $config
+     */
+    private static function assertHost(array $config, string $driver): string
+    {
+        $host = $config['host'] ?? null;
+        if (!is_string($host) || $host === '' || strlen($host) > 255 || preg_match('/^\S+$/u', $host) !== 1) {
+            throw new ConnectionException(
+                "Host must be a non-empty string without whitespace for driver '{$driver}'.",
+            );
+        }
+
+        return $host;
+    }
+
+    /**
+     * @param array<string, mixed> $config
+     */
+    private static function assertOptionalString(array $config, string $key, string $label): ?string
+    {
+        $value = $config[$key] ?? null;
+        if ($value !== null && !is_string($value)) {
+            throw new ConnectionException("{$label} must be a string or null.");
+        }
+
+        return $value;
+    }
+
+    /**
+     * @param array<string, mixed> $config
+     */
+    private static function assertCharset(array $config, string $driver): ?string
+    {
+        $charset = $config['charset'] ?? null;
+        if ($charset !== null && !is_string($charset)) {
+            throw new ConnectionException('Charset must be a string or null.');
+        }
+        if ($charset === null && $driver === 'mysql') {
+            return 'utf8mb4';
+        }
+
+        return $charset;
+    }
+
+    /**
+     * @param array<string, mixed> $config
+     *
+     * @return array<string, mixed>
+     */
+    private static function assertOptions(array $config): array
+    {
+        $options = $config['options'] ?? [];
+        if (!is_array($options)) {
+            throw new ConnectionException('Options must be an array.');
+        }
+
+        return self::normalizeOptions($options);
     }
 
     private static function normalizePort(mixed $port, string $driver): int
@@ -141,18 +195,39 @@ final readonly class ConnectionConfig
                     . "' (allowed: " . implode(', ', $known) . ').',
                 );
             }
-            if ($key === 'persistent' && !is_bool($value)) {
-                throw new ConnectionException('Option persistent must be a bool.');
-            }
-            if ($key === 'timeout' && (!is_int($value) && !is_float($value))) {
-                throw new ConnectionException('Option timeout must be an int or float.');
-            }
-            if ($key === 'timeout' && (is_float($value) ? $value : (float) $value) <= 0.0) {
-                throw new ConnectionException('Option timeout must be greater than zero.');
-            }
-            $normalized[$key] = $value;
+            $normalized[$key] = self::normalizeOptionValue($key, $value);
         }
 
         return $normalized;
+    }
+
+    private static function normalizeOptionValue(string $key, mixed $value): mixed
+    {
+        if ($key === 'persistent') {
+            return self::normalizePersistentOption($value);
+        }
+
+        return self::normalizeTimeoutOption($value);
+    }
+
+    private static function normalizePersistentOption(mixed $value): mixed
+    {
+        if (!is_bool($value)) {
+            throw new ConnectionException('Option persistent must be a bool.');
+        }
+
+        return $value;
+    }
+
+    private static function normalizeTimeoutOption(mixed $value): mixed
+    {
+        if (!is_int($value) && !is_float($value)) {
+            throw new ConnectionException('Option timeout must be an int or float.');
+        }
+        if ((is_float($value) ? $value : (float) $value) <= 0.0) {
+            throw new ConnectionException('Option timeout must be greater than zero.');
+        }
+
+        return $value;
     }
 }

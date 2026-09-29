@@ -66,8 +66,17 @@ final readonly class TieredRateLimiter
         }
 
         $decision = $this->limiter instanceof CostAwareRateLimiterInterface
-            ? $this->limiter->consume($this->storageKey($rule, $identity), $rule->limit, $rule->windowSeconds, $rule->cost)
-            : $this->limiter->check($this->storageKey($rule, $identity), $rule->limit, $rule->windowSeconds);
+            ? $this->limiter->consume(
+                $this->storageKey($rule, $identity),
+                $rule->limit,
+                $rule->windowSeconds,
+                $rule->cost,
+            )
+            : $this->limiter->check(
+                $this->storageKey($rule, $identity),
+                $rule->limit,
+                $rule->windowSeconds,
+            );
 
         return new RateLimitRuleOutcome(
             $rule->name,

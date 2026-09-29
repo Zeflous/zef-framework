@@ -41,7 +41,7 @@ final readonly class CompiledConfigSource implements ConfigSourceInterface
         }
 
         try {
-            $values = require $this->path;
+            $values = require_once $this->path;
         } catch (\Throwable $e) {
             throw new InvalidConfigurationException(
                 "Compiled config file '{$this->path}' failed to load: {$e->getMessage()}",

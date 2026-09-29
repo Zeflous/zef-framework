@@ -32,20 +32,3 @@ interface ServiceProviderInterface
 
     public function register(ServiceRegistrarInterface $container): void;
 }
-
-/**
- * Marker for deferred providers: register() is postponed until one of the
- * provides() IDs is actually requested via the container's get().
- */
-interface DeferrableProviderInterface extends ServiceProviderInterface {}
-
-/**
- * Optional boot hook, invoked once via the container's bootProviders()
- * after all registrations are in place (typically after
- * validateAndFreeze()). The handle is the same composition port, so boot()
- * keeps composing rather than resolving.
- */
-interface BootableProviderInterface
-{
-    public function boot(ServiceRegistrarInterface $container): void;
-}

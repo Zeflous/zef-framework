@@ -50,33 +50,12 @@ final readonly class EnvConfigSource implements ConfigSourceInterface
     public function load(): array
     {
         $values = [];
-        $candidates = getenv();
-        if (!is_array($candidates)) {
-            $candidates = [];
-        }
-        // $_ENV entries (set by the SAPI or directly in tests) take
-        // precedence over the raw process environment enumeration.
-        foreach ($_ENV as $envKey => $envValue) {
-            if (is_string($envKey)) {
-                $candidates[$envKey] = $envValue;
-            }
-        }
         $prefixLength = strlen($this->prefix);
-        foreach (array_keys($candidates) as $fullKey) {
-            if (!str_starts_with($fullKey, $this->prefix)) {
+        foreach ($this->envCandidates() as $fullKey => $raw) {
+            $dotted = $this->dottedKeyFor((string) $fullKey, $prefixLength);
+            if ($dotted === null) {
                 continue;
             }
-            $body = substr($fullKey, $prefixLength);
-            if ($body === '' || preg_match(self::BODY_PATTERN, $body) !== 1) {
-                continue;
-            }
-            $dotted = strtolower(str_replace('__', '.', $body));
-            // Segments must match the schema key grammar (alphanumeric first
-            // character) so env-produced keys can never bypass strict mode.
-            if (preg_match('/^[a-z0-9][a-z0-9_-]*(\.[a-z0-9][a-z0-9_-]*)*$/', $dotted) !== 1) {
-                continue;
-            }
-            $raw = $candidates[$fullKey];
             if (!is_string($raw)) {
                 if (!is_scalar($raw)) {
                     continue;
@@ -88,5 +67,49 @@ final readonly class EnvConfigSource implements ConfigSourceInterface
         ksort($values, SORT_STRING);
 
         return $values;
+    }
+
+    /**
+     * Union of the raw process environment and $_ENV, with $_ENV entries
+     * (set by the SAPI or directly in tests) taking precedence. $_ENV is
+     * this adapter's deliberate superglobal bridge — it IS the source it
+     * adapts, so direct access here is by design.
+     *
+     * @return array<string, mixed>
+     */
+    private function envCandidates(): array
+    {
+        $candidates = getenv();
+        if (!is_array($candidates)) {
+            $candidates = [];
+        }
+        foreach ($_ENV as $envKey => $envValue) {
+            if (is_string($envKey)) {
+                $candidates[$envKey] = $envValue;
+            }
+        }
+
+        return $candidates;
+    }
+
+    /**
+     * Dotted config key for one environment variable name, or null when the
+     * variable is not prefixed / does not match the body grammar / would
+     * produce segments outside the schema key grammar.
+     */
+    private function dottedKeyFor(string $fullKey, int $prefixLength): ?string
+    {
+        $body = str_starts_with($fullKey, $this->prefix) ? substr($fullKey, $prefixLength) : '';
+        if ($body === '' || preg_match(self::BODY_PATTERN, $body) !== 1) {
+            return null;
+        }
+        $dotted = strtolower(str_replace('__', '.', $body));
+        // Segments must match the schema key grammar (alphanumeric first
+        // character) so env-produced keys can never bypass strict mode.
+        if (preg_match('/^[a-z0-9][a-z0-9_-]*(\.[a-z0-9][a-z0-9_-]*)*$/', $dotted) !== 1) {
+            return null;
+        }
+
+        return $dotted;
     }
 }

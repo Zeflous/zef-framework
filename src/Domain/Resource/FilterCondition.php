@@ -50,5 +50,6 @@ final readonly class FilterCondition
         } elseif (is_array($this->value)) {
             throw new \InvalidArgumentException("Filter operator '{$this->op}' requires a scalar value.");
         }
+        // scalar value with a scalar operator: the valid combination
     }
 }

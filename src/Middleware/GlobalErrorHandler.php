@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 namespace Zef\Middleware;
 
+use Psr\Http\Message\MessageInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -59,21 +60,35 @@ final readonly class GlobalErrorHandler implements MiddlewareInterface
                     'path' => $request->getUri()->getPath(),
                 ]);
             } catch (\Throwable $loggingFailure) {
-                @error_log('ZEF logging failure: ' . $loggingFailure::class);
+                // Last-resort sink: the PSR-3 logger itself is broken, so the
+                // class name is written straight to the SAPI error log. The
+                // bool return value is intentionally ignored — there is no
+                // lower fallback left to try.
+                error_log('ZEF logging failure: ' . $loggingFailure::class);
             }
 
-            try {
-                return $this->factory->create(
-                    500,
-                    $this->factory->isDebug() ? $e->getMessage() : 'Internal Server Error',
-                    $correlationId,
-                )->withHeader('X-Request-ID', $correlationId);
-            } catch (\Throwable) {
-                return new Response(500, [
-                    'Content-Type' => 'text/plain',
-                    'X-Request-ID' => $correlationId,
-                ], 'Internal Server Error');
-            }
+            return $this->internalErrorResponse($e, $correlationId);
+        }
+    }
+
+    /**
+     * Builds the 500 response through the error factory, falling back to a
+     * plain text response when the factory itself is unavailable (double
+     * failure) so the client still receives a 500 with the correlation id.
+     */
+    private function internalErrorResponse(\Throwable $e, string $correlationId): MessageInterface
+    {
+        try {
+            return $this->factory->create(
+                500,
+                $this->factory->isDebug() ? $e->getMessage() : 'Internal Server Error',
+                $correlationId,
+            )->withHeader('X-Request-ID', $correlationId);
+        } catch (\Throwable) {
+            return new Response(500, [
+                'Content-Type' => 'text/plain',
+                'X-Request-ID' => $correlationId,
+            ], 'Internal Server Error');
         }
     }
 }

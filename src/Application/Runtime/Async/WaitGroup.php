@@ -48,10 +48,10 @@ final class WaitGroup
         --$this->count;
 
         if ($this->count === 0) {
-            $waiters = $this->waiters;
+            $parked = $this->waiters;
             $this->waiters = [];
 
-            foreach ($waiters as $waiter) {
+            foreach ($parked as $waiter) {
                 $waiter->deliver(null);
             }
         }

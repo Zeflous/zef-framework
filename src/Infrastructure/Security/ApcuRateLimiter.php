@@ -45,7 +45,7 @@ final readonly class ApcuRateLimiter implements RateLimiterInterface
             throw new \InvalidArgumentException('maxKeys must be >= 1.');
         }
         if (!function_exists('apcu_fetch')) {
-            throw new \RuntimeException('APCu extension is required for ApcuRateLimiter.');
+            throw new ApcuUnavailableException('APCu extension is required for ApcuRateLimiter.');
         }
     }
 

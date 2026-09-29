@@ -22,7 +22,11 @@ final class EventJson
 {
     private const int JSON_DEPTH = 512;
 
-    private function __construct() {}
+    private function __construct()
+    {
+        // Intentionally empty: pure static codec — instantiation is forbidden
+        // and there is no per-instance state to initialize.
+    }
 
     /**
      * @param array<mixed> $value

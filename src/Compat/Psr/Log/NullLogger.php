@@ -14,22 +14,66 @@ if (!class_exists(NullLogger::class)) {
     class NullLogger implements LoggerInterface
     {
         #[\Override]
-        public function emergency(string|\Stringable $message, array $context = []): void {}
+        public function emergency(string|\Stringable $message, array $context = []): void
+        {
+            // Intentionally empty: the null logger is the PSR-3 "off" sink and
+            // discards every emergency record.
+        }
+
         #[\Override]
-        public function alert(string|\Stringable $message, array $context = []): void {}
+        public function alert(string|\Stringable $message, array $context = []): void
+        {
+            // Intentionally empty: the null logger is the PSR-3 "off" sink and
+            // discards every alert record.
+        }
+
         #[\Override]
-        public function critical(string|\Stringable $message, array $context = []): void {}
+        public function critical(string|\Stringable $message, array $context = []): void
+        {
+            // Intentionally empty: the null logger is the PSR-3 "off" sink and
+            // discards every critical record.
+        }
+
         #[\Override]
-        public function error(string|\Stringable $message, array $context = []): void {}
+        public function error(string|\Stringable $message, array $context = []): void
+        {
+            // Intentionally empty: the null logger is the PSR-3 "off" sink and
+            // discards every error record.
+        }
+
         #[\Override]
-        public function warning(string|\Stringable $message, array $context = []): void {}
+        public function warning(string|\Stringable $message, array $context = []): void
+        {
+            // Intentionally empty: the null logger is the PSR-3 "off" sink and
+            // discards every warning record.
+        }
+
         #[\Override]
-        public function notice(string|\Stringable $message, array $context = []): void {}
+        public function notice(string|\Stringable $message, array $context = []): void
+        {
+            // Intentionally empty: the null logger is the PSR-3 "off" sink and
+            // discards every notice record.
+        }
+
         #[\Override]
-        public function info(string|\Stringable $message, array $context = []): void {}
+        public function info(string|\Stringable $message, array $context = []): void
+        {
+            // Intentionally empty: the null logger is the PSR-3 "off" sink and
+            // discards every info record.
+        }
+
         #[\Override]
-        public function debug(string|\Stringable $message, array $context = []): void {}
+        public function debug(string|\Stringable $message, array $context = []): void
+        {
+            // Intentionally empty: the null logger is the PSR-3 "off" sink and
+            // discards every debug record.
+        }
+
         #[\Override]
-        public function log($level, string|\Stringable $message, array $context = []): void {}
+        public function log($level, string|\Stringable $message, array $context = []): void
+        {
+            // Intentionally empty: the null logger is the PSR-3 "off" sink and
+            // discards every record regardless of level.
+        }
     }
 }

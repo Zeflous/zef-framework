@@ -13,7 +13,7 @@ namespace Zef\Framework\Container;
 /**
  * @internal
  */
-final class ServiceRegistry
+final class ServiceRegistry extends ContainerEventListenerRegistry
 {
     /**
      * @var array<string,ServiceDefinition>
@@ -34,18 +34,6 @@ final class ServiceRegistry
      * @var array<string,null|string>
      */
     private array $moduleOf = [];
-
-    // v2.10.0 container event listeners (resolving/resolved). Kept here so the
-    // resolver can fire them with zero lookups; empty arrays cost nothing.
-    /**
-     * @var list<callable>
-     */
-    private array $resolvingListeners = [];
-
-    /**
-     * @var list<callable>
-     */
-    private array $resolvedListeners = [];
 
     public function hasFactory(string $id): bool
     {
@@ -78,44 +66,6 @@ final class ServiceRegistry
     public function aliases(): array
     {
         return $this->aliases;
-    }
-
-    public function addResolvingListener(callable $listener): void
-    {
-        if (count($this->resolvingListeners) >= 32) {
-            throw new \OverflowException('Container resolving-listener budget exceeded (32).');
-        }
-        $this->resolvingListeners[] = $listener;
-    }
-
-    public function addResolvedListener(callable $listener): void
-    {
-        if (count($this->resolvedListeners) >= 32) {
-            throw new \OverflowException('Container resolved-listener budget exceeded (32).');
-        }
-        $this->resolvedListeners[] = $listener;
-    }
-
-    public function hasResolvingListeners(): bool
-    {
-        return $this->resolvingListeners !== [];
-    }
-
-    public function hasResolvedListeners(): bool
-    {
-        return $this->resolvedListeners !== [];
-    }
-
-    /** @return list<callable> */
-    public function resolvingListeners(): array
-    {
-        return $this->resolvingListeners;
-    }
-
-    /** @return list<callable> */
-    public function resolvedListeners(): array
-    {
-        return $this->resolvedListeners;
     }
 
     /** @return array<string,array<int|string,mixed>> */
@@ -179,11 +129,16 @@ final class ServiceRegistry
         ?string $module,
         string $lifetime,
     ): void {
+        // $deps arrives as a (possibly string-keyed) map of dependency ids
+        // from Container::register(); the ServiceDefinition constructor
+        // validates every entry is a non-empty string.
+        /** @var list<string> $dependencyIds */
+        $dependencyIds = array_values($deps);
         $this->addDefinition(
             new ServiceDefinition(
                 $id,
                 $factory,
-                array_values($deps),
+                $dependencyIds,
                 $module,
                 $lifetime,
                 $lifetime === ServiceLifetime::SINGLETON,

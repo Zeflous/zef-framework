@@ -88,7 +88,7 @@ final readonly class RedisLockStore implements LockStoreInterface
             1,
         );
         if (!is_int($result) || $result < 0) {
-            throw new \RuntimeException('Redis lock store returned an unexpected acquire result.');
+            throw new LockStoreException('Redis lock store returned an unexpected acquire result.');
         }
 
         return $result === 1;
@@ -105,7 +105,7 @@ final readonly class RedisLockStore implements LockStoreInterface
             1,
         );
         if (!is_int($result) || $result < 0) {
-            throw new \RuntimeException('Redis lock store returned an unexpected release result.');
+            throw new LockStoreException('Redis lock store returned an unexpected release result.');
         }
 
         return $result === 1;
@@ -123,7 +123,7 @@ final readonly class RedisLockStore implements LockStoreInterface
             1,
         );
         if (!is_int($result) || $result < 0) {
-            throw new \RuntimeException('Redis lock store returned an unexpected refresh result.');
+            throw new LockStoreException('Redis lock store returned an unexpected refresh result.');
         }
 
         return $result === 1;

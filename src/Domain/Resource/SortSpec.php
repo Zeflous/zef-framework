@@ -43,12 +43,7 @@ final readonly class SortSpec
             $resolved[] = $key;
         }
         if ($resolved === [] && $defaultFields !== []) {
-            foreach ($defaultFields as $field) {
-                if (!is_string($field) || $field === '') {
-                    throw new \InvalidArgumentException('Default sort fields must be non-empty strings.');
-                }
-                $resolved[] = new SortKey($field, $defaultDesc);
-            }
+            $resolved = $this->defaultKeys($defaultFields, $defaultDesc);
         }
         $this->keys = $resolved;
     }
@@ -65,40 +60,10 @@ final readonly class SortSpec
         bool $defaultDesc = false,
     ): self {
         $allowed = array_fill_keys($whitelist, true);
-        $keys = [];
         $raw = $query[$sortKey] ?? null;
-        if (is_string($raw) && $raw !== '') {
-            $raw = strlen($raw) > 512 ? substr($raw, 0, 512) : $raw;
-            foreach (explode(',', $raw) as $candidate) {
-                if (count($keys) >= self::MAX_KEYS) {
-                    break;
-                }
-                $candidate = trim($candidate);
-                if ($candidate === '') {
-                    continue;
-                }
-                $desc = false;
-                $first = $candidate[0];
-                if ($first === '-') {
-                    $desc = true;
-                    $candidate = ltrim(substr($candidate, 1), '+- ');
-                } elseif ($first === '+') {
-                    $candidate = ltrim(substr($candidate, 1), '+- ');
-                }
-                if ($candidate === '' || strlen($candidate) > self::MAX_FIELD_BYTES) {
-                    continue;
-                }
-                if (!isset($allowed[$candidate])) {
-                    continue; // lenient: unknown fields never abort the request
-                }
-                foreach ($keys as $existing) {
-                    if ($existing->field === $candidate) {
-                        continue 2; // first occurrence wins
-                    }
-                }
-                $keys[] = new SortKey($candidate, $desc);
-            }
-        }
+        $keys = is_string($raw) && $raw !== ''
+            ? self::parseSortKeys($raw, $allowed)
+            : [];
 
         return new self($keys, $defaultFields, $defaultDesc);
     }
@@ -155,6 +120,82 @@ final readonly class SortSpec
         }
 
         return implode(',', $parts);
+    }
+
+    /**
+     * @param list<string> $defaultFields
+     *
+     * @return list<SortKey>
+     */
+    private function defaultKeys(array $defaultFields, bool $defaultDesc): array
+    {
+        $resolved = [];
+        foreach ($defaultFields as $field) {
+            if (!is_string($field) || $field === '') {
+                throw new \InvalidArgumentException('Default sort fields must be non-empty strings.');
+            }
+            $resolved[] = new SortKey($field, $defaultDesc);
+        }
+
+        return $resolved;
+    }
+
+    /**
+     * @param array<string, true> $allowed
+     *
+     * @return list<SortKey>
+     */
+    private static function parseSortKeys(string $raw, array $allowed): array
+    {
+        if (strlen($raw) > 512) {
+            $raw = substr($raw, 0, 512);
+        }
+        $keys = [];
+        foreach (explode(',', $raw) as $candidate) {
+            if (count($keys) >= self::MAX_KEYS) {
+                break;
+            }
+            $candidate = trim($candidate);
+            if ($candidate === '') {
+                continue;
+            }
+            [$candidate, $desc] = self::splitDirection($candidate);
+            if ($candidate === '' || strlen($candidate) > self::MAX_FIELD_BYTES) {
+                continue;
+            }
+            if (!isset($allowed[$candidate])) {
+                continue; // lenient: unknown fields never abort the request
+            }
+            if (self::hasKey($keys, $candidate)) {
+                continue; // first occurrence wins
+            }
+            $keys[] = new SortKey($candidate, $desc);
+        }
+
+        return $keys;
+    }
+
+    /**
+     * @return array{string, bool} the bare field name and its descending flag
+     */
+    private static function splitDirection(string $candidate): array
+    {
+        $first = $candidate[0];
+        $desc = $first === '-';
+        if ($first === '-' || $first === '+') {
+            // Direction prefix stripped; a plain field name falls through.
+            $candidate = ltrim(substr($candidate, 1), '+- ');
+        }
+
+        return [$candidate, $desc];
+    }
+
+    /**
+     * @param list<SortKey> $keys
+     */
+    private static function hasKey(array $keys, string $candidate): bool
+    {
+        return array_any($keys, fn (SortKey $existing): bool => $existing->field === $candidate);
     }
 
     private function valueOf(mixed $row, string $field): mixed

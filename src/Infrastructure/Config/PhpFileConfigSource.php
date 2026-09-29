@@ -44,6 +44,12 @@ final readonly class PhpFileConfigSource implements ConfigSourceInterface
         }
 
         try {
+            // Plain require (not require_once) is load-bearing: load() may be
+            // called repeatedly for the same source file within one process
+            // (config reloads, later-sources-override-earlier composition),
+            // and require_once would hand back `true` after the first include,
+            // silently breaking every later read. Same include-contract triage
+            // as RouteCache::loadIfFresh() — see sonar-project.properties.
             $values = require $this->path;
         } catch (\Throwable $e) {
             throw new InvalidConfigurationException(

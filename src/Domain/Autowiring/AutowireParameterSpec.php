@@ -46,7 +46,9 @@ final readonly class AutowireParameterSpec
             throw new \InvalidArgumentException("Parameter '\${$this->name}' cannot combine #[Inject] and #[Value].");
         }
         if ($this->injectId !== null && $this->isVariadic) {
-            throw new \InvalidArgumentException("Parameter '\${$this->name}': #[Inject] on a variadic parameter is not supported.");
+            throw new \InvalidArgumentException(
+                "Parameter '\${$this->name}': #[Inject] on a variadic parameter is not supported.",
+            );
         }
     }
 

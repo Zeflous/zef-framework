@@ -43,54 +43,17 @@ final readonly class SecurityPolicy
         if ($this->csrfTokenBytes < 16) {
             throw new \InvalidArgumentException('csrfTokenBytes must be >= 16.');
         }
-        if ($this->rateLimitMaxRequests < 1) {
-            throw new \InvalidArgumentException('rateLimitMaxRequests must be >= 1.');
-        }
-        if ($this->rateLimitWindowSeconds < 1) {
-            throw new \InvalidArgumentException('rateLimitWindowSeconds must be >= 1.');
-        }
-        if ($this->rateLimitMaxKeys < 1) {
-            throw new \InvalidArgumentException('rateLimitMaxKeys must be >= 1.');
-        }
-        if ($this->csrfEnabled && $this->csrfSecret !== '' && strlen($this->csrfSecret) < 32) {
-            throw new \InvalidArgumentException('CSRF secret must be at least 32 bytes when CSRF is enabled.');
-        }
-        if (preg_match('/^[A-Za-z0-9!#$%&\'*+.^_`|~-]+$/', $this->csrfCookieName) !== 1) {
-            throw new \InvalidArgumentException('Invalid CSRF cookie name.');
-        }
-        if (preg_match('/^[A-Za-z0-9!#$%&\'*+.^_`|~-]+$/', $this->csrfHeaderName) !== 1) {
-            throw new \InvalidArgumentException('Invalid CSRF header name.');
-        }
-        if (!in_array($this->csrfSameSite, ['Strict', 'Lax', 'None'], true)) {
-            throw new \InvalidArgumentException('Invalid CSRF SameSite policy.');
-        }
-        if ($this->csrfSameSite === 'None' && !$this->csrfSecureCookie) {
-            throw new \InvalidArgumentException('SameSite=None requires Secure cookies.');
-        }
-        if ($this->csrfTokenTtlSeconds < 0) {
-            throw new \InvalidArgumentException('csrfTokenTtlSeconds must be >= 0 (0 = no expiry).');
-        }
-        if ($this->csrfSpaMode) {
-            if (!$this->csrfEnabled) {
-                throw new \InvalidArgumentException('CSRF SPA mode requires CSRF to be enabled.');
-            }
-            if ($this->csrfHttpOnlyCookie) {
-                // Audit I-3: an HttpOnly cookie makes the double-submit token
-                // structurally unreachable for JavaScript — every unsafe SPA
-                // request would fail 403. Fail the configuration loudly.
-                throw new \InvalidArgumentException(
-                    'CSRF SPA mode requires a JS-readable cookie — set csrfHttpOnlyCookie=false (ZEF_SECURITY_CSRF_HTTP_ONLY=false).',
-                );
-            }
-        }
-        $normalized = [];
-        foreach ($allowedOrigins as $origin) {
-            $normalized[] = OriginPolicy::normalizeOrigin($origin);
-        }
-        $this->allowedOrigins = array_values(array_unique($normalized));
-        if ($this->originEnabled && $this->allowedOrigins === []) {
-            throw new \InvalidArgumentException('Origin policy enabled without allowed origins.');
-        }
+        $this->assertRateLimitBounds(
+            $this->rateLimitMaxRequests,
+            $this->rateLimitWindowSeconds,
+            $this->rateLimitMaxKeys,
+        );
+        $this->assertCsrfSecretStrength($this->csrfEnabled, $this->csrfSecret);
+        $this->assertCsrfTokenNames($this->csrfCookieName, $this->csrfHeaderName);
+        $this->assertCsrfCookiePolicy($this->csrfSameSite, $this->csrfSecureCookie, $this->csrfTokenTtlSeconds);
+        $this->assertCsrfSpaMode($this->csrfSpaMode, $this->csrfEnabled, $this->csrfHttpOnlyCookie);
+        $this->allowedOrigins = $this->normalizeOrigins($allowedOrigins);
+        $this->assertOriginPolicy($this->originEnabled, $this->allowedOrigins);
     }
 
     /**
@@ -119,11 +82,16 @@ final readonly class SecurityPolicy
             : $csrfDefault;
         $csrfSecret = $env->readString('ZEF_SECURITY_CSRF_SECRET');
         if ($csrfEnabled && $csrfSecret === '' && $csrfExplicit) {
-            throw new \RuntimeException('ZEF_SECURITY_CSRF=1 requires ZEF_SECURITY_CSRF_SECRET (>= 32 bytes).');
+            throw new SecurityPolicyException(
+                'ZEF_SECURITY_CSRF=1 requires ZEF_SECURITY_CSRF_SECRET (>= 32 bytes).'
+            );
         }
         if ($csrfEnabled && $csrfSecret === '') {
             $csrfEnabled = false;
-            $msg = '[ZEF][security] ZEF_SECURITY_CSRF_SECRET is not set; CSRF protection disabled. Set a secret of at least 32 bytes in production.';
+            $msg = sprintf(
+                '[ZEF][security] ZEF_SECURITY_CSRF_SECRET is not set; CSRF protection disabled. %s',
+                'Set a secret of at least 32 bytes in production.'
+            );
             if ($logger instanceof LoggerInterface) {
                 $logger->warning($msg);
             } else {
@@ -151,6 +119,96 @@ final readonly class SecurityPolicy
         );
     }
 
+    private function assertRateLimitBounds(int $maxRequests, int $windowSeconds, int $maxKeys): void
+    {
+        if ($maxRequests < 1) {
+            throw new \InvalidArgumentException('rateLimitMaxRequests must be >= 1.');
+        }
+        if ($windowSeconds < 1) {
+            throw new \InvalidArgumentException('rateLimitWindowSeconds must be >= 1.');
+        }
+        if ($maxKeys < 1) {
+            throw new \InvalidArgumentException('rateLimitMaxKeys must be >= 1.');
+        }
+    }
+
+    private function assertCsrfSecretStrength(bool $csrfEnabled, string $csrfSecret): void
+    {
+        if ($csrfEnabled && $csrfSecret !== '' && strlen($csrfSecret) < 32) {
+            throw new \InvalidArgumentException('CSRF secret must be at least 32 bytes when CSRF is enabled.');
+        }
+    }
+
+    /**
+     * Cookie and header names are RFC 7230 tokens: the ASCII-only class is
+     * deliberate (HTTP field names cannot carry non-ASCII code points), so
+     * the ranges stay explicit instead of going Unicode-aware.
+     */
+    private function assertCsrfTokenNames(string $cookieName, string $headerName): void
+    {
+        if (preg_match('/^[A-Za-z0-9!#$%&\'*+.^_`|~-]+$/', $cookieName) !== 1) {
+            throw new \InvalidArgumentException('Invalid CSRF cookie name.');
+        }
+        if (preg_match('/^[A-Za-z0-9!#$%&\'*+.^_`|~-]+$/', $headerName) !== 1) {
+            throw new \InvalidArgumentException('Invalid CSRF header name.');
+        }
+    }
+
+    private function assertCsrfCookiePolicy(string $sameSite, bool $secureCookie, int $tokenTtlSeconds): void
+    {
+        if (!in_array($sameSite, ['Strict', 'Lax', 'None'], true)) {
+            throw new \InvalidArgumentException('Invalid CSRF SameSite policy.');
+        }
+        if ($sameSite === 'None' && !$secureCookie) {
+            throw new \InvalidArgumentException('SameSite=None requires Secure cookies.');
+        }
+        if ($tokenTtlSeconds < 0) {
+            throw new \InvalidArgumentException('csrfTokenTtlSeconds must be >= 0 (0 = no expiry).');
+        }
+    }
+
+    private function assertCsrfSpaMode(bool $spaMode, bool $csrfEnabled, bool $httpOnlyCookie): void
+    {
+        if (!$spaMode) {
+            return;
+        }
+        if (!$csrfEnabled) {
+            throw new \InvalidArgumentException('CSRF SPA mode requires CSRF to be enabled.');
+        }
+        if ($httpOnlyCookie) {
+            // Audit I-3: an HttpOnly cookie makes the double-submit token
+            // structurally unreachable for JavaScript — every unsafe SPA
+            // request would fail 403. Fail the configuration loudly.
+            throw new \InvalidArgumentException(sprintf(
+                'CSRF SPA mode requires a JS-readable cookie — set csrfHttpOnlyCookie=false (%s).',
+                'ZEF_SECURITY_CSRF_HTTP_ONLY=false'
+            ));
+        }
+    }
+
+    /**
+     * @param list<string> $allowedOrigins
+     *
+     * @return list<string>
+     */
+    private function normalizeOrigins(array $allowedOrigins): array
+    {
+        $normalized = [];
+        foreach ($allowedOrigins as $origin) {
+            $normalized[] = OriginPolicy::normalizeOrigin($origin);
+        }
+
+        return array_values(array_unique($normalized));
+    }
+
+    /** @param list<string> $allowedOrigins */
+    private function assertOriginPolicy(bool $originEnabled, array $allowedOrigins): void
+    {
+        if ($originEnabled && $allowedOrigins === []) {
+            throw new \InvalidArgumentException('Origin policy enabled without allowed origins.');
+        }
+    }
+
     /**
      * v2.31.0 (audit C-11): strict, fail-closed boolean parsing for security
      * controls. Recognized words map plainly (note: 'enabled'/'on'/'yes' now
@@ -166,15 +224,19 @@ final readonly class SecurityPolicy
         if (in_array($value, ['0', 'false', 'no', 'off', 'disabled'], true)) {
             return false;
         }
-        $msg = "[ZEF][security] {$name}='{$raw}' is not a recognized boolean"
-            . ' (allowed: 1/0, true/false, yes/no, on/off, enabled/disabled).';
+        $msg = sprintf(
+            "[ZEF][security] %s='%s' is not a recognized boolean %s",
+            $name,
+            $raw,
+            '(allowed: 1/0, true/false, yes/no, on/off, enabled/disabled).'
+        );
         if ($logger instanceof LoggerInterface) {
             $logger->error($msg);
         } else {
             error_log($msg);
         }
 
-        throw new \RuntimeException($msg);
+        throw new SecurityPolicyException($msg);
     }
 
     /**

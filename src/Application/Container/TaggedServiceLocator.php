@@ -90,7 +90,10 @@ final class TaggedServiceLocator
             return null;
         }
         if (count($ids) > 1) {
-            throw new InvalidConfigurationException("Tag '{$this->normalize($tag)}' is carried by " . count($ids) . ' services; use resolveAll() or make the tag unique.');
+            throw new InvalidConfigurationException(
+                "Tag '{$this->normalize($tag)}' is carried by " . count($ids)
+                . ' services; use resolveAll() or make the tag unique.',
+            );
         }
 
         return $this->container->get($ids[0]);
@@ -115,7 +118,7 @@ final class TaggedServiceLocator
     {
         foreach ($this->view->definitions() as $id => $definition) {
             foreach ($definition->tags as $tag) {
-                // @infection-ignore-all LogicalOr — ekuivalen: ServiceDefinition memvalidasi tag sebagai string non-kosong; cabang defensif tak terjangkau
+                // @infection-ignore-all LogicalOr — ekuivalen: ServiceDefinition sudah memvalidasi tag non-kosong
                 if (!is_string($tag) || $tag === '') {
                     continue;
                 }
@@ -126,7 +129,7 @@ final class TaggedServiceLocator
                 }
             }
         }
-        // @infection-ignore-all TrueValue — ekuivalen: flag indexed: re-index membangun ulang map identik; tanpa pengamat eksternal
+        // @infection-ignore-all TrueValue — ekuivalen: re-index membangun ulang map identik
         $this->indexed = true;
     }
 

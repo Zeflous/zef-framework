@@ -38,16 +38,9 @@ final readonly class CronExpression implements ScheduleInterface
 {
     private const int MAX_SCAN_MINUTES = 1461 * 24 * 60; // one full leap cycle
 
-    private const array FIELD_RANGES = [
-        'minute' => ['min' => 0, 'max' => 59],
-        'hour' => ['min' => 0, 'max' => 23],
-        'dom' => ['min' => 1, 'max' => 31],
-        'month' => ['min' => 1, 'max' => 12],
-        'dow' => ['min' => 0, 'max' => 7],
-    ];
-
-    /** Highest day-of-month each month can reach (February reaches 29 on leap years). */
-    private const array MONTH_MAX_DOM = [1 => 31, 2 => 29, 3 => 31, 4 => 30, 5 => 31, 6 => 30, 7 => 31, 8 => 31, 9 => 30, 10 => 31, 11 => 30, 12 => 31];
+    private const string NEVER_FIRES_MESSAGE = <<<'MSG'
+        Cron expression '%s' can never fire (the restricted day-of-month has no valid date in the restricted months).
+        MSG;
 
     private function __construct(
         /** @var array<int,int> sorted allowed values */
@@ -65,16 +58,18 @@ final readonly class CronExpression implements ScheduleInterface
     public static function parse(string $expression): self
     {
         $expression = trim($expression);
-        $split = preg_split('/\s+/', $expression);
+        $split = preg_split('/\s+/u', $expression);
         $fields = is_array($split) ? $split : [];
         if (count($fields) !== 5) {
-            throw new \InvalidArgumentException("Cron expression '{$expression}' must have exactly 5 fields (minute hour dom month dow).");
+            throw new \InvalidArgumentException(
+                "Cron expression '{$expression}' must have exactly 5 fields (minute hour dom month dow).",
+            );
         }
         $parsed = [];
         foreach (array_combine(['minute', 'hour', 'dom', 'month', 'dow'], $fields) as $field => $raw) {
-            $parsed[$field] = self::parseField($field, $raw);
+            $parsed[$field] = CronFieldParser::parseField($field, $raw);
         }
-        $parsed['dow'] = self::normalizeDow($parsed['dow']);
+        $parsed['dow'] = CronFieldParser::normalizeDow($parsed['dow']);
         $domWildcard = $parsed['dom'] === range(1, 31);
 
         // Mark "explicit wildcard" via full-range detection; 1..31 always covers all possible dates.
@@ -87,21 +82,15 @@ final readonly class CronExpression implements ScheduleInterface
             $expression,
             !$domWildcard,
             $parsed['dow'] !== range(0, 6),
-            self::computeNeverFires($parsed['dom'], $parsed['month'], !$domWildcard),
+            CronFieldParser::computeNeverFires($parsed['dom'], $parsed['month'], !$domWildcard),
         );
     }
 
     #[\Override]
     public function nextRunAfter(int $nowUnixNano): int
     {
-        if ($nowUnixNano < 0) {
-            throw new \InvalidArgumentException('Cron time must be non-negative.');
-        }
-        if ($this->neverFires) {
-            throw new \RuntimeException(
-                "Cron expression '{$this->expression}' can never fire (the restricted day-of-month has no valid date in the restricted months).",
-            );
-        }
+        $this->assertNonNegativeTime($nowUnixNano);
+        $this->assertFires();
 
         return $this->scanNext(fn (int $unixSeconds): bool => $this->matchesUtc($unixSeconds), $nowUnixNano);
     }
@@ -113,14 +102,8 @@ final readonly class CronExpression implements ScheduleInterface
      */
     public function nextRunAfterIn(\DateTimeZone $timeZone, int $nowUnixNano): int
     {
-        if ($nowUnixNano < 0) {
-            throw new \InvalidArgumentException('Cron time must be non-negative.');
-        }
-        if ($this->neverFires) {
-            throw new \RuntimeException(
-                "Cron expression '{$this->expression}' can never fire (the restricted day-of-month has no valid date in the restricted months).",
-            );
-        }
+        $this->assertNonNegativeTime($nowUnixNano);
+        $this->assertFires();
 
         return $this->scanNext(fn (int $unixSeconds): bool => $this->matchesIn($timeZone, $unixSeconds), $nowUnixNano);
     }
@@ -182,6 +165,25 @@ final readonly class CronExpression implements ScheduleInterface
         return $this->expression . ' (UTC)';
     }
 
+    private function assertNonNegativeTime(int $nowUnixNano): void
+    {
+        if ($nowUnixNano < 0) {
+            throw new \InvalidArgumentException('Cron time must be non-negative.');
+        }
+    }
+
+    private function assertFires(): void
+    {
+        if (!$this->neverFires) {
+            return;
+        }
+
+        throw new CronExpressionException(sprintf(
+            self::NEVER_FIRES_MESSAGE,
+            $this->expression,
+        ));
+    }
+
     private function scanNext(\Closure $matches, int $nowUnixNano): int
     {
         $nowSec = intdiv($nowUnixNano, 1_000_000_000) + 1;
@@ -193,7 +195,9 @@ final readonly class CronExpression implements ScheduleInterface
             }
         }
 
-        throw new \RuntimeException("Cron expression '{$this->expression}' has no matching minute within 4 years.");
+        throw new CronExpressionException(
+            "Cron expression '{$this->expression}' has no matching minute within 4 years.",
+        );
     }
 
     /**
@@ -206,13 +210,11 @@ final readonly class CronExpression implements ScheduleInterface
      */
     private function matchesFields(int $minute, int $hour, int $dom, int $month, int $dow): bool
     {
-        if (!in_array($minute, $this->minutes, true)) {
-            return false;
-        }
-        if (!in_array($hour, $this->hours, true)) {
-            return false;
-        }
-        if (!in_array($month, $this->months, true)) {
+        if (
+            !in_array($minute, $this->minutes, true)
+            || !in_array($hour, $this->hours, true)
+            || !in_array($month, $this->months, true)
+        ) {
             return false;
         }
         $domMatch = in_array($dom, $this->daysOfMonth, true);
@@ -222,112 +224,5 @@ final readonly class CronExpression implements ScheduleInterface
         }
 
         return $domMatch && $dowMatch;
-    }
-
-    /**
-     * Static never-fires detection: with a restricted day-of-month, every
-     * restricted month must be able to reach the smallest required day.
-     *
-     * @param array<int,int> $daysOfMonth
-     * @param array<int,int> $months
-     */
-    private static function computeNeverFires(array $daysOfMonth, array $months, bool $domRestricted): bool
-    {
-        if (!$domRestricted || $daysOfMonth === []) {
-            return false; // wildcard dom covers 1..31 — every month qualifies
-        }
-        $required = min($daysOfMonth);
-        foreach ($months as $month) {
-            if ($required <= self::MONTH_MAX_DOM[$month]) {
-                return false; // at least one month can host this day
-            }
-        }
-
-        return true;
-    }
-
-    /**
-     * Day-of-week 7 is accepted as Sunday (normalized to 0), matching the
-     * documented contract; duplicates collapse and the list stays sorted.
-     *
-     * @param array<int,int> $values
-     *
-     * @return array<int,int>
-     */
-    private static function normalizeDow(array $values): array
-    {
-        $mapped = array_map(static fn (int $value): int => $value === 7 ? 0 : $value, $values);
-        $unique = array_values(array_unique($mapped));
-        sort($unique);
-
-        return $unique;
-    }
-
-    /** @return list<int> sorted allowed values for one field */
-    private static function parseField(string $field, string $raw): array
-    {
-        $range = self::FIELD_RANGES[$field];
-        $allowed = [];
-        foreach (explode(',', $raw) as $part) {
-            $step = 1;
-            if (str_contains($part, '/')) {
-                [$base, $stepRaw] = explode('/', $part, 2);
-                if (!self::isValidStep($stepRaw)) {
-                    throw new \InvalidArgumentException("Cron field '{$field}' has invalid step '{$stepRaw}'.");
-                }
-                $step = (int) $stepRaw;
-                if ($step < 1) {
-                    throw new \InvalidArgumentException("Cron field '{$field}' step must be >= 1.");
-                }
-            } else {
-                $base = $part;
-            }
-            if ($base === '*' || $base === '') {
-                if ($base === '') {
-                    throw new \InvalidArgumentException("Cron field '{$field}' has an empty component.");
-                }
-                $start = $range['min'];
-                $end = $range['max'];
-            } elseif (str_contains($base, '-')) {
-                [$startRaw, $endRaw] = explode('-', $base, 2);
-                if (!self::isValidValue($startRaw) || !self::isValidValue($endRaw)) {
-                    throw new \InvalidArgumentException("Cron field '{$field}' has invalid range '{$base}'.");
-                }
-                $start = (int) $startRaw;
-                $end = (int) $endRaw;
-                if ($start < $range['min'] || $end > $range['max'] || $start > $end) {
-                    throw new \InvalidArgumentException("Cron field '{$field}' range '{$base}' out of bounds.");
-                }
-            } elseif (self::isValidValue($base)) {
-                $start = (int) $base;
-                // "a/n" means "a to max, stepped by n" (classic cron).
-                $end = $step > 1 ? $range['max'] : $start;
-                if ($start < $range['min'] || $start > $range['max']) {
-                    throw new \InvalidArgumentException("Cron field '{$field}' value '{$base}' out of bounds.");
-                }
-            } else {
-                throw new \InvalidArgumentException("Cron field '{$field}' has invalid component '{$base}'.");
-            }
-            for ($value = $start; $value <= $end; $value += $step) {
-                $allowed[$value] = true;
-            }
-        }
-        if ($allowed === []) {
-            throw new \InvalidArgumentException("Cron field '{$field}' matches no values.");
-        }
-        $values = array_keys($allowed);
-        sort($values);
-
-        return $values;
-    }
-
-    private static function isValidValue(string $value): bool
-    {
-        return preg_match('/^\d{1,2}$/', $value) === 1;
-    }
-
-    private static function isValidStep(string $value): bool
-    {
-        return preg_match('/^\d{1,2}$/', $value) === 1;
     }
 }

@@ -83,7 +83,7 @@ final class InProcessMessageBus implements MessageBusInterface
         // envelopes, or a rewritten type would null-deref here.
         $handler = $this->handlers[$message->messageType] ?? null;
         if ($handler === null) {
-            throw new \RuntimeException('No message handler registered.');
+            throw new MessageDispatchException('No message handler registered.');
         }
         // Immutable folded chain (same pattern as CqrsBusTrait::buildChain
         // and InProcessJobWorker::execute): each $next link is fixed, so
@@ -95,9 +95,13 @@ final class InProcessMessageBus implements MessageBusInterface
             return new MessageResult($current->messageId, true);
         };
         for ($i = count($this->middleware) - 1; $i >= 0; --$i) {
-            $middleware = $this->middleware[$i];
+            $layer = $this->middleware[$i];
             $next = $terminal;
-            $terminal = fn (MessageEnvelope $current, MessageContext $ctx): MessageResult => $middleware->process($current, $ctx, $next);
+            $terminal = fn (MessageEnvelope $current, MessageContext $ctx): MessageResult => $layer->process(
+                $current,
+                $ctx,
+                $next,
+            );
         }
 
         return $terminal($message, $context);

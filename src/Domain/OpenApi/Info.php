@@ -31,7 +31,14 @@ final readonly class Info
     }
 
     /**
-     * @return array{title: string, version: string, description?: string, termsOfService?: string, contact?: array<string, string>, license?: array<string, string>}
+     * @return array{
+     *     title: string,
+     *     version: string,
+     *     description?: string,
+     *     termsOfService?: string,
+     *     contact?: array<string, string>,
+     *     license?: array<string, string>
+     * }
      */
     public function toArray(): array
     {

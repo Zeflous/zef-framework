@@ -14,19 +14,21 @@ use Psr\Container\ContainerInterface;
 
 final class RequestScope implements ContainerInterface
 {
+    private const string CLOSED_MESSAGE = 'Request scope is closed.';
+
     private bool $closed = false;
     private readonly ResolutionContext $context;
 
     public function __construct(private readonly ContainerResolver $resolver)
     {
-        $this->context = new ResolutionContext($resolver, $this);
+        $this->context = $this->buildContext();
     }
 
     #[\Override]
     public function get(string $id): mixed
     {
         if ($this->closed) {
-            throw new \LogicException('Request scope is closed.');
+            throw new \LogicException(self::CLOSED_MESSAGE);
         }
 
         return $this->context->get($id);
@@ -48,7 +50,7 @@ final class RequestScope implements ContainerInterface
     public function getInstance(string $id): mixed
     {
         if ($this->closed) {
-            throw new \LogicException('Request scope is closed.');
+            throw new \LogicException(self::CLOSED_MESSAGE);
         }
 
         return $this->resolver->scopeGetPublic($this, $id);
@@ -58,7 +60,7 @@ final class RequestScope implements ContainerInterface
     public function setInstance(string $id, mixed $value): void
     {
         if ($this->closed) {
-            throw new \LogicException('Request scope is closed.');
+            throw new \LogicException(self::CLOSED_MESSAGE);
         }
         $this->resolver->scopeSetPublic($this, $id, $value);
     }
@@ -66,12 +68,18 @@ final class RequestScope implements ContainerInterface
     public function close(): void
     {
         if ($this->closed) {
-            // @infection-ignore-all ReturnRemoval — ekuivalen: releaseScope adalah unset() (idempoten) dan context->reset() idempoten; close ganda identik secara observasi
+            // ekuivalen: releaseScope adalah unset() (idempoten) dan context->reset()
+            // idempoten; close ganda identik secara observasi
+            // @infection-ignore-all ReturnRemoval
             return;
         }
-        // @infection-ignore-all MethodCallRemoval — ekuivalen: releaseScope() hanya mengosongkan cache scope internal; scope tertutup tidak punya pembaca lanjutan
+        // ekuivalen: releaseScope() hanya mengosongkan cache scope internal; scope
+        // tertutup tidak punya pembaca lanjutan
+        // @infection-ignore-all MethodCallRemoval
         $this->resolver->releaseScope($this);
-        // @infection-ignore-all MethodCallRemoval — ekuivalen: context->reset() pada scope yang sedang ditutup tidak punya pengamat eksternal
+        // ekuivalen: context->reset() pada scope yang sedang ditutup tidak punya
+        // pengamat eksternal
+        // @infection-ignore-all MethodCallRemoval
         $this->context->reset();
         $this->closed = true;
     }
@@ -79,6 +87,12 @@ final class RequestScope implements ContainerInterface
     public function isClosed(): bool
     {
         return $this->closed;
+    }
+
+    /** Scope and resolution context are born together; the helper keeps construction out of the constructor. */
+    private function buildContext(): ResolutionContext
+    {
+        return new ResolutionContext($this->resolver, $this);
     }
 }
 

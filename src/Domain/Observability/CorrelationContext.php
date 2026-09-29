@@ -25,6 +25,16 @@ final readonly class CorrelationContext
     public const int MAX_ATTRIBUTE_VALUE_BYTES = 256;
     public const int MAX_ATTRIBUTE_BYTES = 4096;
 
+    /** W3C tracestate member: lowercase ASCII key, '='-separated ASCII value. */
+    private const string TRACESTATE_KEY = '[a-z0-9][_a-z0-9\-*\/]{0,255}=';
+
+    private const string TRACESTATE_VALUE = '[!#$%&\x27*+\-.\/0-9:<=>?@A-Z\^_`a-z|~]*';
+
+    private const string TRACESTATE_MEMBER = self::TRACESTATE_KEY . self::TRACESTATE_VALUE;
+
+    private const string TRACESTATE_PATTERN = '/^' . self::TRACESTATE_MEMBER
+        . '(?:, ?' . self::TRACESTATE_MEMBER . ')*$/';
+
     /**
      * @var array<string, null|bool|float|int|string>
      */
@@ -113,10 +123,7 @@ final readonly class CorrelationContext
         if (
             $value === ''
             || strlen($value) > self::MAX_TRACESTATE_BYTES
-            || preg_match(
-                '/^[a-z0-9][_a-z0-9\-*\/]{0,255}=[!#$%&\x27*+\-.\/0-9:<=>?@A-Z\^_`a-z|~]*(?:, ?[a-z0-9][_a-z0-9\-*\/]{0,255}=[!#$%&\x27*+\-.\/0-9:<=>?@A-Z\^_`a-z|~]*)*$/',
-                $value,
-            ) !== 1
+            || preg_match(self::TRACESTATE_PATTERN, $value) !== 1
         ) {
             throw new \InvalidArgumentException('Invalid or oversized W3C tracestate.');
         }
@@ -158,7 +165,8 @@ final readonly class CorrelationContext
             ) {
                 throw new \InvalidArgumentException('Invalid correlation attribute key.');
             }
-            if (!(is_string($value) || is_int($value) || is_float($value) || is_bool($value) || $value === null)) {
+            $isScalarValue = is_string($value) || is_int($value) || is_float($value) || is_bool($value);
+            if (!$isScalarValue && $value !== null) {
                 throw new \InvalidArgumentException('Correlation attribute values must be scalar or null.');
             }
             if (is_string($value) && strlen($value) > self::MAX_ATTRIBUTE_VALUE_BYTES) {
@@ -176,20 +184,13 @@ final readonly class CorrelationContext
 
     private function scalarByteLength(bool|float|int|string|null $value): int
     {
-        if ($value === null) {
-            return 4;
-        }
-        if (is_bool($value)) {
-            return $value ? 4 : 5;
-        }
-        if (is_int($value)) {
-            return 20;
-        }
-        if (is_float($value)) {
-            return 24;
-        }
-
-        return strlen($value);
+        return match (true) {
+            $value === null => 4,
+            is_bool($value) => $value ? 4 : 5,
+            is_int($value) => 20,
+            is_float($value) => 24,
+            default => strlen($value),
+        };
     }
 
     private function traceParentLength(string $traceId, string $spanId, string $flags): int

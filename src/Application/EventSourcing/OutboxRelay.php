@@ -102,8 +102,11 @@ final readonly class OutboxRelay
      * @throws EventSourcingException when the store does not implement
      *                                {@see OutboxClaimInterface} or arguments are invalid
      */
-    public function relayLeased(int $limit = 100, int $leaseSeconds = self::DEFAULT_LEASE_SECONDS, ?string $owner = null): int
-    {
+    public function relayLeased(
+        int $limit = 100,
+        int $leaseSeconds = self::DEFAULT_LEASE_SECONDS,
+        ?string $owner = null,
+    ): int {
         if (!$this->outbox instanceof OutboxClaimInterface) {
             throw new EventSourcingException(
                 'relayLeased() requires an outbox store implementing OutboxClaimInterface ('

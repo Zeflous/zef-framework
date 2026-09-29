@@ -42,7 +42,7 @@ final readonly class RedisSharedRateLimitStore implements SharedRateLimitStoreIn
             1,
         );
         if (!is_array($result) || count($result) !== 2) {
-            throw new \RuntimeException('Redis rate-limit store returned an unexpected result.');
+            throw RateLimitStoreException::unexpectedIncrementResult();
         }
         $count = is_numeric($result[0] ?? null) ? (int) $result[0] : 0;
         $reset = is_numeric($result[1] ?? null) ? (int) $result[1] : $now + $windowSeconds;
