@@ -44,7 +44,7 @@ final readonly class PdoSnapshotStore implements SnapshotStoreInterface
         private ConnectionInterface $connection,
         string $table = 'zef_snapshots',
     ) {
-        self::assertValidTable($table);
+        $this->assertValidTable($table);
         $this->table = $table;
     }
 
@@ -126,7 +126,7 @@ final readonly class PdoSnapshotStore implements SnapshotStoreInterface
     }
 
     /** Validates $table through the shared identifier grammar (throws on bad names). */
-    private static function assertValidTable(string $table): void
+    private function assertValidTable(string $table): void
     {
         new QueryBuilder()->quoteIdentifier($table, 'table');
     }

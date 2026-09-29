@@ -62,8 +62,6 @@ final class YamlSpecificationSerializer
     /**
      * YAML lines for one `key: item` mapping entry.
      *
-     * @param array-key $key
-     *
      * @return list<string>
      */
     private function emitEntry(int|string $key, mixed $item, int $depth): array

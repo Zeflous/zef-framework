@@ -51,10 +51,10 @@ final readonly class ModuleDefinition
     ) {
         $name = trim($name);
         Identifier::assertModuleName($name);
-        $this->services = self::validatedServices($services);
-        $this->aliases = self::validatedAliases($aliases);
-        $this->routes = self::validatedRoutes($routes);
-        $this->dependencies = self::normalizedDependencies($dependencies);
+        $this->services = $this->validatedServices($services);
+        $this->aliases = $this->validatedAliases($aliases);
+        $this->routes = $this->validatedRoutes($routes);
+        $this->dependencies = $this->normalizedDependencies($dependencies);
     }
 
     public static function fromArray(string $name, array $config): self
@@ -157,7 +157,7 @@ final readonly class ModuleDefinition
      *
      * @return array<string,ServiceDefinition>
      */
-    private static function validatedServices(array $services): array
+    private function validatedServices(array $services): array
     {
         foreach ($services as $id => $definition) {
             if (!is_string($id) || $id === '' || !$definition instanceof ServiceDefinition) {
@@ -180,7 +180,7 @@ final readonly class ModuleDefinition
      *
      * @return array<string,string>
      */
-    private static function validatedAliases(array $aliases): array
+    private function validatedAliases(array $aliases): array
     {
         foreach ($aliases as $alias => $target) {
             if (!is_string($alias) || $alias === '' || !is_string($target) || $target === '') {
@@ -196,7 +196,7 @@ final readonly class ModuleDefinition
      *
      * @return list<RouteDefinition>
      */
-    private static function validatedRoutes(array $routes): array
+    private function validatedRoutes(array $routes): array
     {
         foreach ($routes as $route) {
             if (!$route instanceof RouteDefinition) {
@@ -212,7 +212,7 @@ final readonly class ModuleDefinition
      *
      * @return list<string>
      */
-    private static function normalizedDependencies(array $dependencies): array
+    private function normalizedDependencies(array $dependencies): array
     {
         $normalized = [];
         foreach ($dependencies as $dependency) {

@@ -58,7 +58,7 @@ final class OutboxEntryBook
                 $matched[] = $entry;
             }
         }
-        usort($matched, self::compareFifo(...));
+        usort($matched, $this->compareFifo(...));
 
         return $matched;
     }
@@ -81,7 +81,7 @@ final class OutboxEntryBook
     }
 
     /** FIFO order for listings: (createdAt, id) ascending. */
-    private static function compareFifo(OutboxEntry $a, OutboxEntry $b): int
+    private function compareFifo(OutboxEntry $a, OutboxEntry $b): int
     {
         return [$a->createdAtUnixNano, $a->id] <=> [$b->createdAtUnixNano, $b->id];
     }
