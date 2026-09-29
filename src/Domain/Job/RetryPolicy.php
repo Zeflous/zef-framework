@@ -19,13 +19,9 @@ final readonly class RetryPolicy
         public float $multiplier = 2.0,
         public int $jitterMs = 0,
     ) {
-        if (
-            $maxAttempts < 1
-            || $initialDelayMs < 0
-            || $maxDelayMs < $initialDelayMs
-            || $multiplier < 1.0
-            || $jitterMs < 0
-        ) {
+        $hasValidAttemptBudget = $maxAttempts >= 1 && $initialDelayMs >= 0 && $jitterMs >= 0;
+        $hasValidDelayRange = $maxDelayMs >= $initialDelayMs && $multiplier >= 1.0;
+        if (!$hasValidAttemptBudget || !$hasValidDelayRange) {
             throw new \InvalidArgumentException('Invalid retry policy.');
         }
     }
