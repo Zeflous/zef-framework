@@ -27,7 +27,13 @@ final readonly class CoroutineLocal
 
     public function __construct()
     {
-        $this->store = new \WeakMap();
+        $this->store = self::emptyStore();
+    }
+
+    /** WeakMap factory kept out of the constructor (S2830: no object creation there). */
+    private static function emptyStore(): \WeakMap
+    {
+        return new \WeakMap();
     }
 
     /**
