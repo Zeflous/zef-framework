@@ -84,11 +84,7 @@ final class ConfigMigrator
             );
         }
         if ($toVersion < $fromVersion) {
-            throw new InvalidConfigurationException(sprintf(
-                'Config data is schema version %d, newer than the target version %d — downgrade migration is not supported.',
-                $fromVersion,
-                $toVersion,
-            ));
+            throw $this->downgradeNotSupported($fromVersion, $toVersion);
         }
         for ($version = $fromVersion; $version < $toVersion; ++$version) {
             $target = $version + 1;
@@ -122,5 +118,14 @@ final class ConfigMigrator
     public function stepCounts(): array
     {
         return array_map(count(...), $this->steps);
+    }
+
+    private function downgradeNotSupported(int $fromVersion, int $toVersion): InvalidConfigurationException
+    {
+        return new InvalidConfigurationException(sprintf(
+            'Config data is schema version %d, newer than the target version %d — downgrade migration is not supported.',
+            $fromVersion,
+            $toVersion,
+        ));
     }
 }

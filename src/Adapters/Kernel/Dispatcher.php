@@ -70,7 +70,9 @@ final readonly class Dispatcher implements RequestHandlerInterface
                 ['zef.service.id' => is_string($match['handler'] ?? null) ? $match['handler'] : ''],
             );
             if (!$handler instanceof RequestHandlerInterface) {
-                throw new InvalidConfigurationException("Handler '{$match['handler']}' does not implement RequestHandlerInterface.");
+                throw new InvalidConfigurationException(
+                    "Handler '{$match['handler']}' does not implement RequestHandlerInterface."
+                );
             }
             $handlerSpan = $telemetry->startSpan(
                 'zef.handler.execute',
@@ -98,19 +100,8 @@ final readonly class Dispatcher implements RequestHandlerInterface
             } finally {
                 $handlerSpan->end();
             }
-        } catch (RouteNotFoundException) {
-            return JsonResponse::error(404, 'Not Found', [
-                'method' => $request->getMethod(),
-                'path' => $request->getUri()->getPath(),
-            ]);
-        } catch (MethodNotAllowedException $e) {
-            return JsonResponse::error(405, 'Method Not Allowed', [
-                'method' => $e->method,
-                'path' => $e->path,
-                'allow' => $e->allowedMethods,
-            ], ['Allow' => implode(', ', $e->allowedMethods)]);
-        } catch (RouteConstraintException $e) {
-            return JsonResponse::error(400, 'Bad Request', ['detail' => $e->getMessage()]);
+        } catch (MethodNotAllowedException|RouteConstraintException|RouteNotFoundException $e) {
+            return $this->routeFailureResponse($e, $request);
         } finally {
             $routerSpan->setAttribute(
                 'zef.router.duration_seconds',
@@ -118,5 +109,30 @@ final readonly class Dispatcher implements RequestHandlerInterface
             );
             $routerSpan->end();
         }
+    }
+
+    /**
+     * Maps the three router ingress failures onto their JSON error responses
+     * (404/405/400 — bug fix #20 kept JsonResponse for all of them).
+     */
+    private function routeFailureResponse(
+        MethodNotAllowedException|RouteConstraintException|RouteNotFoundException $e,
+        ServerRequestInterface $request,
+    ): ResponseInterface {
+        if ($e instanceof RouteNotFoundException) {
+            return JsonResponse::error(404, 'Not Found', [
+                'method' => $request->getMethod(),
+                'path' => $request->getUri()->getPath(),
+            ]);
+        }
+        if ($e instanceof MethodNotAllowedException) {
+            return JsonResponse::error(405, 'Method Not Allowed', [
+                'method' => $e->method,
+                'path' => $e->path,
+                'allow' => $e->allowedMethods,
+            ], ['Allow' => implode(', ', $e->allowedMethods)]);
+        }
+
+        return JsonResponse::error(400, 'Bad Request', ['detail' => $e->getMessage()]);
     }
 }

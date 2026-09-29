@@ -161,6 +161,7 @@ final readonly class RadixTreeCache
             // object-injection gadget chain can start, and a tampered
             // payload still has to survive the version stamp, the SHA-256
             // fingerprint and the instanceof check in read().
+            /** @var null|array<string, mixed> $entry */
             $entry = unserialize($blob, ['allowed_classes' => [ // nosemgrep: php.lang.security.unserialize-use
                 ConfigRadixTree::class,
                 ConfigRadixNode::class,

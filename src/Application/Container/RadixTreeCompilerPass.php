@@ -58,54 +58,90 @@ final readonly class RadixTreeCompilerPass
      */
     private function enforceScopes(CompiledContainerPlan $plan, NamespaceRadixTree $tree): void
     {
-        $counts = [];
-        $edgeSeen = [];
+        $ledger = new CrossScopeEdgeLedger();
         foreach ($plan->definitions as $consumerId => $_definition) {
             if ($this->isSynthetic($consumerId)) {
-                // @infection-ignore-all Continue_ — ekuivalen: definisi sintetis (@inner:*) ditambahkan saat freeze sehingga selalu terakhir; break dan continue melewati sisa yang sama
+                // @infection-ignore-all Continue_ — ekuivalen: definisi sintetis (@inner:*)
+                // ditambahkan saat freeze sehingga selalu terakhir; break dan continue
+                // melewati sisa yang sama
                 continue; // decoration/contextual machinery is exempt
             }
             foreach ($plan->dependenciesOf($consumerId) as $dep) {
-                $targetScope = $tree->scopeOf($dep);
-                if ($targetScope === null || $targetScope['scope'] === NamespaceRadixTree::SCOPE_PUBLIC) {
-                    continue;
-                }
-                $scopePrefix = $targetScope['prefix'];
-                // Consumers inside the same subtree are always allowed.
-                if (str_starts_with($consumerId, $scopePrefix)) {
-                    continue;
-                }
-                if ($targetScope['scope'] === NamespaceRadixTree::SCOPE_INTERNAL) {
-                    throw new ModuleDependencyViolationException("Namespace scope violation: service '{$consumerId}' references internal service '{$dep}' from outside the guarded namespace '{$scopePrefix}'.");
-                }
-                // MODULE scope: budgeted per (consumerPrefix => targetPrefix) pair,
-                // counting distinct target services — mirrors DependencyGraphValidator
-                // (its from->to key). The consumer's own guarded (internal/module)
-                // prefix carries the `from` role; unscoped or public consumers share
-                // the '' bucket so the zero-budget deny-all keeps applying to them.
-                $budget = $this->policy->maxCrossScopeRefs;
-                if ($budget <= 0) {
-                    throw new ModuleDependencyViolationException("Namespace scope violation: service '{$consumerId}' references module-scoped service '{$dep}' while maxCrossScopeRefs is 0.");
-                }
-                $consumerScope = $tree->scopeOf($consumerId);
-                $consumerPrefix = ($consumerScope !== null && $consumerScope['scope'] !== NamespaceRadixTree::SCOPE_PUBLIC)
-                    ? $consumerScope['prefix']
-                    : '';
-                // Trim the stored trailing separators so the bucket key and the
-                // violation message read "Consumer=>Target" without noise.
-                $pair = rtrim($consumerPrefix, '\\') . '=>' . rtrim($scopePrefix, '\\');
-                // @infection-ignore-all Concat,ConcatOperandRemoval — ekuivalen: scopeOf menentukan kedua sisi pair, sehingga pengelompokan dedup identik untuk perubahan pemisah semata
-                $edgeKey = $pair . '|' . $dep;
-                if (isset($edgeSeen[$edgeKey])) {
-                    continue;
-                }
-                // @infection-ignore-all TrueValue — ekuivalen: edgeSeen hanya dibaca lewat isset(); nilai tidak relevan
-                $edgeSeen[$edgeKey] = true;
-                $counts[$pair] = ($counts[$pair] ?? 0) + 1;
-                if ($counts[$pair] > $budget) {
-                    throw new ModuleDependencyViolationException("Namespace scope violation: cross-scope references into '{$pair}' exceed the limit ({$budget}).");
-                }
+                $this->enforceEdge($consumerId, $dep, $tree, $ledger);
             }
+        }
+    }
+
+    /**
+     * Enforces the target service's namespace scope against one consumer
+     * (public/unscoped targets and same-subtree consumers are always
+     * allowed; internal targets must never be referenced from outside).
+     */
+    private function enforceEdge(
+        string $consumerId,
+        string $dep,
+        NamespaceRadixTree $tree,
+        CrossScopeEdgeLedger $ledger,
+    ): void {
+        $targetScope = $tree->scopeOf($dep);
+        if ($targetScope === null || $targetScope['scope'] === NamespaceRadixTree::SCOPE_PUBLIC) {
+            return;
+        }
+        $scopePrefix = $targetScope['prefix'];
+        // Consumers inside the same subtree are always allowed.
+        if (str_starts_with($consumerId, $scopePrefix)) {
+            return;
+        }
+        if ($targetScope['scope'] === NamespaceRadixTree::SCOPE_INTERNAL) {
+            throw new ModuleDependencyViolationException(
+                'Namespace scope violation: service ' . $consumerId
+                . ' references internal service ' . $dep
+                . ' from outside the guarded namespace ' . $scopePrefix . '.'
+            );
+        }
+        $this->enforceModuleBudget($consumerId, $dep, $scopePrefix, $tree, $ledger);
+    }
+
+    /**
+     * MODULE scope: budgeted per (consumerPrefix => targetPrefix) pair,
+     * counting distinct target services — mirrors DependencyGraphValidator
+     * (its from->to key). The consumer's own guarded (internal/module)
+     * prefix carries the `from` role; unscoped or public consumers share
+     * the '' bucket so the zero-budget deny-all keeps applying to them.
+     */
+    private function enforceModuleBudget(
+        string $consumerId,
+        string $dep,
+        string $scopePrefix,
+        NamespaceRadixTree $tree,
+        CrossScopeEdgeLedger $ledger,
+    ): void {
+        $budget = $this->policy->maxCrossScopeRefs;
+        if ($budget <= 0) {
+            throw new ModuleDependencyViolationException(
+                'Namespace scope violation: service ' . $consumerId
+                . ' references module-scoped service ' . $dep
+                . ' while maxCrossScopeRefs is 0.'
+            );
+        }
+        $consumerScope = $tree->scopeOf($consumerId);
+        $consumerPrefix = ($consumerScope !== null && $consumerScope['scope'] !== NamespaceRadixTree::SCOPE_PUBLIC)
+            ? $consumerScope['prefix']
+            : '';
+        // Trim the stored trailing separators so the bucket key and the
+        // violation message read "Consumer=>Target" without noise.
+        // @infection-ignore-all Concat,ConcatOperandRemoval — ekuivalen: scopeOf
+        // menentukan kedua sisi pair, sehingga pengelompokan dedup identik
+        // untuk perubahan pemisah semata
+        $pair = rtrim($consumerPrefix, '\\') . '=>' . rtrim($scopePrefix, '\\');
+        if (!$ledger->isNewEdge($pair, $dep)) {
+            return;
+        }
+        if ($ledger->exceedsWith($pair, $budget)) {
+            throw new ModuleDependencyViolationException(
+                'Namespace scope violation: cross-scope references into ' . $pair
+                . ' exceed the limit (' . $budget . ').'
+            );
         }
     }
 
