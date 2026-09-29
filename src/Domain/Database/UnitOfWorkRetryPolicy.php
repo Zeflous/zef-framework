@@ -111,13 +111,9 @@ final readonly class UnitOfWorkRetryPolicy
             '2006',
         ],
     ) {
-        if (
-            $maxAttempts < 1
-            || $initialDelayMs < 0
-            || $maxDelayMs < $initialDelayMs
-            || $multiplier < 1.0
-            || $jitterMs < 0
-        ) {
+        $delaysAreConsistent = $initialDelayMs >= 0 && $maxDelayMs >= $initialDelayMs;
+        $boundsAreConsistent = $maxAttempts >= 1 && $multiplier >= 1.0 && $jitterMs >= 0;
+        if (!$delaysAreConsistent || !$boundsAreConsistent) {
             throw new \InvalidArgumentException('Invalid UnitOfWork retry policy.');
         }
     }
@@ -199,7 +195,11 @@ final readonly class UnitOfWorkRetryPolicy
     {
         $chain = [];
         $seen = [];
-        for ($current = $e; $current instanceof \Throwable && !isset($seen[spl_object_id($current)]); $current = $current->getPrevious()) {
+        for (
+            $current = $e;
+            $current instanceof \Throwable && !isset($seen[spl_object_id($current)]);
+            $current = $current->getPrevious()
+        ) {
             $seen[spl_object_id($current)] = true;
             $chain[] = $current;
         }

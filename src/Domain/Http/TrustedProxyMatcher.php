@@ -32,21 +32,7 @@ final class TrustedProxyMatcher
             return false;
         }
         foreach ($trusted as $entry) {
-            $entry = trim((string) $entry);
-            if ($entry === '') {
-                continue;
-            }
-            if ($entry === $ip) {
-                return true;
-            }
-            if (!str_contains($entry, '/')) {
-                continue;
-            }
-            [$network, $prefix] = array_pad(explode('/', $entry, 2), 2, null);
-            if ($prefix === null || !ctype_digit($prefix)) {
-                continue;
-            }
-            if (self::ipInCidr($ip, (string) $network, (int) $prefix)) {
+            if (self::entryMatchesIp($entry, $ip)) {
                 return true;
             }
         }
@@ -56,8 +42,8 @@ final class TrustedProxyMatcher
 
     public static function ipInCidr(string $ip, string $network, int $prefix): bool
     {
-        $ipBin = @inet_pton($ip);
-        $networkBin = @inet_pton($network);
+        $ipBin = self::binaryAddress($ip);
+        $networkBin = self::binaryAddress($network);
         if ($ipBin === false || $networkBin === false || strlen($ipBin) !== strlen($networkBin)) {
             return false;
         }
@@ -65,11 +51,63 @@ final class TrustedProxyMatcher
         if ($prefix < 0 || $prefix > $maxPrefix) {
             return false;
         }
+
+        return self::maskedPrefixMatches($ipBin, $networkBin, $prefix);
+    }
+
+    /**
+     * One trusted-list entry against a validated IP: exact string match or
+     * CIDR containment.
+     *
+     * @param mixed $entry raw trusted-list entry (cast to string)
+     */
+    private static function entryMatchesIp(mixed $entry, string $ip): bool
+    {
+        $entry = trim((string) $entry);
+        if ($entry === '') {
+            return false;
+        }
+        if ($entry === $ip) {
+            return true;
+        }
+
+        return self::cidrEntryMatches($entry, $ip);
+    }
+
+    private static function cidrEntryMatches(string $entry, string $ip): bool
+    {
+        if (!str_contains($entry, '/')) {
+            return false;
+        }
+        [$network, $prefix] = array_pad(explode('/', $entry, 2), 2, null);
+        if ($prefix === null || !ctype_digit($prefix)) {
+            return false;
+        }
+
+        return self::ipInCidr($ip, (string) $network, (int) $prefix);
+    }
+
+    /**
+     * inet_pton() with the invalid-input warning guarded away: an address
+     * that fails FILTER_VALIDATE_IP can only make inet_pton() warn and
+     * return false, so the guard keeps soft-false semantics quiet.
+     */
+    private static function binaryAddress(string $address): string|false
+    {
+        if (filter_var($address, FILTER_VALIDATE_IP) === false) {
+            return false;
+        }
+
+        return inet_pton($address);
+    }
+
+    private static function maskedPrefixMatches(string $ipBin, string $networkBin, int $prefix): bool
+    {
         $fullBytes = intdiv($prefix, 8);
-        $remainingBits = $prefix % 8;
         if ($fullBytes > 0 && substr($ipBin, 0, $fullBytes) !== substr($networkBin, 0, $fullBytes)) {
             return false;
         }
+        $remainingBits = $prefix % 8;
         if ($remainingBits === 0) {
             return true;
         }

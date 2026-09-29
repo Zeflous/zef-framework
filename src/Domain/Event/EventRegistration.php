@@ -26,25 +26,33 @@ final readonly class EventRegistration
         if (!is_callable($listener)) {
             throw new \InvalidArgumentException('Event listener must be callable.');
         }
+        $reflection = self::reflectListener($listener);
+        $this->acceptsContext = $reflection === null || $reflection->getNumberOfParameters() >= 2;
+    }
+
+    /**
+     * Reflection for the listener's invocation signature, or null when the
+     * callable relies on __call() (no real method to reflect — the safe
+     * default is a single, context-less argument).
+     */
+    private static function reflectListener(mixed $listener): ?\ReflectionFunctionAbstract
+    {
         if (is_array($listener)) {
             try {
-                $reflection = new \ReflectionMethod($listener[0], (string) $listener[1]);
+                return new \ReflectionMethod($listener[0], (string) $listener[1]);
             } catch (\ReflectionException) {
                 // Object relying on __call(): is_callable() passes but no
                 // real method exists. Invoke single-argument (context-less)
                 // — the safe default for magic callables.
-                $this->acceptsContext = false;
-
-                return;
+                return null;
             }
-        } elseif ($listener instanceof \Closure) {
-            $reflection = new \ReflectionFunction($listener);
-        } else {
-            // First-class callable strings ('func', 'Class::method') and
-            // invokable objects are accepted by is_callable(); normalize
-            // them to Closures so reflection stays uniform.
-            $reflection = new \ReflectionFunction(\Closure::fromCallable($listener));
         }
-        $this->acceptsContext = $reflection->getNumberOfParameters() >= 2;
+        if ($listener instanceof \Closure) {
+            return new \ReflectionFunction($listener);
+        }
+        // First-class callable strings ('func', 'Class::method') and
+        // invokable objects are accepted by is_callable(); normalize
+        // them to Closures so reflection stays uniform.
+        return new \ReflectionFunction(\Closure::fromCallable($listener));
     }
 }
