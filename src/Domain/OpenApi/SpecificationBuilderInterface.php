@@ -30,7 +30,17 @@ interface SpecificationBuilderInterface
      * Assemble the full specification document as a plain array ready for
      * JSON/YAML serialization.
      *
-     * @return array{openapi: string, info: array<string, mixed>, paths: array<string, array<string, array<string, mixed>>>, servers?: list<array<string, mixed>>, tags?: list<array<string, mixed>>, components?: array{schemas?: array<string, array<string, mixed>>, securitySchemes?: array<string, array<string, mixed>>}}
+     * @return array{
+     *     openapi: string,
+     *     info: array<string, mixed>,
+     *     paths: array<string, array<string, array<string, mixed>>>,
+     *     servers?: list<array<string, mixed>>,
+     *     tags?: list<array<string, mixed>>,
+     *     components?: array{
+     *         schemas?: array<string, array<string, mixed>>,
+     *         securitySchemes?: array<string, array<string, mixed>>
+     *     }
+     * }
      */
     public function build(): array;
 }

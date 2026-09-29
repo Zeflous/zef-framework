@@ -53,10 +53,14 @@ final readonly class ModuleDefinition
         Identifier::assertModuleName($name);
         foreach ($services as $id => $definition) {
             if (!is_string($id) || $id === '' || !$definition instanceof ServiceDefinition) {
-                throw new \InvalidArgumentException('Module services must map non-empty IDs to ServiceDefinition instances.');
+                throw new \InvalidArgumentException(
+                    'Module services must map non-empty IDs to ServiceDefinition instances.',
+                );
             }
             if ($definition->id !== $id) {
-                throw new \InvalidArgumentException("Service definition ID '{$definition->id}' does not match registry key '{$id}'.");
+                throw new \InvalidArgumentException(
+                    "Service definition ID '{$definition->id}' does not match registry key '{$id}'.",
+                );
             }
         }
         foreach ($aliases as $alias => $target) {
@@ -108,7 +112,9 @@ final readonly class ModuleDefinition
             }
             if ($definition instanceof ServiceDefinition) {
                 if ($definition->id !== $id) {
-                    throw new \InvalidArgumentException("Service definition ID '{$definition->id}' does not match registry key '{$id}'.");
+                    throw new \InvalidArgumentException(
+                        "Service definition ID '{$definition->id}' does not match registry key '{$id}'.",
+                    );
                 }
                 $services[$id] = $definition->module === $name
                     ? $definition
