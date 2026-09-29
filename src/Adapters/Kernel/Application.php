@@ -14,16 +14,12 @@ use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Log\LoggerInterface;
-use Psr\Log\NullLogger;
 use Zef\Framework\Config\Config;
 use Zef\Framework\Config\ConfigAggregator;
-use Zef\Framework\Config\ConfigLoader;
-use Zef\Framework\Config\ConfigMetricsInterface;
 use Zef\Framework\Config\ConfigMigrator;
 use Zef\Framework\Config\ConfigProviderInterface;
 use Zef\Framework\Config\ConfigSchema;
 use Zef\Framework\Config\ConfigSourceInterface;
-use Zef\Framework\Config\MeterConfigMetrics;
 use Zef\Framework\Config\ModuleInterface;
 use Zef\Framework\Config\ModuleRegistry;
 use Zef\Framework\Config\SecretsProviderInterface;
@@ -35,6 +31,8 @@ use Zef\Framework\Http\JsonResponse;
 use Zef\Framework\Http\RequestFactory;
 use Zef\Framework\Http\Response;
 use Zef\Framework\Http\Stream;
+use Zef\Framework\Kernel\ApplicationConfigState;
+use Zef\Framework\Kernel\FrameworkServiceRegistrar;
 use Zef\Framework\Observability\Telemetry;
 use Zef\Framework\Router\Router;
 
@@ -61,15 +59,7 @@ final class Application
      */
     private array $trustedProxies = [];
 
-    /**
-     * @var list<ConfigSourceInterface>
-     */
-    private array $configSources = [];
-    private ?SecretsProviderInterface $secretsProvider = null;
-    private ?ConfigSchema $configSchema = null;
-    private ?ConfigMigrator $configMigrator = null;
-    private ?int $configSourceSchemaVersion = null;
-    private ?Config $appConfig = null;
+    private ?ApplicationConfigState $configState = null;
     private readonly Http\RequestBodyPolicy $bodyPolicy;
     private readonly Policy\ArchitecturePolicy $architecturePolicy;
 
@@ -92,32 +82,7 @@ final class Application
         $this->dispatcher = new Dispatcher($this->router, $this->container);
         $this->emitter = new ResponseEmitter();
         $this->bodyPolicy = $bodyPolicy ?? new Http\RequestBodyPolicy();
-
-        // Bug fix #18: LoggerInterface registered BEFORE TelemetryLogger.
-        $this->container->register(
-            LoggerInterface::class,
-            static fn (): LoggerInterface => $logger ?? new NullLogger(),
-            [],
-            'framework',
-            ServiceLifetime::SINGLETON,
-        );
-        // Issue #55: the environment read surface is an ordinary container
-        // service, next to ServiceRegistrarInterface and
-        // OtlpExporterFactoryInterface. New production code depends on the
-        // port; the historic static facade (Env::int/bool/string/csv) is
-        // @deprecated since v2.28.0 and scheduled for removal in v3.0 —
-        // the src/ migration completed with zero static call sites left.
-        $this->container->register(
-            Foundation\EnvInterface::class,
-            static fn (): Foundation\EnvInterface => new Foundation\Env(),
-            [],
-            'framework',
-            ServiceLifetime::SINGLETON,
-        );
-        $this->registerObservabilityServices($logger);
-        $this->registerEventServices();
-        $this->registerCqrsServices();
-        $this->registerCacheServices();
+        FrameworkServiceRegistrar::registerDefaults($this->container, $logger);
     }
 
     public function addProvider(ConfigProviderInterface $provider): void
@@ -143,7 +108,7 @@ final class Application
         if ($this->booted) {
             throw new \LogicException('Cannot add config source after boot.');
         }
-        $this->configSources[] = $source;
+        $this->configState()->addSource($source);
     }
 
     public function registerSecretsProvider(SecretsProviderInterface $secrets): void
@@ -151,7 +116,7 @@ final class Application
         if ($this->booted) {
             throw new \LogicException('Cannot register a secrets provider after boot.');
         }
-        $this->secretsProvider = $secrets;
+        $this->configState()->setSecretsProvider($secrets);
     }
 
     public function setConfigSchema(ConfigSchema $schema): void
@@ -159,7 +124,7 @@ final class Application
         if ($this->booted) {
             throw new \LogicException('Cannot set the config schema after boot.');
         }
-        $this->configSchema = $schema;
+        $this->configState()->setSchema($schema);
     }
 
     /**
@@ -172,8 +137,7 @@ final class Application
         if ($this->booted) {
             throw new \LogicException('Cannot set the config migrator after boot.');
         }
-        $this->configMigrator = $migrator;
-        $this->configSourceSchemaVersion = $sourceSchemaVersion;
+        $this->configState()->setMigrator($migrator, $sourceSchemaVersion);
     }
 
     /**
@@ -182,15 +146,7 @@ final class Application
      */
     public function config(): Config
     {
-        $this->appConfig ??= new ConfigLoader(
-            $this->configSources,
-            $this->secretsProvider,
-            $this->configSchema,
-            $this->configMigrator,
-            $this->configSourceSchemaVersion,
-        )->load();
-
-        return $this->appConfig;
+        return $this->configState()->config();
     }
 
     public function setTrustedHosts(array $hosts): void
@@ -282,7 +238,12 @@ final class Application
         }
 
         try {
-            $request = RequestFactory::validateIngress($request, $this->trustedHosts, $this->trustedProxies, $this->bodyPolicy);
+            $request = RequestFactory::validateIngress(
+                $request,
+                $this->trustedHosts,
+                $this->trustedProxies,
+                $this->bodyPolicy,
+            );
         } catch (Exception\PayloadTooLargeException) {
             return JsonResponse::error(413, 'Content Too Large');
         } catch (\InvalidArgumentException $e) {
@@ -397,6 +358,9 @@ final class Application
                 $telemetry->shutdown();
             }
         } catch (\Throwable) {
+            // Shutdown is best-effort: a telemetry backend that is already
+            // failing must not prevent the module shutdown that ran above
+            // from completing quietly.
         }
     }
 
@@ -476,192 +440,11 @@ final class Application
      */
     public function runtimeAfterRequest(): void {}
 
-    private function registerObservabilityServices(?LoggerInterface $logger): void
+    private function configState(): ApplicationConfigState
     {
-        // Issue #36 exit ramp (OtlpExporter): the default exporter factory is
-        // an ordinary container service — the default wiring is a config-level
-        // decision applications can override by re-registering the port.
-        $this->container->register(
-            Observability\OtlpExporterFactoryInterface::class,
-            static fn (): Observability\OtlpExporterFactoryInterface => new Observability\OtlpExporterFactory(),
-            [],
-            'framework',
-            ServiceLifetime::SINGLETON,
-        );
-        $this->container->register(
-            Telemetry::class,
-            static function (ContainerInterface $c) use ($logger): Telemetry {
-                /** @var Observability\OtlpExporterFactoryInterface $exporterFactory */
-                $exporterFactory = $c->get(Observability\OtlpExporterFactoryInterface::class);
-
-                /** @var Foundation\EnvInterface $env */
-                $env = $c->get(Foundation\EnvInterface::class);
-
-                return Telemetry::fromEnvironment($logger, true, $exporterFactory, $env);
-            },
-            [Observability\OtlpExporterFactoryInterface::class, Foundation\EnvInterface::class],
-            'framework',
-            ServiceLifetime::SINGLETON,
-        );
-        $this->container->register(
-            Observability\TracerInterface::class,
-            static function (ContainerInterface $c): Observability\TracerInterface {
-                /** @var Telemetry $telemetry */
-                $telemetry = $c->get(Telemetry::class);
-
-                return $telemetry->tracer();
-            },
-            [Telemetry::class],
-            'framework',
-            ServiceLifetime::SINGLETON,
-        );
-        $this->container->register(
-            Observability\MeterInterface::class,
-            static function (ContainerInterface $c): Observability\MeterInterface {
-                /** @var Telemetry $telemetry */
-                $telemetry = $c->get(Telemetry::class);
-
-                return $telemetry->meter();
-            },
-            [Telemetry::class],
-            'framework',
-            ServiceLifetime::SINGLETON,
-        );
-        // v2.23.0 (issue #60 P1): config observability port over the meter.
-        $this->container->register(
-            ConfigMetricsInterface::class,
-            static function (ContainerInterface $c): ConfigMetricsInterface {
-                /** @var Observability\MeterInterface $meter */
-                $meter = $c->get(Observability\MeterInterface::class);
-
-                return new MeterConfigMetrics($meter);
-            },
-            [Observability\MeterInterface::class],
-            'framework',
-            ServiceLifetime::SINGLETON,
-        );
-        $this->container->register(
-            Observability\TelemetryLogger::class,
-            static function (ContainerInterface $c): Observability\TelemetryLogger {
-                /** @var LoggerInterface $logger */
-                $logger = $c->get(LoggerInterface::class);
-
-                /** @var Telemetry $telemetry */
-                $telemetry = $c->get(Telemetry::class);
-
-                return new Observability\TelemetryLogger($logger, $telemetry);
-            },
-            [LoggerInterface::class, Telemetry::class],
-            'framework',
-            ServiceLifetime::SINGLETON,
-        );
-    }
-
-    private function registerEventServices(): void
-    {
-        $this->container->register(
-            Event\EventDispatcher::class,
-            static fn (): Event\EventDispatcher => new Event\EventDispatcher(),
-            [],
-            'framework',
-            ServiceLifetime::SINGLETON,
-        );
-        $this->container->alias(
-            Event\EventBusInterface::class,
-            Event\EventDispatcher::class,
-            'framework',
-        );
-    }
-
-    private function registerCqrsServices(): void
-    {
-        $this->container->register(
-            CQRS\InMemoryIdempotencyStore::class,
-            static fn (): CQRS\InMemoryIdempotencyStore => new CQRS\InMemoryIdempotencyStore(),
-            [],
-            'framework',
-            ServiceLifetime::SINGLETON,
-        );
-        $this->container->register(
-            CQRS\CommandBus::class,
-            static function (ContainerInterface $c): CQRS\CommandBus {
-                /** @var CQRS\InMemoryIdempotencyStore $store */
-                $store = $c->get(CQRS\InMemoryIdempotencyStore::class);
-
-                /** @var Event\EventBusInterface $eventBus */
-                $eventBus = $c->get(Event\EventBusInterface::class);
-
-                return new CQRS\CommandBus($store, 3600, $eventBus);
-            },
-            [
-                CQRS\InMemoryIdempotencyStore::class,
-                Event\EventBusInterface::class,
-            ],
-            'framework',
-            ServiceLifetime::SINGLETON,
-        );
-        $this->container->alias(
-            CQRS\CommandBusInterface::class,
-            CQRS\CommandBus::class,
-            'framework',
-        );
-        $this->container->register(
-            CQRS\QueryBus::class,
-            static fn (): CQRS\QueryBus => new CQRS\QueryBus(),
-            [],
-            'framework',
-            ServiceLifetime::SINGLETON,
-        );
-        $this->container->alias(
-            CQRS\QueryBusInterface::class,
-            CQRS\QueryBus::class,
-            'framework',
-        );
-    }
-
-    private function registerCacheServices(): void
-    {
-        $this->container->register(
-            Cache\SystemCacheClock::class,
-            static fn (): Cache\SystemCacheClock => new Cache\SystemCacheClock(),
-            [],
-            'framework',
-            ServiceLifetime::SINGLETON,
-        );
-        $this->container->alias(
-            Cache\CacheClockInterface::class,
-            Cache\SystemCacheClock::class,
-            'framework',
-        );
-        $this->container->register(
-            Cache\InMemoryCacheStore::class,
-            static function (ContainerInterface $c): Cache\InMemoryCacheStore {
-                /** @var Cache\CacheClockInterface $clock */
-                $clock = $c->get(Cache\CacheClockInterface::class);
-
-                return new Cache\InMemoryCacheStore(10000, $clock);
-            },
-            [Cache\CacheClockInterface::class],
-            'framework',
-            ServiceLifetime::SINGLETON,
-        );
-        $this->container->register(
-            Cache\InMemoryCache::class,
-            static function (ContainerInterface $c): Cache\InMemoryCache {
-                /** @var Cache\InMemoryCacheStore $store */
-                $store = $c->get(Cache\InMemoryCacheStore::class);
-
-                return new Cache\InMemoryCache($store);
-            },
-            [Cache\InMemoryCacheStore::class],
-            'framework',
-            ServiceLifetime::SINGLETON,
-        );
-        $this->container->alias(
-            Cache\CacheInterface::class,
-            Cache\InMemoryCache::class,
-            'framework',
-        );
+        // Lazily created (php:S2830): the state holder is a plain value
+        // aggregator, nothing observes its construction timing.
+        return $this->configState ??= new ApplicationConfigState();
     }
 
     private function recordLifecycle(Telemetry $telemetry, string $event, string $traceId = ''): void
