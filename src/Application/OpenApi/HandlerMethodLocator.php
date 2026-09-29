@@ -74,7 +74,11 @@ final class HandlerMethodLocator
         return $matched;
     }
 
-    /** PSR-15 handle() first, then __invoke(). */
+    /**
+     * PSR-15 handle() first, then __invoke().
+     *
+     * @param \ReflectionClass<object> $reflection
+     */
     private function documentationTarget(\ReflectionClass $reflection): ?\ReflectionMethod
     {
         if ($reflection->hasMethod('handle')) {
