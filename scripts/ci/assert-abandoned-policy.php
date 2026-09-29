@@ -146,10 +146,11 @@ $active = 0;
 function installedPackagesFromLock(string $lockPath, callable $fail): array
 {
     $installed = [];
-    if (!is_file($lockPath)) {
-        return $installed;
-    }
-    $lockRaw = file_get_contents($lockPath);
+    // A missing OR an unreadable lock file both yield the empty set on
+    // purpose (merged single early return — S1142 counts return statements):
+    // neither condition is evidence that an allowlist entry is stale, and
+    // only a lock that is present AND readable but MALFORMED fails below.
+    $lockRaw = is_file($lockPath) ? file_get_contents($lockPath) : false;
     if ($lockRaw === false) {
         return $installed;
     }

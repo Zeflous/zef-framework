@@ -210,12 +210,44 @@ findings, suppress the by-design noise with the rationale recorded in
 | Suppressed, documented contracts | ~10 | the demo credentials-redaction + correlation-id ASCII grammars, the last-resort `@error_log` silencer, the smoke fixture's interface-mandated `$event` params and two-classes-per-file shape |
 | Style rules broadened src/** → ** | 5 | S1105/S1106/S139/S1578/S1808 — the php-cs-fixer byte-ownership doctrine is repo-wide (the fixer covers src/modules/plugins/app/tests; scripts/bin/autoload have no formatter at all, and Sonar's brace/filename defaults are nobody's style here) |
 
+Round 2 on the same PR closed the last three gate conditions — two leftover
+issues and the new-code duplication density (3.9% > 3%):
+
+| Round-2 disposition | What |
+|---|---|
+| Fixed in code, S2083 form | the round-1 containment assertion in `zone_campaign.py::save_results()` used `os.path.commonpath` — semantically sound, but SonarPython's taint engine does not recognise `commonpath` as a sanitiser, so the BLOCKER stayed open. Replaced with the resolved parents-membership gate (`repo not in target.parents`) that `show_escapes.py`/`mine_escapes.py`/`doctum_to_wiki.py` have carried since round 1 (never flagged), plus a second resolved check on the `.tmp` sibling the bytes land on first |
+| Fixed in code, S1142 | `assert-abandoned-policy.php::installedPackagesFromLock()` had 4 returns against the 3 floor; the missing-lock and unreadable-lock early returns merge into one (both yield the empty set — neither is evidence an allowlist entry is stale) |
+| CPD-excluded, generated artifact | `sonar.cpd.exclusions=autoload/**` — 848 of the 1046 duplicated new lines are the generated classmap, whose repetition is the artifact's format (see the properties-file comment). Issue analysis of the tree stays fail-closed on |
+| Visible by design | the remaining ~198 duplicated new lines are hand-written and stay reported: 90 in the demo `app/` tree (see below), 42 across the three ratchet scripts, 66 across the three python tools |
+
 The security win that justifies the widened scope: the first analysis of
 `scripts/mutation/zone_campaign.py` produced a genuine
 `pythonsecurity:S2083` path-traversal flag (conservative — the path was a
-module constant, but the taint engine could not prove it), now closed with
-an explicit repository-containment assertion in `save_results()`. Tooling
-that runs with CI credentials is exactly the code this gate exists to see.
+module constant, but the taint engine could not prove it), closed in round 1
+with an explicit repository-containment assertion in `save_results()` and
+closed *for the engine itself* in round 2 by writing that assertion in the
+parents-membership form the taint analyser recognises as sanitisation (the
+commonpath form proved semantically right but analytically invisible — the
+lesson: a security gate that the scanner cannot see is a gate the next
+reviewer will have to re-derive). Tooling that runs with CI credentials is
+exactly the code this gate exists to see.
+
+The 90 hand-written duplicated new lines inside the demo `app/` tree are a
+known structural debt, deliberately not deduplicated in this PR: the
+classmap resolves every `Zef\App\*` and `Zef\Middleware\*` symbol to `src/`
+(zero classmap entries point into `app/`; `public/index.php` and
+`bin/worker.php` boot through it), so `app/Bootstrap.php` and the
+`app/Middleware/` copies are never loaded at runtime — they are the
+monolith-extraction's shadow copies, and they already drift (src carries
+`trim(...)`, app still carries `'trim'`). Whether the demo tree should be
+deleted as dead code or made genuinely self-contained is a structural
+decision with its own blast radius, recorded here for a dedicated follow-up
+PR rather than smuggled into a triage round. The 42 lines across the three
+`assert-*.php` ratchet scripts are the shared fail-closed `$fail` closure —
+each script is standalone-invocable by design and must keep its own exit
+contract; the 66 lines across the three python tools are the replicated
+repo-containment validator, where the duplication IS the security control
+per standalone tool.
 
 ## 5. What this gate explicitly is not
 
