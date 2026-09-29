@@ -50,6 +50,7 @@ final readonly class EventRegistration
         if ($listener instanceof \Closure) {
             return new \ReflectionFunction($listener);
         }
+
         // First-class callable strings ('func', 'Class::method') and
         // invokable objects are accepted by is_callable(); normalize
         // them to Closures so reflection stays uniform.

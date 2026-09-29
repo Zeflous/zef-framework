@@ -92,7 +92,7 @@ final class TrustedProxyMatcher
      * that fails FILTER_VALIDATE_IP can only make inet_pton() warn and
      * return false, so the guard keeps soft-false semantics quiet.
      */
-    private static function binaryAddress(string $address): string|false
+    private static function binaryAddress(string $address): false|string
     {
         if (filter_var($address, FILTER_VALIDATE_IP) === false) {
             return false;
