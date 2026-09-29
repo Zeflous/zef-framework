@@ -83,6 +83,56 @@ def slug(text: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]", "-", text).strip("-") or "root"
 
 
+def group_members(items: list[dict]) -> dict[str, list[dict]]:
+    """Group declared types by their containing namespace via `f.n`."""
+    members: dict[str, list[dict]] = defaultdict(list)
+    for it in items:
+        if it.get("t") in TYPE_ORDER and it.get("f"):
+            members[it["f"]["n"]].append(it)
+    return members
+
+
+def count_namespace_methods(items: list[dict], ns: str) -> int:
+    """Count method entries (t=M) owned by `ns`.
+
+    Method entries carry no `f`, so derive the owner namespace from the
+    name itself: "NS\\Cls::method" -> owner "NS\\Cls" -> namespace "NS".
+    A startswith() prefix test would over-count, because "Zef\\Framework\\Console"
+    is a prefix of "Zef\\Framework\\Console\\Generator\\...".
+    """
+    return sum(
+        1
+        for it in items
+        if it.get("t") == "M" and it["n"].rsplit("::", 1)[0].rsplit("\\", 1)[0] == ns
+    )
+
+
+def render_namespace_page(ns: str, rows: list[dict], methods: int, base: str) -> list[str]:
+    """Render the wiki page body for one namespace."""
+    lines = [
+        f"# `{ns}`",
+        "",
+        f"{len(rows)} declared type(s) · {methods} documented method(s).",
+        "",
+    ]
+    if rows:
+        lines += ["| Type | Name | Page |", "|---|---|---|"]
+        for m in rows:
+            short = m["n"].rsplit("\\", 1)[-1]
+            url = f"{base}/{m['p']}" if base else m["p"]
+            lines.append(f"| {TYPE_LABEL.get(m['t'], m['t'])} | `{short}` | [open]({url}) |")
+    else:
+        lines.append("_No declared types directly in this namespace._")
+    lines += [
+        "",
+        "---",
+        "",
+        "*Index only — signatures, inheritance and source links live in the",
+        "generated API reference on GitHub Pages, which a Wiki cannot host.*",
+    ]
+    return lines
+
+
 def main() -> int:
     if len(sys.argv) < 3:
         print(__doc__)
@@ -107,10 +157,7 @@ def main() -> int:
         return 4
 
     # Group declared types by their containing namespace via `f.n`.
-    members: dict[str, list[dict]] = defaultdict(list)
-    for it in items:
-        if it.get("t") in TYPE_ORDER and it.get("f"):
-            members[it["f"]["n"]].append(it)
+    members = group_members(items)
 
     namespaces = sorted({it["n"] for it in items if it.get("t") == "N"} | set(members))
     out.mkdir(parents=True, exist_ok=True)
@@ -118,41 +165,14 @@ def main() -> int:
     pages, total_types, total_methods, written = [], 0, 0, []
     for ns in namespaces:
         rows = sorted(members.get(ns, []), key=lambda m: (TYPE_ORDER.get(m["t"], 9), m["n"]))
-        # Method entries (t=M) carry no `f`, so derive the owner namespace from the
-        # name itself: "NS\\Cls::method" -> owner "NS\\Cls" -> namespace "NS".
-        # A startswith() prefix test would over-count, because "Zef\\Framework\\Console"
-        # is a prefix of "Zef\\Framework\\Console\\Generator\\...".
-        methods = sum(
-            1
-            for it in items
-            if it.get("t") == "M" and it["n"].rsplit("::", 1)[0].rsplit("\\", 1)[0] == ns
-        )
+        methods = count_namespace_methods(items, ns)
         total_types += len(rows)
         total_methods += methods
 
-        lines = [
-            f"# `{ns}`",
-            "",
-            f"{len(rows)} declared type(s) · {methods} documented method(s).",
-            "",
-        ]
-        if rows:
-            lines += ["| Type | Name | Page |", "|---|---|---|"]
-            for m in rows:
-                short = m["n"].rsplit("\\", 1)[-1]
-                url = f"{base}/{m['p']}" if base else m["p"]
-                lines.append(f"| {TYPE_LABEL.get(m['t'], m['t'])} | `{short}` | [open]({url}) |")
-        else:
-            lines.append("_No declared types directly in this namespace._")
-        lines += [
-            "",
-            "---",
-            "",
-            "*Index only — signatures, inheritance and source links live in the",
-            "generated API reference on GitHub Pages, which a Wiki cannot host.*",
-        ]
         page = slug(ns)
-        (out / f"{page}.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        (out / f"{page}.md").write_text(
+            "\n".join(render_namespace_page(ns, rows, methods, base)) + "\n", encoding="utf-8"
+        )
         written.append(f"{page}.md")
         pages.append((ns, page, len(rows)))
 

@@ -69,7 +69,7 @@ def main() -> int:
     # Dua format baris entri:
     #  A) "1) /path/File.php:31    [M] Mutator [ID] hash"
     #  B) "1) /path/File.php:31    <--- original"
-    entries = re.findall(r"^\s*\d+\)\s+(.*?\.php):(\d+)\s+(?:\[M\]\s+([A-Za-z0-9_]+))?", esc_block, flags=re.M)
+    entries = re.findall(r"^\s*\d+\)\s+([\w./-]+\.php):(\d+)\s+(?:\[M\]\s+(\w+))?", esc_block, flags=re.M)
     for path, _line, mutator in entries:
         norm = path.replace("/home/z/my-project/download/zef-framework/", "")
         rel = norm

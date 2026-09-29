@@ -136,9 +136,10 @@ if ((int) $badgeClass[1] !== $classCount) {
         'source of truth' => 'autoload/zef_autoload.php',
     ]);
 }
-if (!str_contains($readme, 'alt="' . $classCount . ' kelas"')) {
+$expectedClassAlt = 'alt="' . $classCount . ' kelas"';
+if (!str_contains($readme, $expectedClassAlt)) {
     $fail('README.md badge alt text does not match the classmap count.', [
-        'expected to contain' => 'alt="' . $classCount . ' kelas"',
+        'expected to contain' => $expectedClassAlt,
     ]);
 }
 

@@ -1,0 +1,42 @@
+# Gitleaks configuration for ZEF Framework.
+#
+# WHY THIS FILE EXISTS
+# --------------------
+# The secret-scan workflow ran gitleaks with no configuration, so the scan was
+# governed entirely by the tool's built-in defaults: the rule set, the entropy
+# thresholds and the allowlist could all change between gitleaks releases
+# without any reviewable change in this repository. Committing a config makes
+# the scanning policy an artifact of the repository — a change to what is
+# scanned, or to what is tolerated, now shows up in a pull request.
+#
+# `useDefault = true` keeps the full upstream rule set (this file ADDS to it,
+# it does not replace it).
+
+title = "ZEF Framework secret scanning policy"
+
+[extend]
+# Keep every built-in gitleaks rule. Without this the file would REPLACE the
+# default rule set and silently narrow the scan.
+useDefault = true
+
+[allowlist]
+# Documentation and test fixtures legitimately contain placeholder values that
+# look like credentials. Each entry below is a path that cannot hold a real
+# secret, not a rule that has been switched off.
+description = "Placeholder credentials in documentation and test fixtures"
+paths = [
+  # Security documentation quotes example tokens and keys when explaining the
+  # secret-handling contract.
+  '''docs/security/.*''',
+  # Test fixtures use obviously-fake values (e.g. 'zef-test-secret' for the
+  # CI Redis instance) that are not credentials to anything.
+  '''tests/.*''',
+  # The lock file contains package hashes, not secrets.
+  '''composer\.lock''',
+]
+
+# The CI Redis password is a fixed, non-secret value published in ci.yml and
+# mutation.yml; it authenticates a throwaway container on the runner only.
+regexes = [
+  '''zef-test-secret''',
+]

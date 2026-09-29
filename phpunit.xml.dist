@@ -5,8 +5,13 @@
          colors="true"
          cacheDirectory=".phpunit.cache"
          displayDetailsOnTestsThatTriggerWarnings="true"
+         displayDetailsOnTestsThatTriggerDeprecations="true"
+         displayDetailsOnTestsThatTriggerNotices="true"
          failOnRisky="true"
-         executionOrder="default"
+         failOnWarning="true"
+         failOnDeprecation="true"
+         failOnNotice="true"
+         executionOrder="depends,defects"
          resolveDependencies="true">
     <php>
         <!-- Infection kills the initial suite on the first STDERR byte:

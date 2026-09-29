@@ -107,6 +107,20 @@ jobs:
       - name: Abandoned-package audit policy
         run: composer run-script audit:security --no-interaction
 
+      - name: Composer security audit (blocking)
+        # The step above enforces the ABANDONED-package policy only. It never
+        # asked Composer for advisories, and dependency installation runs with
+        # COMPOSER_NO_AUDIT=1 (see the workflow-level env), so no step in this
+        # pipeline consulted the advisory database at all: a known-vulnerable
+        # locked dependency could reach main with every gate green.
+        #
+        # `composer audit` exits non-zero when an advisory affects a locked
+        # package, which makes this step blocking. It is deliberately NOT
+        # `--abandoned=fail`: abandonment is governed by the time-boxed
+        # allowlist above, and duplicating that policy here would give the same
+        # condition two different verdicts.
+        run: composer audit --no-interaction
+
       - name: Syntax check (php -l over first-party files)
         run: php scripts/lint.php
 
@@ -157,6 +171,13 @@ jobs:
         run: vendor/bin/phpcs
 
       - name: Code coverage gate (>= 90% statements)
+        # Statement floor only. The branch floor this step used to pass (70)
+        # could never be satisfied: PHPUnit 10.5's clover writer emits zero
+        # conditionals because its runner never enables XDEBUG_CC_BRANCH_CHECK,
+        # so the assertion aborted with "report contains zero conditionals" on
+        # every run. The branch floor is deferred to a PHPUnit upgrade that can
+        # actually measure branches; the script still enforces it when a branch
+        # threshold argument is supplied.
         run: |
           vendor/bin/phpunit --coverage-clover build/clover.xml
           php scripts/ci/assert-coverage.php 90 build/clover.xml
@@ -236,10 +257,12 @@ jobs:
     # lesson, relearned when the job rename landed in #93's follow-ups).
     # Static names keep the required context set untouched.
     #
-    # ADVISORY (not in the branch-protection required contexts yet): the
-    # cell must prove itself stable on main before promotion — see
-    # docs/GOVERNANCE.md 2.7. A red Kilo bot check with an infra-flake
-    # signature is likewise not a code verdict (same section).
+    # REQUIRED: this cell is in the branch-protection required contexts on
+    # main ("Platform smoke (windows-latest)"), so a red step here blocks a
+    # merge. It was promoted after the issue #110 burn-down landed and the
+    # 26 inventoried platform failures were fixed. A red Kilo bot check with
+    # an infra-flake signature is still not a code verdict — see
+    # docs/GOVERNANCE.md 2.7.
     name: Platform smoke (windows-latest)
     runs-on: windows-latest
     timeout-minutes: 45

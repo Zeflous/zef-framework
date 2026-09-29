@@ -36,16 +36,24 @@ final class ConfigProvider implements ConfigProviderInterface
                 // v2.8.0 — aggregate health + Prometheus metrics.
                 'health.canary' => ['factory' => static fn (): CanaryService => new CanaryService(), 'deps' => []],
                 'health.indicator.container' => [
-                    'factory' => static fn (ContainerInterface $c): ContainerHealthIndicator => new ContainerHealthIndicator($c),
+                    'factory' => static fn (
+                        ContainerInterface $c,
+                    ): ContainerHealthIndicator => new ContainerHealthIndicator($c),
                     'deps' => [],
                     'tags' => ['health.indicator'],
                 ],
                 'health.aggregator' => [
-                    'factory' => static fn (ContainerInterface $c, TaggedServiceLocator $locator): HealthAggregator => new HealthAggregator($locator->resolveAll('health.indicator')),
+                    'factory' => static fn (
+                        ContainerInterface $c,
+                        TaggedServiceLocator $locator,
+                    ): HealthAggregator => new HealthAggregator($locator->resolveAll('health.indicator')),
                     'deps' => [TaggedServiceLocator::class],
                 ],
                 'health.handler.aggregate' => [
-                    'factory' => static fn (ContainerInterface $c, HealthAggregator $aggregator): AggregateHealthHandler => new AggregateHealthHandler($aggregator),
+                    'factory' => static fn (
+                        ContainerInterface $c,
+                        HealthAggregator $aggregator,
+                    ): AggregateHealthHandler => new AggregateHealthHandler($aggregator),
                     'deps' => ['health.aggregator'],
                 ],
                 'health.metrics.renderer' => [
@@ -53,7 +61,11 @@ final class ConfigProvider implements ConfigProviderInterface
                     'deps' => [],
                 ],
                 'health.handler.metrics' => [
-                    'factory' => static fn (ContainerInterface $c, Telemetry $t, PrometheusRenderer $r): MetricsHandler => new MetricsHandler($t, $r),
+                    'factory' => static fn (
+                        ContainerInterface $c,
+                        Telemetry $t,
+                        PrometheusRenderer $r,
+                    ): MetricsHandler => new MetricsHandler($t, $r),
                     'deps' => [Telemetry::class, 'health.metrics.renderer'],
                     'lifetime' => ServiceLifetime::SINGLETON,
                 ],
@@ -62,9 +74,21 @@ final class ConfigProvider implements ConfigProviderInterface
                 ['method' => 'GET', 'path' => '/health/live', 'handler' => 'health.handler.live', 'priority' => 2000],
                 ['method' => 'GET', 'path' => '/health/ready', 'handler' => 'health.handler.ready', 'priority' => 2000],
                 // v2.8.0 — aggregate health (503 when any indicator is down).
-                ['method' => 'GET', 'path' => '/health', 'handler' => 'health.handler.aggregate', 'priority' => 2000, 'name' => 'health.aggregate'],
+                [
+                    'method' => 'GET',
+                    'path' => '/health',
+                    'handler' => 'health.handler.aggregate',
+                    'priority' => 2000,
+                    'name' => 'health.aggregate',
+                ],
                 // v2.8.0 — Prometheus text exposition of the meter snapshot.
-                ['method' => 'GET', 'path' => '/metrics', 'handler' => 'health.handler.metrics', 'priority' => 2000, 'name' => 'health.metrics'],
+                [
+                    'method' => 'GET',
+                    'path' => '/metrics',
+                    'handler' => 'health.handler.metrics',
+                    'priority' => 2000,
+                    'name' => 'health.metrics',
+                ],
             ],
         ];
     }

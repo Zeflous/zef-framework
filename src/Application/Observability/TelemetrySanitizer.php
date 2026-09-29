@@ -174,7 +174,18 @@ final class TelemetrySanitizer
         // NaN/INF passed through unvalidated and made json_encode of
         // the OTLP payload throw → export() threw → the processor
         // dropped the whole batch. Emit the string form instead.
-        return is_finite($value) ? $value : (string) $value;
+        //
+        // The literals are spelled out rather than produced by a cast:
+        // PHP 8.5 raises "unexpected NAN value was coerced to string"
+        // for (string) NAN, which failOnWarning turns into a red suite.
+        if (is_nan($value)) {
+            return 'NAN';
+        }
+        if (is_infinite($value)) {
+            return $value > 0 ? 'INF' : '-INF';
+        }
+
+        return $value;
     }
 
     /**

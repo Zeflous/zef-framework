@@ -61,14 +61,12 @@ if (!is_file($registryPath)) {
 }
 if (!is_file($tablePath)) {
     $fail(
-        "measurement table not found at {$tablePath}. Expected one row per canonical zone "
-        . '(see docs/mutation/README.md for the format and how to regenerate it).'
+        "measurement table not found at {$tablePath}. Expected one row per canonical zone (see docs/mutation/README.md for the format and how to regenerate it)."
     );
 }
 if (!is_file($baselinePath)) {
     $fail(
-        "baseline table not found at {$baselinePath}. The ratchet has no floor without it — "
-        . 'a missing baseline is a fail-closed condition, not a licence to skip the check.'
+        "baseline table not found at {$baselinePath}. The ratchet has no floor without it — a missing baseline is a fail-closed condition, not a licence to skip the check."
     );
 }
 
@@ -89,8 +87,7 @@ $readTable = static function (string $path, callable $fail): array {
         $cols = array_map('trim', explode('|', $line));
         if (count($cols) < 7) {
             $fail(sprintf(
-                'malformed row %d in %s: expected 7 pipe-separated columns '
-                . '(zone|msi|covered_msi|total|status|evidence|reason), got %d',
+                'malformed row %d in %s: expected 7 pipe-separated columns (zone|msi|covered_msi|total|status|evidence|reason), got %d',
                 $lineNo + 1,
                 $path,
                 count($cols),
@@ -163,8 +160,7 @@ foreach ($registry as $zone) {
         $msi = (float) $row['msi'];
         if ($status === 'OK' && $msi + 1e-9 < $floor) {
             $fail(sprintf(
-                'zone %s claims OK but measured MSI %.2f is below the floor %.2f — mark it DEBT '
-                . 'with a reason, or lower the floor deliberately in the CI step',
+                'zone %s claims OK but measured MSI %.2f is below the floor %.2f — mark it DEBT with a reason, or lower the floor deliberately in the CI step',
                 $zone,
                 $msi,
                 $floor,
@@ -176,15 +172,18 @@ foreach ($registry as $zone) {
             }
             if ($msi + 1e-9 >= $floor) {
                 $fail(sprintf(
-                    'zone %s is marked DEBT but measured MSI %.2f already meets the floor %.2f — '
-                    . 'promote it to OK',
+                    'zone %s is marked DEBT but measured MSI %.2f already meets the floor %.2f — promote it to OK',
                     $zone,
                     $msi,
                     $floor,
                 ));
             }
         }
-        $status === 'OK' ? $ok++ : $debt++;
+        if ($status === 'OK') {
+            $ok++;
+        } else {
+            $debt++;
+        }
         if ($msi + 1e-9 < $floor) {
             $belowTarget[] = sprintf('%s=%.2f', $zone, $msi);
         }
@@ -192,15 +191,18 @@ foreach ($registry as $zone) {
 
     // The ratchet: a measured zone may not fall below its frozen baseline.
     $base = $baseline[$zone];
-    if (strtoupper($base['status']) !== 'UNKNOWN' && is_numeric($base['msi']) && is_numeric($row['msi'])) {
-        if ((float) $row['msi'] + 1e-9 < (float) $base['msi']) {
-            $regressions[] = sprintf(
-                '%s: %.2f (baseline %.2f)',
-                $zone,
-                (float) $row['msi'],
-                (float) $base['msi'],
-            );
-        }
+    if (
+        strtoupper($base['status']) !== 'UNKNOWN'
+        && is_numeric($base['msi'])
+        && is_numeric($row['msi'])
+        && (float) $row['msi'] + 1e-9 < (float) $base['msi']
+    ) {
+        $regressions[] = sprintf(
+            '%s: %.2f (baseline %.2f)',
+            $zone,
+            (float) $row['msi'],
+            (float) $base['msi'],
+        );
     }
 }
 
@@ -238,10 +240,9 @@ if ($belowTarget !== []) {
 if ($regressions !== []) {
     fwrite(
         STDERR,
-        "ZONE-COVERAGE FAIL: mutation score regressed below the frozen baseline for "
-        . count($regressions) . " zone(s):\n  - " . implode("\n  - ", $regressions) . "\n"
-        . "Either restore the score, or raise the baseline in docs/mutation/baseline.tsv "
-        . "deliberately (a visible, reviewable edit).\n",
+        "ZONE-COVERAGE FAIL: mutation score regressed below the frozen baseline for " . count($regressions) . " zone(s):\n  - "
+        . implode("\n  - ", $regressions)
+        . "\nEither restore the score, or raise the baseline in docs/mutation/baseline.tsv deliberately (a visible, reviewable edit).\n",
     );
     exit(1);
 }

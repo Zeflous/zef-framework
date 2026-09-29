@@ -10,18 +10,19 @@ declare(strict_types=1);
 
 namespace Zef\App;
 
+use Psr\Log\LoggerInterface;
 use Zef\Framework\Application;
+use Zef\Framework\Http\RequestBodyPolicy;
 use Zef\Middleware\ConfigProvider as MiddlewareConfigProvider;
 use Zef\Module\Core\ConfigProvider as CoreConfigProvider;
 use Zef\Module\Health\ConfigProvider as HealthConfigProvider;
 use Zef\Plugin\Toko\ConfigProvider as TokoConfigProvider;
-use Zef\Framework\Foundation\Env;
 
 final class Bootstrap
 {
     public static function createApp(
         bool $debug = false,
-        ?\Psr\Log\LoggerInterface $logger = null,
+        ?LoggerInterface $logger = null,
         ?int $maxBodyBytes = null,
     ): Application {
         if ($maxBodyBytes === null) {
@@ -33,17 +34,18 @@ final class Bootstrap
         $app = new Application(
             $debug,
             $logger,
-            $maxBodyBytes === null ? null : new \Zef\Framework\Http\RequestBodyPolicy($maxBodyBytes),
+            $maxBodyBytes === null ? null : new RequestBodyPolicy($maxBodyBytes),
         );
         $trusted = getenv('ZEF_TRUSTED_HOSTS');
         $hosts = $trusted !== false && trim($trusted) !== ''
-            ? array_map('trim', explode(',', (string) $trusted))
+            ? array_map('trim', explode(',', $trusted))
             : ['localhost', '127.0.0.1', '::1', 'zef.test'];
         $app->setTrustedHosts($hosts);
         $app->addProvider(new MiddlewareConfigProvider($debug));
         $app->addProvider(new CoreConfigProvider());
         $app->addProvider(new TokoConfigProvider());
         $app->addProvider(new HealthConfigProvider());
+
         return $app;
     }
 }

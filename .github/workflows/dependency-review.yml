@@ -16,5 +16,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      # `fail-on-severity: high` makes the job blocking for HIGH/CRITICAL
+      # advisories introduced by the pull request. It is deliberately NOT
+      # `low`/`moderate`: the repository's dependency set carries a long tail of
+      # low-severity advisories in dev-only tooling, and a threshold that reds
+      # every routine dependency PR would be routed around rather than fixed.
+      #
+      # License checks are deliberately NOT enabled (no `allow-licenses` /
+      # `deny-licenses`): a large part of the vendored tree ships without a
+      # declared license, so a license gate would block normal PRs on metadata
+      # that is not actionable here. Vulnerability review is the job of this
+      # step; license policy is a separate, owner-owned decision.
       - name: Dependency Review
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high

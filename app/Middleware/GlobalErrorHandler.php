@@ -10,28 +10,26 @@ declare(strict_types=1);
 
 namespace Zef\Middleware;
 
-use Zef\Framework\Config\ConfigProviderInterface;
-use Zef\Framework\Foundation\Env;
-use Zef\Framework\Http\JsonResponse;
-use Zef\Framework\Http\Response;
-use Zef\Framework\Security\InMemoryRateLimiter;
-use Zef\Framework\Security\OriginPolicy;
-use Zef\Framework\Security\SecurityPolicy;
-use Zef\Framework\Security\SecurityRuntimeMiddleware;
+use Psr\Http\Message\MessageInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
+use Psr\Log\LoggerInterface;
+use Zef\Framework\Exception\MethodNotAllowedException;
+use Zef\Framework\Http\JsonResponse;
+use Zef\Framework\Http\Response;
+use Zef\Framework\Observability\TelemetrySanitizer;
 
 final class GlobalErrorHandler implements MiddlewareInterface
 {
     public function __construct(
-        private readonly \Psr\Log\LoggerInterface $logger,
+        private readonly LoggerInterface $logger,
         private readonly ErrorResponseFactory $factory,
     ) {}
 
     /**
-     * Bug fix #20: handles MethodNotAllowedException (defence in depth); uses JsonResponse.
+     * Bug fix #20: handles MethodNotAllowedException (defense in depth); uses JsonResponse.
      */
     #[\Override]
     public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
@@ -44,36 +42,71 @@ final class GlobalErrorHandler implements MiddlewareInterface
         ) {
             $correlationId = bin2hex(random_bytes(16));
         }
+
         try {
-            return $handler->handle($request)->withHeader('X-Request-ID', $correlationId);
-        } catch (\Zef\Framework\Exception\MethodNotAllowedException $e) {
-            return $this->factory->create(405, 'Method Not Allowed', $correlationId)
-                ->withHeader('Allow', implode(', ', $e->allowedMethods))
-                ->withHeader('X-Request-ID', $correlationId);
+            return self::asResponse($handler->handle($request)->withHeader('X-Request-ID', $correlationId));
+        } catch (MethodNotAllowedException $e) {
+            return $this->methodNotAllowedResponse($e, $correlationId);
         } catch (\Throwable $e) {
-            try {
-                $this->logger->error('Unhandled application exception', [
-                    'exception'         => $e,
-                    'exception.message' => \Zef\Framework\Observability\TelemetrySanitizer::redact($e->getMessage()),
-                    'request_id'        => $correlationId,
-                    'method'            => $request->getMethod(),
-                    'path'              => $request->getUri()->getPath(),
-                ]);
-            } catch (\Throwable $loggingFailure) {
-                @error_log('ZEF logging failure: ' . get_class($loggingFailure));
-            }
-            try {
-                return $this->factory->create(
+            return $this->unhandledErrorResponse($e, $request, $correlationId);
+        }
+    }
+
+    private function methodNotAllowedResponse(MethodNotAllowedException $e, string $correlationId): ResponseInterface
+    {
+        return self::asResponse(
+            $this->factory->create(405, 'Method Not Allowed', $correlationId)
+                ->withHeader('Allow', implode(', ', $e->allowedMethods))
+                ->withHeader('X-Request-ID', $correlationId),
+        );
+    }
+
+    private function unhandledErrorResponse(
+        \Throwable $e,
+        ServerRequestInterface $request,
+        string $correlationId,
+    ): ResponseInterface {
+        try {
+            $this->logger->error('Unhandled application exception', [
+                'exception' => $e,
+                'exception.message' => TelemetrySanitizer::redact($e->getMessage()),
+                'request_id' => $correlationId,
+                'method' => $request->getMethod(),
+                'path' => $request->getUri()->getPath(),
+            ]);
+        } catch (\Throwable $loggingFailure) {
+            // error_log is the last-resort sink when the logger itself is the
+            // failure: its own diagnostic errors must not abort the response
+            // path, hence the silencer (kept deliberately).
+            @error_log('ZEF logging failure: ' . get_class($loggingFailure));
+        }
+
+        try {
+            return self::asResponse(
+                $this->factory->create(
                     500,
                     $this->factory->isDebug() ? $e->getMessage() : 'Internal Server Error',
                     $correlationId,
-                )->withHeader('X-Request-ID', $correlationId);
-            } catch (\Throwable) {
-                return new Response(500, [
-                    'Content-Type' => 'text/plain',
-                    'X-Request-ID' => $correlationId,
-                ], 'Internal Server Error');
-            }
+                )->withHeader('X-Request-ID', $correlationId),
+            );
+        } catch (\Throwable) {
+            return new Response(500, [
+                'Content-Type' => 'text/plain',
+                'X-Request-ID' => $correlationId,
+            ], 'Internal Server Error');
         }
+    }
+
+    /**
+     * PSR-7 declares `withHeader()` as returning `MessageInterface`, so a
+     * fluent header chain loses the `ResponseInterface` type even though the
+     * runtime object is always the same immutable response. Narrow it back
+     * explicitly instead of widening this method's return type.
+     */
+    private static function asResponse(MessageInterface $message): ResponseInterface
+    {
+        assert($message instanceof ResponseInterface);
+
+        return $message;
     }
 }

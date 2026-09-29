@@ -7,7 +7,7 @@ declare(strict_types=1);
  * verifikasi cepat wiring end-to-end (run: php scripts/smoke_event_sourcing.php)
  */
 
-require __DIR__ . '/../vendor/autoload.php';
+require_once __DIR__ . '/../vendor/autoload.php';
 
 use Zef\Framework\Database\ConnectionConfig;
 use Zef\Framework\Database\PdoConnection;
@@ -74,9 +74,9 @@ final class BankAccount extends AggregateRoot
 
     protected function apply(string $eventType, array $payload): void
     {
-        match ($eventType) {
-            'account.opened' => $this->balance = (int) $payload['initial'],
-            'account.deposited' => $this->balance += (int) $payload['amount'],
+        $this->balance = match ($eventType) {
+            'account.opened' => (int) $payload['initial'],
+            'account.deposited' => $this->balance + (int) $payload['amount'],
             default => throw new LogicException("Unknown event {$eventType}"),
         };
         $this->log[] = $eventType;
@@ -95,9 +95,9 @@ final class BankAccount extends AggregateRoot
         return $agg;
     }
 
-    public static function createEmpty(): static
+    public static function createEmpty(string $aggregateId): static
     {
-        return new self();
+        return new self($aggregateId);
     }
 }
 
@@ -111,7 +111,7 @@ echo 'inmem: version=' . $agg->version() . ' stored=' . count($stored) . ' balan
 $loaded = $repo->find(BankAccount::class, 'acc-001');
 echo 'inmem load: balance=' . $loaded->balance() . ' log=' . implode(',', $loaded->log()) . "\n";
 try {
-    $stale = BankAccount::createEmpty();
+    $stale = BankAccount::createEmpty('acc-001');
     $stale->deposit(1);
     $memStore->appendToStream('bank.account', 'acc-001', 0, ...$stale->pendingEvents());
     echo "inmem concurrency: MISSING EXCEPTION!!\n";
@@ -153,7 +153,7 @@ $again = $repo2->find(BankAccount::class, 'acc-002');
 echo 'pdo load: balance=' . $again->balance() . ' log=' . implode(',', $again->log()) . "\n";
 
 // ambient atomicity: concurrency failure must roll back the outbox too
-$bomb = BankAccount::createEmpty();
+$bomb = BankAccount::createEmpty('acc-002');
 $bomb->deposit(999);
 try {
     $memStore2 = $es;
@@ -197,10 +197,13 @@ $bus = new class implements EventBusInterface {
 
     public function listen(string $eventClass, callable $listener, int $priority = 0): void
     {
+        // Recording stub: the relay test only asserts received[] contents;
+        // listener wiring is deliberately out of scope for this smoke script.
     }
 
     public function subscribe(Zef\Framework\Event\EventSubscriberInterface $subscriber): void
     {
+        // Recording stub: no subscriber wiring is exercised by this smoke run.
     }
 
     public function dispatchWithContext(object $event, EventContext $context): object
@@ -220,6 +223,7 @@ $bus = new class implements EventBusInterface {
 
     public function freeze(): void
     {
+        // Recording stub: freeze semantics are covered by the framework suite.
     }
 
     public function dispatch(object $event): object
@@ -233,7 +237,11 @@ $bus = new class implements EventBusInterface {
     }
 };
 $clockSeq = 0;
-$relayClock = function () use (&$clockSeq): int { return 1_700_000_000_000_000_000 + (++$clockSeq * 1_000_000_000); };
+$relayClock = function () use (&$clockSeq): int {
+    ++$clockSeq;
+
+    return 1_700_000_000_000_000_000 + ($clockSeq * 1_000_000_000);
+};
 $relay = new OutboxRelay($ob, $bus, $relayClock, maxAttempts: 3, backoffBaseMs: 1000, backoffCapMs: 4000);
 $r1 = $relay->relay(10);
 echo "relay run1: processed={$r1} (expected 0, first attempt always fails)\n";
@@ -246,10 +254,13 @@ $busOk = new class implements EventBusInterface {
 
     public function listen(string $eventClass, callable $listener, int $priority = 0): void
     {
+        // Recording stub: the relay test only asserts received[] contents;
+        // listener wiring is deliberately out of scope for this smoke script.
     }
 
     public function subscribe(Zef\Framework\Event\EventSubscriberInterface $subscriber): void
     {
+        // Recording stub: no subscriber wiring is exercised by this smoke run.
     }
 
     public function dispatchWithContext(object $event, EventContext $context): object
@@ -268,6 +279,7 @@ $busOk = new class implements EventBusInterface {
 
     public function freeze(): void
     {
+        // Recording stub: freeze semantics are covered by the framework suite.
     }
 
     public function dispatch(object $event): object
