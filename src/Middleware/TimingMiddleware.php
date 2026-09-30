@@ -38,6 +38,10 @@ final readonly class TimingMiddleware implements MiddlewareInterface
         }
         $elapsedMs = round((hrtime(true) - $startNs) / 1_000_000, 2);
 
-        return $response->withHeader('X-Response-Time', $elapsedMs . 'ms');
+        // sprintf keeps the two-decimal shape even when the elapsed time
+        // rounds to zero: string-concatenating a 0.0 float yields "0ms",
+        // which broke the header contract on fast runners (flake on the
+        // PHP 8.5 platform smoke, run 109715900195).
+        return $response->withHeader('X-Response-Time', sprintf('%.2fms', $elapsedMs));
     }
 }
