@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/Architecture-Hexagonal-38bdf8?style=for-the-badge" alt="Hexagonal">
   <br>
   <img src="https://img.shields.io/badge/Kelas%20PSR--4-1145-818cf8?style=for-the-badge" alt="1145 kelas">
-  <img src="https://img.shields.io/badge/Test%20PHPUnit-3312-c084fc?style=for-the-badge" alt="3312 test">
+  <img src="https://img.shields.io/badge/Test%20PHPUnit-3500-c084fc?style=for-the-badge" alt="3500 test">
   <img src="https://img.shields.io/badge/Coverage%20gate-%E2%89%A5%2090%25-22c55e?style=for-the-badge" alt="Coverage gate 90%">
   <img src="https://img.shields.io/badge/Mutation%20gate-MSI%20%E2%89%A5%2085-f59e0b?style=for-the-badge" alt="Mutation gate MSI 85">
   <br>
@@ -445,8 +445,8 @@ Sebuah perubahan tidak dianggap selesai sebelum **gerbang independen** hijau. "T
 
 <table width="100%">
   <tr><th align="left">#</th><th align="left">Gerbang</th><th align="left">Perintah</th><th align="left">Ambang / bukti</th></tr>
-  <tr><td>1</td><td>Syntax</td><td><kbd>composer lint</kbd></td><td><code>718</code> berkas first-party, 0 kegagalan</td></tr>
-  <tr><td>2</td><td>Suite PHPUnit native</td><td><kbd>composer test</kbd></td><td><code>3312</code> test · <code>65802</code> assertion · 11 skipped</td></tr>
+  <tr><td>1</td><td>Syntax</td><td><kbd>composer lint</kbd></td><td><code>860</code> berkas first-party, 0 kegagalan</td></tr>
+  <tr><td>2</td><td>Suite PHPUnit native</td><td><kbd>composer test</kbd></td><td><code>3500</code> test · <code>66329</code> assertion · 6 skipped</td></tr>
   <tr><td>3</td><td>Coverage</td><td><kbd>composer coverage:gate</kbd></td><td>ambang statement <b>90%</b> (diukur Xdebug)</td></tr>
   <tr><td>4</td><td>Mutation testing</td><td><kbd>composer mutation</kbd></td><td><code>--min-msi=85 --min-covered-msi=90</code></td></tr>
   <tr><td>5</td><td>Analisis statis</td><td><kbd>composer stan</kbd></td><td>PHPStan level <b>max</b> + strict-rules, baseline ter-ratchet</td></tr>
@@ -455,8 +455,8 @@ Sebuah perubahan tidak dianggap selesai sebelum **gerbang independen** hijau. "T
 </table>
 
 ```bash
-composer lint            # Linted 718 PHP files — 0 failure(s).
-composer test            # Tests: 3312, Assertions: 65802, Skipped: 11
+composer lint            # Linted 860 PHP files — 0 failure(s).
+composer test            # Tests: 3500, Assertions: 66329, Skipped: 6
 php bin/zef --self-test  # PASSED: 501  FAILED: 0
 ```
 
