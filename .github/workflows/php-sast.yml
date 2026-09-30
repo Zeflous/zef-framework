@@ -36,6 +36,17 @@ name: PHP SAST
 # for `--config=/rules-overlay/...`, which does not exist inside the container and
 # fails the job with exit 7.
 #
+# CORRECTNESS FAMILY (v2.34.0): all four scan lanes additionally load
+# `/rules-overlay/php/lang/correctness` - the bug-detector sibling tree from the
+# SAME pinned, sha256-verified tarball, so no new pinning surface is introduced.
+# This is matrix row 3 of docs/security/stub-prescan.md: the Semgrep correctness
+# family is INCLUDED for the production trees and the tests/ fixture corpus
+# alike. Measured before enabling (local runs of the pinned ruleset):
+# 0 findings over 652 production targets and 0 over 190 corpus targets, so the
+# promotion to blocking ships in the same change with no untriaged population
+# - the same sequencing rule this file documents for every earlier promotion,
+# satisfied by measurement this time because the population is empty.
+#
 on:
   pull_request:
     branches: ["main"]
@@ -155,6 +166,7 @@ jobs:
             "${SEMGREP_IMAGE}" \
             semgrep scan \
               --config=/rules-overlay/php/lang/security \
+              --config=/rules-overlay/php/lang/correctness \
               --config=/src/.github/semgrep/rules \
               --metrics=off \
               --disable-version-check \
@@ -195,6 +207,7 @@ jobs:
             "${SEMGREP_IMAGE}" \
             semgrep scan \
               --config=/rules-overlay/php/lang/security \
+              --config=/rules-overlay/php/lang/correctness \
               --config=/src/.github/semgrep/rules \
               --metrics=off \
               --disable-version-check \
@@ -241,6 +254,7 @@ jobs:
             "${SEMGREP_IMAGE}" \
             semgrep scan \
               --config=/rules-overlay/php/lang/security \
+              --config=/rules-overlay/php/lang/correctness \
               --config=/src/.github/semgrep/rules \
               --metrics=off \
               --disable-version-check \
@@ -291,6 +305,7 @@ jobs:
             "${SEMGREP_IMAGE}" \
             semgrep scan \
               --config=/rules-overlay/php/lang/security \
+              --config=/rules-overlay/php/lang/correctness \
               --config=/src/.github/semgrep/rules \
               --metrics=off \
               --disable-version-check \
