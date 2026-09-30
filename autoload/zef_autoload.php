@@ -350,6 +350,7 @@ if (!function_exists('zef_framework_autoload')) {
                 "Zef\\Framework\\Job\\PdoJobIdempotencyStore" => __DIR__ . '/../src/Infrastructure/Job/PdoJobIdempotencyStore.php',
                 "Zef\\Framework\\Job\\PdoJobQueue" => __DIR__ . '/../src/Infrastructure/Job/PdoJobQueue.php',
                 "Zef\\Framework\\Job\\RedisStreamJobQueue" => __DIR__ . '/../src/Infrastructure/Job/RedisStreamJobQueue.php',
+                "Zef\\Framework\\Job\\RedisJobQueueException" => __DIR__ . '/../src/Infrastructure/Job/RedisJobQueueException.php',
                 "Zef\\Framework\\Job\\RetryPolicy" => __DIR__ . '/../src/Domain/Job/RetryPolicy.php',
                 "Zef\\Framework\\Job\\ScheduleInterface" => __DIR__ . '/../src/Domain/Job/ScheduleInterface.php',
                 "Zef\\Framework\\Job\\Scheduler" => __DIR__ . '/../src/Application/Job/Scheduler.php',

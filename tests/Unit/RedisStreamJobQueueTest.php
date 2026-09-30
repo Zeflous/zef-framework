@@ -24,6 +24,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Zef\Framework\Job\JobEnvelope;
 use Zef\Framework\Job\JobExecutionException;
+use Zef\Framework\Job\RedisJobQueueException;
 use Zef\Framework\Job\RedisStreamJobQueue;
 
 /**
@@ -400,21 +401,17 @@ final class RedisStreamJobQueueTest extends TestCase
 
     /**
      * The storage-boundary id re-assertion must fire for an envelope whose
-     * id bypassed the constructor's own validation (an unserialize round-
-     * trip is the only realistic path — the P-4 defensive posture).
+     * id bypassed the constructor's own validation. Reflection builds the
+     * invalid envelope without the constructor (and without unserialize —
+     * a semgrep-flagged call form in the tests scan).
      */
     public function testStorageBoundaryRejectsUnserializedInvalidJobId(): void
     {
-        $template = self::job('job-valid-01');
-        // Rewriting the serialized payload's length token together with the
-        // value keeps the payload well-formed: s:12:"job-valid-01" -> s:5:"short".
-        $broken = unserialize(str_replace(
-            's:12:"job-valid-01"',
-            's:5:"short"',
-            serialize($template),
-        ));
-        self::assertInstanceOf(JobEnvelope::class, $broken);
-        self::assertSame('short', $broken->jobId, 'the unserialized envelope really carries the invalid id');
+        $ref = new \ReflectionClass(JobEnvelope::class);
+        $broken = $ref->newInstanceWithoutConstructor();
+        $id = new \ReflectionProperty(JobEnvelope::class, 'jobId');
+        $id->setValue($broken, 'short');
+        self::assertSame('short', $broken->jobId, 'the reflected envelope really carries the invalid id');
 
         $fake = new QueueFakeRedis();
         $fake->evalResult = 1;
@@ -493,15 +490,15 @@ final class RedisStreamJobQueueTest extends TestCase
         }
     }
 
-    /** @return array<string, array{0: mixed, 1: ?string, 2: ?string}> */
+    /** @return array<string, array{0: mixed, 1: ?class-string<\Throwable>, 2: ?string}> */
     public static function enqueueResultProvider(): array
     {
         return [
             'ok' => [1, null, null],
             'capacity' => [-1, \OverflowException::class, 'Job queue capacity exceeded.'],
-            'duplicate' => [-2, \RuntimeException::class, "Job 'job-fake-01' is already queued."],
-            'unexpected-scalar' => ['bogus', \RuntimeException::class, 'Redis job queue returned an unexpected enqueue result.'],
-            'unexpected-zero' => [0, \RuntimeException::class, 'Redis job queue returned an unexpected enqueue result.'],
+            'duplicate' => [-2, RedisJobQueueException::class, "Job 'job-fake-01' is already queued."],
+            'unexpected-scalar' => ['bogus', RedisJobQueueException::class, 'Redis job queue returned an unexpected enqueue result.'],
+            'unexpected-zero' => [0, RedisJobQueueException::class, 'Redis job queue returned an unexpected enqueue result.'],
         ];
     }
 
@@ -682,7 +679,7 @@ if (class_exists(\Redis::class)) {
         public function eval(string $script, array $args = [], int $num_keys = 0): mixed
         {
             ++$this->evalCalls;
-            /** @var list<mixed> $args */
+            // @var list<mixed> $args
             $this->evalArgs = array_values($args);
 
             return $this->evalResult;

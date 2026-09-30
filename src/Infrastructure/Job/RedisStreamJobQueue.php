@@ -121,7 +121,8 @@ final readonly class RedisStreamJobQueue implements JobQueueInterface
                     local prio = tonumber(fields[10])
                     local bestPrio = tonumber(best[10])
                     if prio > bestPrio
-                        or (prio == bestPrio and (fields[8] < best[8] or (fields[8] == best[8] and entries[i][1] < bestId)))
+                        or (prio == bestPrio and (fields[8] < best[8]
+                            or (fields[8] == best[8] and entries[i][1] < bestId)))
                     then
                         best = fields
                         bestId = entries[i][1]
@@ -200,10 +201,10 @@ final readonly class RedisStreamJobQueue implements JobQueueInterface
             throw new \OverflowException('Job queue capacity exceeded.');
         }
         if ($result === -2) {
-            throw new \RuntimeException("Job '{$job->jobId}' is already queued.");
+            throw new RedisJobQueueException("Job '{$job->jobId}' is already queued.");
         }
 
-        throw new \RuntimeException('Redis job queue returned an unexpected enqueue result.');
+        throw new RedisJobQueueException('Redis job queue returned an unexpected enqueue result.');
     }
 
     #[\Override]
@@ -219,7 +220,7 @@ final readonly class RedisStreamJobQueue implements JobQueueInterface
             return null;
         }
         if (!is_array($fields) || count($fields) < self::FIELD_COUNT * 2) {
-            throw new \RuntimeException('Redis job queue returned an unexpected dequeue result.');
+            throw new RedisJobQueueException('Redis job queue returned an unexpected dequeue result.');
         }
 
         return JobRowCodec::hydrate(self::rowFromFields($fields));
@@ -231,7 +232,7 @@ final readonly class RedisStreamJobQueue implements JobQueueInterface
         // phpredis stub case (xlen) — method dispatch is case-insensitive.
         $size = $this->redis->xlen($this->streamKey);
         if (!is_int($size) || $size < 0) {
-            throw new \RuntimeException('Redis job queue returned an unexpected size result.');
+            throw new RedisJobQueueException('Redis job queue returned an unexpected size result.');
         }
 
         return $size;
@@ -259,12 +260,12 @@ final readonly class RedisStreamJobQueue implements JobQueueInterface
         // mirroring size()'s is_int() gate.
         $entries = $this->redis->xrange($this->streamKey, '-', '+', $max);
         if (!is_array($entries)) {
-            throw new \RuntimeException('Redis job queue returned an unexpected peek result.');
+            throw new RedisJobQueueException('Redis job queue returned an unexpected peek result.');
         }
         $jobs = [];
         foreach ($entries as $fields) {
             if (!is_array($fields) || count($fields) < self::FIELD_COUNT) {
-                throw new \RuntimeException('Redis job queue returned an unexpected peek entry.');
+                throw new RedisJobQueueException('Redis job queue returned an unexpected peek entry.');
             }
             $correlation = $fields['correlation_id'] ?? null;
             $traceParent = $fields['trace_parent'] ?? null;
@@ -334,10 +335,16 @@ final readonly class RedisStreamJobQueue implements JobQueueInterface
      * bytes (spaces, colons, binary) away from the Redis keyspace, the
      * same posture as PdoJobQueue's table-name assertion. The name also
      * names the failed-job stream in `bin/zef queue:failed` wiring.
+     *
+     * The alphabet is checked with strspn instead of a regex character
+     * range on purpose (Sonar php:S5867): the intent is an exact ASCII
+     * allow-list, not a Unicode character class, and the explicit list
+     * makes that unambiguous.
      */
     private function assertValidName(string $name): void
     {
-        if (preg_match('/^[A-Za-z0-9._-]{1,64}$/', $name) !== 1) {
+        $alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-';
+        if ($name === '' || strlen($name) > 64 || strspn($name, $alphabet) !== strlen($name)) {
             throw new \InvalidArgumentException('Queue name must match [A-Za-z0-9._-]{1,64}.');
         }
     }
