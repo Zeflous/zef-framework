@@ -18,57 +18,28 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Branch pushes + workflow_dispatch on branches: least-privilege (read) —
+  # generation, artifact upload and keyless OIDC attestation only; no release
+  # interaction. Identical to the previous single-job behavior.
   sbom:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    if: github.ref_type != 'tag'
     permissions:
-      # Least-privilege stays intact on branch pushes (read). On tag pushes the
-      # anchore/sbom-action attaches the generated SBOM to the release matching
-      # the tag, which requires contents:write — without it, a release that
-      # already exists when the tag run reaches the attach fails with
-      # "Resource not accessible by integration" (v2.32.0 tag run 36711454066;
-      # v2.31.0 only dodged this by timing — its release was published after
-      # the tag run had finished, so the attach was skipped entirely).
-      contents: ${{ github.ref_type == 'tag' && 'write' || 'read' }}
+      contents: read
       id-token: write # required for keyless (OIDC) SBOM attestation
       attestations: write # required to persist the attestation to the attestation store
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    uses: ./.github/workflows/sbom-generate.yml
 
-      - name: Prepare SBOM output directory
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p build
-          test -d build
-
-      - name: Generate CycloneDX SBOM
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
-        with:
-          path: .
-          format: cyclonedx-json
-          output-file: build/sbom.cdx.json
-
-      - name: Verify SBOM artifact is present and non-empty
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -s build/sbom.cdx.json
-          echo "SBOM bytes: $(wc -c < build/sbom.cdx.json)"
-
-      - name: Upload SBOM
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: zef-sbom-${{ github.sha }}
-          path: build/sbom.cdx.json
-          if-no-files-found: error
-
-      # Keyless SBOM attestation via GitHub Actions OIDC (no long-lived key).
-      # Blocking: if the attestation cannot be persisted the run fails, so an
-      # attestation regression cannot pass silently.
-      - name: Attest SBOM (keyless, OIDC)
-        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
-        with:
-          subject-path: build/sbom.cdx.json
-          sbom-path: build/sbom.cdx.json
+  # Tag pushes: the anchore/sbom-action attaches the generated SBOM to the
+  # release matching the tag, which requires contents:write. The v2.32.0 tag
+  # run failed with "Resource not accessible by integration" because the job
+  # only carried contents:read and the release had already been published
+  # before the run reached the attach; v2.31.0 only dodged it by timing (its
+  # release was published after the tag run finished, so the attach was
+  # skipped entirely and the release shipped without a SBOM asset).
+  sbom-release:
+    if: github.ref_type == 'tag'
+    permissions:
+      contents: write # attach the SBOM asset to the tagged release
+      id-token: write # required for keyless (OIDC) SBOM attestation
+      attestations: write # required to persist the attestation to the attestation store
+    uses: ./.github/workflows/sbom-generate.yml
