@@ -18,7 +18,7 @@
   <img src="https://img.shields.io/badge/Mutation%20gate-MSI%20%E2%89%A5%2085-f59e0b?style=for-the-badge" alt="Mutation gate MSI 85">
   <br>
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="MIT">
-  <img src="https://img.shields.io/badge/Rilis%20terdokumentasi-v2.30.0-0ea5e9?style=for-the-badge" alt="v2.30.0">
+  <img src="https://img.shields.io/badge/Rilis%20terdokumentasi-v2.31.0-0ea5e9?style=for-the-badge" alt="v2.31.0">
 
 </div>
 
@@ -134,7 +134,7 @@ Banyak framework PHP tumbuh dari kenyamanan. ZEF tumbuh dari pembongkaran: satu 
 </table>
 
 <details>
-<summary><b>Riwayat rilis selengkapnya (v2.8.0 → v2.30.0)</b> — 36 berkas CHANGELOG · 23 entri ringkas</summary>
+<summary><b>Riwayat rilis selengkapnya (v2.8.0 → v2.31.0)</b> — 37 berkas CHANGELOG · 24 entri ringkas</summary>
 
 <br>
 
@@ -165,8 +165,9 @@ Setiap rilis bersifat **aditif**: perilaku lama tidak diubah.
 | **v2.28.0** | **Env Facade Deprecation**: penutup issue #55 — `Env::int/bool/string/csv` kini `@deprecated` + `E_USER_DEPRECATED` (ter-suppress di runtime), pengganti `EnvInterface::readInt/readBool/readString/readCsv` dengan tanda tangan identik; sensus call statis `src/` 0 | 
 | **v2.29.0** | **DX Release**: `make:app` scaffold aplikasi standalone (path-repo leluhur bersama + wrapper maker), `rr:init` konfigurasi RoadRunner dari knob `ZEF_*` (collision-safe), `doctor` preflight lingkungan + boot smoke, tutorial Zero-to-Hero `TUTORIAL-CQRS-101.md`, kontrak plugin `PLUGINS.md` |
 | **v2.30.0** | **Ecosystem Ports**: port `ObjectStorageInterface` + adapter `LocalStorage` (atomik, bebas traversal) & `S3CompatibleStorage` (SigV4 in-house, vektor resmi AWS, tanpa SDK), transport `InMemoryMessageTransport` + `ReceivedMessage`, antrean durable `PdoJobQueue` (klaim SELECT+DELETE portabel, seq transaksional, UNIQUE job_id) + `PdoJobIdempotencyStore` (exactly-once effect), `INTEGRATIONS.md` — nol paket runtime baru |
+| **v2.31.0** | **Zero-Debt & Fail-Closed Gates**: SonarCloud 879 → 0 pelanggaran + scope fail-closed milik-ZEF (PR #251/#256/#257), Snyk strict fail-closed + bukti SARIF terkonsolidasi jadi satu check (PR #246/#262), cermin alert code-scanning → issue, antrean PR zero-click (arm-on-open + rantai merge + cron 20m), hardening konfigurasi F-01..F-24 (PR #255), ZEF-DX-01..10 dan ZEF-DEEP-15..22 ditutup — nol fitur runtime baru |
 
-Rincian per rilis: [`docs/CHANGELOG-v2.30.0.md`](docs/CHANGELOG-v2.30.0.md), [`v2.29.0.md`](docs/CHANGELOG-v2.29.0.md), [`v2.28.0.md`](docs/CHANGELOG-v2.28.0.md), [`v2.27.0.md`](docs/CHANGELOG-v2.27.0.md), [`v2.26.0.md`](docs/CHANGELOG-v2.26.0.md), [`v2.25.0.md`](docs/CHANGELOG-v2.25.0.md), [`v2.23.0.md`](docs/CHANGELOG-v2.23.0.md), [`v2.22.0.md`](docs/CHANGELOG-v2.22.0.md), [`v2.21.1.md`](docs/CHANGELOG-v2.21.1.md), [`v2.21.0.md`](docs/CHANGELOG-v2.21.0.md), [`v2.19.0`](docs/CHANGELOG-v2.19.0.md), [`v2.18.0`](docs/CHANGELOG-v2.18.0.md), [`v2.17.0`](docs/CHANGELOG-v2.17.0.md), [`v2.16.0`](docs/CHANGELOG-v2.16.0.md), [`v2.15.0`](docs/CHANGELOG-v2.15.0.md), [`v2.14.0`](docs/CHANGELOG-v2.14.0.md) — atau seluruh berkas lainnya di [`docs/`](docs/README.md).
+Rincian per rilis: [`docs/CHANGELOG-v2.31.0.md`](docs/CHANGELOG-v2.31.0.md), [`v2.30.0.md`](docs/CHANGELOG-v2.30.0.md), [`v2.29.0.md`](docs/CHANGELOG-v2.29.0.md), [`v2.28.0.md`](docs/CHANGELOG-v2.28.0.md), [`v2.27.0.md`](docs/CHANGELOG-v2.27.0.md), [`v2.26.0.md`](docs/CHANGELOG-v2.26.0.md), [`v2.25.0.md`](docs/CHANGELOG-v2.25.0.md), [`v2.23.0.md`](docs/CHANGELOG-v2.23.0.md), [`v2.22.0.md`](docs/CHANGELOG-v2.22.0.md), [`v2.21.1.md`](docs/CHANGELOG-v2.21.1.md), [`v2.21.0.md`](docs/CHANGELOG-v2.21.0.md), [`v2.19.0`](docs/CHANGELOG-v2.19.0.md), [`v2.18.0`](docs/CHANGELOG-v2.18.0.md), [`v2.17.0`](docs/CHANGELOG-v2.17.0.md), [`v2.16.0`](docs/CHANGELOG-v2.16.0.md), [`v2.15.0`](docs/CHANGELOG-v2.15.0.md), [`v2.14.0`](docs/CHANGELOG-v2.14.0.md) — atau seluruh berkas lainnya di [`docs/`](docs/README.md).
 
 </details>
 
