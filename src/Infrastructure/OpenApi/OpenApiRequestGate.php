@@ -182,7 +182,7 @@ final readonly class OpenApiRequestGate
     private function operationVerdict(array $chosen, OpenApiGateRequest $request): OpenApiGateVerdict
     {
         $security = $this->security->verdict($chosen['operation'], $request);
-        if ($security instanceof \Zef\Framework\OpenApi\OpenApiGateVerdict) {
+        if ($security instanceof OpenApiGateVerdict) {
             return $security;
         }
 
