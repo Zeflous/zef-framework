@@ -16,10 +16,10 @@ namespace Zef\Framework\OpenApi;
  * (php:S2042); behaviour, messages and precedence are carried over
  * verbatim.
  */
-final class OpenApiResponseContract
+final readonly class OpenApiResponseContract
 {
     public function __construct(
-        private readonly OpenApiSchemaChecker $checker,
+        private OpenApiSchemaChecker $checker,
     ) {}
 
     /**
@@ -31,16 +31,28 @@ final class OpenApiResponseContract
     {
         $key = $this->responseKey($responses, $status);
         if ($key === null) {
-            return [[
-                'in' => 'response',
-                'name' => (string) $status,
-                'pointer' => '',
-                'message' => "response status {$status} is not documented",
-            ]];
+            return [$this->statusIssue($status)];
         }
         $response = $responses[$key] ?? null;
+        if (!is_array($response)) {
+            // Defensive: the boot-time validator requires response objects.
+            return [];
+        }
 
-        return $this->responseIssues(is_array($response) ? $response : null, $mediaType, $body);
+        return $this->responseIssues($response, $mediaType, $body);
+    }
+
+    /**
+     * @return array{in: string, name: string, pointer: string, message: string}
+     */
+    private function statusIssue(int $status): array
+    {
+        return [
+            'in' => 'response',
+            'name' => (string) $status,
+            'pointer' => '',
+            'message' => "response status {$status} is not documented",
+        ];
     }
 
     /**

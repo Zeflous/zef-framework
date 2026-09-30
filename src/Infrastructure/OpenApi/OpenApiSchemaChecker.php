@@ -7,22 +7,18 @@ declare(strict_types=1);
 namespace Zef\Framework\OpenApi;
 
 /**
- * JSON-Schema subset checker for the OpenAPI runtime gate (boundary B9).
+ * The OpenAPI runtime gate's recursive schema-check core: value traversal,
+ * the depth guard, $ref resolution and the keyword-family delegation.
+ * Scalar constraints live in {@see OpenApiScalarConstraints}, the type
+ * system in {@see OpenApiSchemaTypes} and the array/object/composition
+ * structure in {@see OpenApiStructureConstraints} (class-size and
+ * method-count budgets, php:S2042 / php:S1448).
  *
  * The enforced keyword set is EXACTLY the contract {@see Schema::toArray()}
- * emits (type, format, pattern, enum, minLength/maxLength, minimum/maximum,
- * items, minItems/maxItems, uniqueItems, properties, required,
- * additionalProperties, minProperties/maxProperties, nullable, $ref,
- * oneOf/anyOf/allOf) — the parity matrix documents this as the gate's
- * schema horizon: anything the document generator cannot emit is either
- * tolerated leniently (annotations, unknown formats, unknown type strings)
- * or fails closed with a deterministic issue.
- *
- * This class owns the RECURSIVE core (value traversal, $ref resolution,
- * array/object/composition structure); scalar constraints and the type
- * system live in {@see OpenApiScalarConstraints} and
- * {@see OpenApiSchemaTypes} (class-size budget, php:S2042 — the split is
- * non-recursive by construction, so no cycle is introduced).
+ * emits (the parity matrix's schema horizon); anything the document
+ * generator cannot emit is either tolerated leniently (annotations,
+ * unknown formats, unknown type strings) or fails closed with a
+ * deterministic issue.
  *
  * Two validation modes share one engine:
  * - string transport (query/header/cookie parameters): scalar values are
@@ -51,13 +47,15 @@ final class OpenApiSchemaChecker
      */
     public function check(mixed $value, mixed $schema, bool $coerce): array
     {
-        return $this->checkValue($value, $schema, $coerce, '', 0);
+        return $this->checkAt($value, $schema, $coerce, '', 0);
     }
 
     /**
+     * The recursion entry the structural constraint families use.
+     *
      * @return list<array{pointer: string, message: string}>
      */
-    private function checkValue(mixed $value, mixed $schema, bool $coerce, string $pointer, int $depth): array
+    public function checkAt(mixed $value, mixed $schema, bool $coerce, string $pointer, int $depth): array
     {
         $early = $this->earlyIssues($value, $schema, $pointer, $depth);
         if ($early !== null) {
@@ -96,9 +94,9 @@ final class OpenApiSchemaChecker
             ...OpenApiScalarConstraints::enumIssues($typedValue, $schema['enum'] ?? null, $pointer),
             ...OpenApiScalarConstraints::stringIssues($typedValue, $schema, $pointer),
             ...OpenApiScalarConstraints::numericIssues($typedValue, $schema, $pointer),
-            ...$this->arrayIssues($typedValue, $schema, $coerce, $pointer, $depth),
-            ...$this->objectIssues($typedValue, $schema, $coerce, $pointer, $depth),
-            ...$this->compositionIssues($typedValue, $schema, $coerce, $pointer, $depth),
+            ...OpenApiStructureConstraints::arrayIssues($this, $typedValue, $schema, $coerce, $pointer, $depth),
+            ...OpenApiStructureConstraints::objectIssues($this, $typedValue, $schema, $coerce, $pointer, $depth),
+            ...OpenApiStructureConstraints::compositionIssues($this, $typedValue, $schema, $coerce, $pointer, $depth),
         ];
     }
 
@@ -165,11 +163,11 @@ final class OpenApiSchemaChecker
             return [['pointer' => $pointer, 'message' => "unresolvable \$ref '{$ref}'"]];
         }
 
-        $issues = $this->checkValue($value, $resolved, $coerce, $pointer, $depth + 1);
+        $issues = $this->checkAt($value, $resolved, $coerce, $pointer, $depth + 1);
         $siblings = $schema;
         unset($siblings['$ref']);
         if ($siblings !== []) {
-            return [...$issues, ...$this->checkValue($value, $siblings, $coerce, $pointer, $depth + 1)];
+            return [...$issues, ...$this->checkAt($value, $siblings, $coerce, $pointer, $depth + 1)];
         }
 
         return $issues;
@@ -186,275 +184,5 @@ final class OpenApiSchemaChecker
         $resolved = $this->schemas[$matches[1]] ?? null;
 
         return is_array($resolved) ? $resolved : null;
-    }
-
-    /**
-     * @param array<mixed, mixed> $schema
-     *
-     * @return list<array{pointer: string, message: string}>
-     */
-    private function arrayIssues(mixed $value, array $schema, bool $coerce, string $pointer, int $depth): array
-    {
-        if (!is_array($value) || ($value !== [] && !array_is_list($value))) {
-            return [];
-        }
-        $issues = $this->arrayBoundIssues($value, $schema, $pointer);
-
-        return [...$issues, ...$this->itemsIssues($value, $schema, $coerce, $pointer, $depth)];
-    }
-
-    /**
-     * @param array<mixed>        $value
-     * @param array<mixed, mixed> $schema
-     *
-     * @return list<array{pointer: string, message: string}>
-     */
-    private function arrayBoundIssues(array $value, array $schema, string $pointer): array
-    {
-        $issues = [];
-        $minItems = $schema['minItems'] ?? null;
-        if (is_int($minItems) && count($value) < $minItems) {
-            $issues[] = ['pointer' => $pointer, 'message' => "array has fewer than minItems {$minItems}"];
-        }
-        $maxItems = $schema['maxItems'] ?? null;
-        if (is_int($maxItems) && count($value) > $maxItems) {
-            $issues[] = ['pointer' => $pointer, 'message' => "array has more than maxItems {$maxItems}"];
-        }
-        if (($schema['uniqueItems'] ?? null) === true) {
-            $serialized = array_map(serialize(...), $value);
-            if (count(array_unique($serialized)) !== count($serialized)) {
-                $issues[] = ['pointer' => $pointer, 'message' => 'array items are not unique'];
-            }
-        }
-
-        return $issues;
-    }
-
-    /**
-     * @param array<mixed>        $value
-     * @param array<mixed, mixed> $schema
-     *
-     * @return list<array{pointer: string, message: string}>
-     */
-    private function itemsIssues(array $value, array $schema, bool $coerce, string $pointer, int $depth): array
-    {
-        $items = $schema['items'] ?? null;
-        if ($items === null) {
-            return [];
-        }
-        $issues = [];
-        foreach ($value as $index => $element) {
-            $issues = [...$issues, ...$this->checkValue(
-                $element,
-                $items,
-                $coerce,
-                $pointer . '/' . $index,
-                $depth + 1,
-            )];
-        }
-
-        return $issues;
-    }
-
-    /**
-     * @param array<mixed, mixed> $schema
-     *
-     * @return list<array{pointer: string, message: string}>
-     */
-    private function objectIssues(mixed $value, array $schema, bool $coerce, string $pointer, int $depth): array
-    {
-        if (!is_array($value) || ($value !== [] && array_is_list($value))) {
-            return [];
-        }
-        $issues = [
-            ...$this->requiredIssues($value, $schema, $pointer),
-            ...$this->propertyIssues($value, $schema, $coerce, $pointer, $depth),
-        ];
-
-        return [...$issues, ...$this->propertyCountIssues($value, $schema, $pointer)];
-    }
-
-    /**
-     * @param array<mixed>        $value
-     * @param array<mixed, mixed> $schema
-     *
-     * @return list<array{pointer: string, message: string}>
-     */
-    private function requiredIssues(array $value, array $schema, string $pointer): array
-    {
-        $required = $schema['required'] ?? null;
-        if (!is_array($required)) {
-            return [];
-        }
-        $issues = [];
-        foreach ($required as $name) {
-            if (is_string($name) && !array_key_exists($name, $value)) {
-                $issues[] = ['pointer' => $pointer, 'message' => "missing required property '{$name}'"];
-            }
-        }
-
-        return $issues;
-    }
-
-    /**
-     * @param array<mixed>        $value
-     * @param array<mixed, mixed> $schema
-     *
-     * @return list<array{pointer: string, message: string}>
-     */
-    private function propertyIssues(array $value, array $schema, bool $coerce, string $pointer, int $depth): array
-    {
-        $properties = is_array($schema['properties'] ?? null) ? $schema['properties'] : [];
-        $additional = $schema['additionalProperties'] ?? null;
-        $issues = [];
-
-        /** @var int|string $key */
-        foreach ($value as $key => $itemValue) {
-            $issues = [...$issues, ...$this->keyIssues(
-                $key,
-                $itemValue,
-                $properties,
-                $additional,
-                $coerce,
-                $pointer,
-                $depth,
-            )];
-        }
-
-        return $issues;
-    }
-
-    /**
-     * One object key against the declared properties and the
-     * additionalProperties policy.
-     *
-     * @param array<mixed, mixed> $properties
-     *
-     * @return list<array{pointer: string, message: string}>
-     */
-    private function keyIssues(
-        mixed $key,
-        mixed $itemValue,
-        array $properties,
-        mixed $additional,
-        bool $coerce,
-        string $pointer,
-        int $depth,
-    ): array {
-        $key = is_int($key) ? (string) $key : $key;
-        if (!is_string($key)) {
-            return [];
-        }
-        $token = $pointer . '/' . $this->escapePointerToken($key);
-        if (array_key_exists($key, $properties)) {
-            return $this->checkValue($itemValue, $properties[$key], $coerce, $token, $depth + 1);
-        }
-        if ($additional === false) {
-            return [['pointer' => $pointer, 'message' => "additional property '{$key}' is not allowed"]];
-        }
-        if (is_array($additional) && $additional !== []) {
-            return $this->checkValue($itemValue, $additional, $coerce, $token, $depth + 1);
-        }
-
-        return [];
-    }
-
-    /**
-     * @param array<mixed>        $value
-     * @param array<mixed, mixed> $schema
-     *
-     * @return list<array{pointer: string, message: string}>
-     */
-    private function propertyCountIssues(array $value, array $schema, string $pointer): array
-    {
-        $issues = [];
-        $minProperties = $schema['minProperties'] ?? null;
-        if (is_int($minProperties) && count($value) < $minProperties) {
-            $issues[] = ['pointer' => $pointer, 'message' => "object has fewer than minProperties {$minProperties}"];
-        }
-        $maxProperties = $schema['maxProperties'] ?? null;
-        if (is_int($maxProperties) && count($value) > $maxProperties) {
-            $issues[] = ['pointer' => $pointer, 'message' => "object has more than maxProperties {$maxProperties}"];
-        }
-
-        return $issues;
-    }
-
-    /**
-     * @param array<mixed, mixed> $schema
-     *
-     * @return list<array{pointer: string, message: string}>
-     */
-    private function compositionIssues(mixed $value, array $schema, bool $coerce, string $pointer, int $depth): array
-    {
-        return [
-            ...$this->oneOfIssues($value, $schema['oneOf'] ?? null, $coerce, $pointer, $depth),
-            ...$this->anyOfIssues($value, $schema['anyOf'] ?? null, $coerce, $pointer, $depth),
-            ...$this->allOfIssues($value, $schema['allOf'] ?? null, $coerce, $pointer, $depth),
-        ];
-    }
-
-    /**
-     * @return list<array{pointer: string, message: string}>
-     */
-    private function oneOfIssues(mixed $value, mixed $oneOf, bool $coerce, string $pointer, int $depth): array
-    {
-        if (!is_array($oneOf) || $oneOf === []) {
-            return [];
-        }
-        $matched = 0;
-        foreach ($oneOf as $branch) {
-            if (is_array($branch) && $this->checkValue($value, $branch, $coerce, $pointer, $depth + 1) === []) {
-                ++$matched;
-            }
-        }
-
-        return match ($matched) {
-            1 => [],
-            0 => [['pointer' => $pointer, 'message' => 'value matches none of the oneOf branches']],
-            default => [['pointer' => $pointer, 'message' => 'value matches more than one oneOf branch']],
-        };
-    }
-
-    /**
-     * @return list<array{pointer: string, message: string}>
-     */
-    private function anyOfIssues(mixed $value, mixed $anyOf, bool $coerce, string $pointer, int $depth): array
-    {
-        if (!is_array($anyOf) || $anyOf === []) {
-            return [];
-        }
-        foreach ($anyOf as $branch) {
-            if (is_array($branch) && $this->checkValue($value, $branch, $coerce, $pointer, $depth + 1) === []) {
-                return [];
-            }
-        }
-
-        return [['pointer' => $pointer, 'message' => 'value matches none of the anyOf branches']];
-    }
-
-    /**
-     * @return list<array{pointer: string, message: string}>
-     */
-    private function allOfIssues(mixed $value, mixed $allOf, bool $coerce, string $pointer, int $depth): array
-    {
-        if (!is_array($allOf) || $allOf === []) {
-            return [];
-        }
-        $issues = [];
-        foreach ($allOf as $branch) {
-            if (!is_array($branch)) {
-                continue;
-            }
-            $issues = [...$issues, ...$this->checkValue($value, $branch, $coerce, $pointer, $depth + 1)];
-        }
-
-        return $issues;
-    }
-
-    /** JSON Pointer token escaping (RFC 6901): '~' -> '~0', '/' -> '~1'. */
-    private function escapePointerToken(string $token): string
-    {
-        return str_replace(['~', '/'], ['~0', '~1'], $token);
     }
 }

@@ -41,21 +41,24 @@ Prinsip pembatas peran (boundary of responsibility):
 | Kelas | Layer | Peran |
 |---|---|---|
 | `OpenApiGateMiddleware` | `src/Adapters/OpenApi/Http` | PSR-15: ekstraksi PSR-7 → engine, render problem+json, rewind body |
-| `OpenApiRequestGate` | `src/Infrastructure/OpenApi` | engine: seleksi template/metode, parameter B3–B6, verdict admitted |
+| `OpenApiRequestGate` | `src/Infrastructure/OpenApi` | engine: seleksi template/metode, verdict admitted, orkestrasi precedensi |
 | `OpenApiGateSecurity` | `src/Infrastructure/OpenApi` | B10: requirement OR/AND, bukti kehadiran, 401/403 |
 | `OpenApiBodyContract` | `src/Infrastructure/OpenApi` | B7/B8/B9: lazy body, 415, JSON ketat + pointer |
 | `OpenApiResponseContract` | `src/Infrastructure/OpenApi` | B11: status/media-type/body respons |
+| `OpenApiParameterContract` | `src/Infrastructure/OpenApi` | B3–B6: parameter path/query/header/cookie + strictQuery |
 | `OpenApiGateIndex` | `src/Infrastructure/OpenApi` | kompilasi spec → indeks path-template + metode + skema |
-| `OpenApiSchemaChecker` | `src/Infrastructure/OpenApi` | inti rekursif checker (traversal, `$ref`, struktur, komposisi) |
+| `OpenApiSchemaChecker` | `src/Infrastructure/OpenApi` | inti rekursif checker (traversal, guard, `$ref`) |
 | `OpenApiScalarConstraints` | `src/Infrastructure/OpenApi` | batasan skalar: enum, string, number, pattern |
+| `OpenApiStructureConstraints` | `src/Infrastructure/OpenApi` | batasan struktur: array, object, komposisi oneOf/anyOf/allOf |
 | `OpenApiSchemaTypes` | `src/Infrastructure/OpenApi` | sistem tipe: pencocokan, label, coercion string-transport |
 | `OpenApiGateRequest` | `src/Infrastructure/OpenApi` | input VO engine (metode, path, query, header, cookie, CT, lazy body, atribut) |
-| `OpenApiGateVerdict` | `src/Infrastructure/OpenApi` | hasil: admitted + konteks operasi, atau rejected + status/judul/isu/header |
+| `OpenApiGateVerdict` | `src/Infrastructure/OpenApi` | hasil: admitted + konteks operasi, atau rejected + status/detail/isu/header |
 | `OpenApiGateOptions` | `src/Infrastructure/OpenApi` | knob: `strictQuery` (default false), `validateResponses` (default false) |
 | `OpenApiGateException` | `src/Infrastructure/OpenApi` | boot-time failure (extends `OpenApiException`) |
 
-*Pemecahan kelas mengikuti anggaran ukuran SonarCloud (php:S2042) — 13 berkas,
-semua ≤ ±200 baris efektif; perilaku, pesan dan precedensi dibawa verbatim.*
+*Pemecahan kelas dua tahap mengikuti anggaran SonarCloud (php:S2042/S1448
+— 15 berkas, semua ≤ 200 baris & ≤ 20 metode); perilaku, pesan dan
+precedensi dibawa verbatim — 187 test gate hijau tanpa perubahan.*
 
 ## Matriks 12 batas
 

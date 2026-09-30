@@ -201,14 +201,16 @@ final readonly class OpenApiGateIndex
             return null;
         }
         $inner = substr($part, 1, -1);
-        if ($inner === '' || (!ctype_alpha($inner[0]) && $inner[0] !== '_')) {
-            return null;
-        }
-        if (strspn($inner, self::IDENTIFIER_ALPHABET) !== strlen($inner)) {
-            return null;
-        }
 
-        return $inner;
+        return self::isIdentifier($inner) ? $inner : null;
+    }
+
+    /** First character alphabetic or underscore, the rest identifier characters. */
+    private static function isIdentifier(string $inner): bool
+    {
+        return $inner !== ''
+            && (ctype_alpha($inner[0]) || $inner[0] === '_')
+            && strspn($inner, self::IDENTIFIER_ALPHABET) === strlen($inner);
     }
 
     /**

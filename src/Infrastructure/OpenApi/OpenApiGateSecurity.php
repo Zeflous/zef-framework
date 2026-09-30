@@ -22,10 +22,10 @@ namespace Zef\Framework\OpenApi;
  * (php:S2042); behaviour, messages and precedence are carried over
  * verbatim.
  */
-final class OpenApiGateSecurity
+final readonly class OpenApiGateSecurity
 {
     public function __construct(
-        private readonly OpenApiGateIndex $index,
+        private OpenApiGateIndex $index,
     ) {}
 
     /**

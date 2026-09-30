@@ -25,9 +25,9 @@ namespace Zef\Framework\OpenApi;
  * OpenApiSpecValidator::validate() — which includes the
  * OpenApiSecurityValidator scheme invariants the security slice relies on.
  *
- * The security/body/response slices live in dedicated collaborators
- * (class-size budget, php:S2042); this class owns selection, the
- * parameter boundaries and the admitted-operation context.
+ * The parameter, security, body and response slices live in dedicated
+ * collaborators (class-size budget, php:S2042); this class owns template
+ * selection and the verdict assembly.
  *
  * @phpstan-type GateIssue array{in: string, name: string, pointer: string, message: string}
  * @phpstan-type GateOperationContext array{
@@ -37,26 +37,26 @@ namespace Zef\Framework\OpenApi;
  *     pathParams: array<string, string>,
  *     responses: array<mixed, mixed>,
  * }
+ * @phpstan-type GateTemplate array{
+ *     path: string,
+ *     segments: list<array{dynamic: bool, name?: string, value?: string}>,
+ *     methods: array<string, array<mixed, mixed>>,
+ * }
  * @phpstan-type GateCandidate array{
  *     template: GateTemplate,
  *     params: array<string, string>,
  *     method: string,
  *     operation: array<mixed, mixed>,
  * }
- * @phpstan-type GateTemplate array{
- *     path: string,
- *     segments: list<array{dynamic: bool, name?: string, value?: string}>,
- *     methods: array<string, array<mixed, mixed>>,
- * }
  */
 final readonly class OpenApiRequestGate
 {
     private function __construct(
         private OpenApiGateIndex $index,
-        private OpenApiSchemaChecker $checker,
         private OpenApiGateSecurity $security,
         private OpenApiBodyContract $bodyContract,
         private OpenApiResponseContract $responseContract,
+        private OpenApiParameterContract $parameters,
         private OpenApiGateOptions $options,
     ) {}
 
@@ -80,10 +80,10 @@ final readonly class OpenApiRequestGate
 
         return new self(
             $index,
-            $checker,
             new OpenApiGateSecurity($index),
             new OpenApiBodyContract($checker),
             new OpenApiResponseContract($checker),
+            new OpenApiParameterContract($checker),
             $options,
         );
     }
@@ -146,7 +146,7 @@ final readonly class OpenApiRequestGate
     private function chooseTemplate(array $candidates): ?array
     {
         foreach ($candidates as $candidate) {
-            if ($this->pathParameterIssues($candidate['operation'], $candidate['params']) === []) {
+            if ($this->parameters->pathIssues($candidate['operation'], $candidate['params']) === []) {
                 return $candidate;
             }
         }
@@ -164,7 +164,7 @@ final readonly class OpenApiRequestGate
     private function firstPathIssues(array $candidates): array
     {
         foreach ($candidates as $candidate) {
-            $issues = $this->pathParameterIssues($candidate['operation'], $candidate['params']);
+            $issues = $this->parameters->pathIssues($candidate['operation'], $candidate['params']);
             if ($issues !== []) {
                 return $issues;
             }
@@ -182,7 +182,7 @@ final readonly class OpenApiRequestGate
     private function operationVerdict(array $chosen, OpenApiGateRequest $request): OpenApiGateVerdict
     {
         $security = $this->security->verdict($chosen['operation'], $request);
-        if ($security instanceof OpenApiGateVerdict) {
+        if ($security instanceof \Zef\Framework\OpenApi\OpenApiGateVerdict) {
             return $security;
         }
 
@@ -199,10 +199,13 @@ final readonly class OpenApiRequestGate
             return OpenApiGateVerdict::rejected(415, $body['detail'], $body['issues'], [], $body['extensions']);
         }
 
-        $parameterIssues = $this->parameterIssues($chosen['operation'], $request);
+        $parameterIssues = $this->parameters->parameterIssues($chosen['operation'], $request);
         if ($this->options->strictQuery) {
             // Undeclared-query rejections append after the declared ones.
-            $parameterIssues = [...$parameterIssues, ...$this->undeclaredQueryIssues($chosen['operation'], $request)];
+            $parameterIssues = [
+                ...$parameterIssues,
+                ...$this->parameters->undeclaredQueryIssues($chosen['operation'], $request),
+            ];
         }
 
         $issues = [...$parameterIssues, ...($body['issues'] ?? [])];
@@ -214,8 +217,8 @@ final readonly class OpenApiRequestGate
     }
 
     /**
-     * @param list<GateIssue>            $parameterIssues
-     * @param null|array<string, mixed>  $body
+     * @param list<GateIssue>           $parameterIssues
+     * @param null|array<string, mixed> $body
      */
     private function rejectionDetail(array $parameterIssues, ?array $body): string
     {
@@ -250,11 +253,6 @@ final readonly class OpenApiRequestGate
      * Templates that carry the request method. HEAD falls back to GET —
      * the router's effective-methods parity (B2).
      *
-     * @param list<array{template: array<string, mixed>, params: array<string, string>}> $matches
-     *
-     * @return list<GateCandidate>
-     */
-    /**
      * @param list<array{template: GateTemplate, params: array<string, string>}> $matches
      *
      * @return list<GateCandidate>
@@ -302,195 +300,5 @@ final readonly class OpenApiRequestGate
             ['Allow' => implode(', ', $allowed)],
             ['allowed' => $allowed],
         );
-    }
-
-    /**
-     * Boundary B3: path parameters of one candidate, coerced as string
-     * transport. Undeclared placeholders stay unconstrained (the boot
-     * validator requires declared path parameters to be required:true,
-     * but does not require every placeholder to be declared).
-     *
-     * @param array<mixed, mixed>  $operation
-     * @param array<string, string> $params
-     *
-     * @return list<GateIssue>
-     */
-    private function pathParameterIssues(array $operation, array $params): array
-    {
-        $issues = [];
-        foreach ($this->declaredParameters($operation) as $parameter) {
-            if ($parameter['in'] !== 'path') {
-                continue;
-            }
-            $issues = [...$issues, ...$this->pathIssue($parameter, $params)];
-        }
-
-        return $issues;
-    }
-
-    /**
-     * @param array{name: string, in: string, required: bool, schema: array<mixed, mixed>} $parameter
-     * @param array<string, string> $params
-     *
-     * @return list<GateIssue>
-     */
-    private function pathIssue(array $parameter, array $params): array
-    {
-        $value = $params[$parameter['name']] ?? null;
-        if ($value === null) {
-            return [];
-        }
-        $issues = [];
-        foreach ($this->checker->check($value, $parameter['schema'], true) as $issue) {
-            $issues[] = [
-                'in' => 'path',
-                'name' => $parameter['name'],
-                'pointer' => $issue['pointer'],
-                'message' => $issue['message'],
-            ];
-        }
-
-        return $issues;
-    }
-
-    /**
-     * Boundaries B4/B5/B6: declared query/header/cookie parameters.
-     *
-     * @param array<mixed, mixed> $operation
-     *
-     * @return list<GateIssue>
-     */
-    private function parameterIssues(array $operation, OpenApiGateRequest $request): array
-    {
-        $issues = [];
-        foreach ($this->declaredParameters($operation) as $parameter) {
-            if ($parameter['in'] === 'path') {
-                continue;
-            }
-            $issues = [...$issues, ...$this->parameterIssue($parameter, $request)];
-        }
-
-        return $issues;
-    }
-
-    /**
-     * @param array{name: string, in: string, required: bool, schema: array<mixed, mixed>} $parameter
-     *
-     * @return list<GateIssue>
-     */
-    private function parameterIssue(array $parameter, OpenApiGateRequest $request): array
-    {
-        $in = $parameter['in'];
-        $name = $parameter['name'];
-
-        $value = match ($in) {
-            'query' => $request->query[$name] ?? null,
-            'header' => $request->headers[strtolower($name)] ?? null,
-            'cookie' => $request->cookies[$name] ?? null,
-            default => null,
-        };
-        if ($value === null || $value === '') {
-            return $this->missingParameterIssues($parameter);
-        }
-
-        // B5 array style: a query parameter typed array accepts the PHP
-        // repeated-key form (style=form, explode=true) or a single
-        // comma-separated string (explode=false). Headers stay verbatim.
-        if ($in === 'query' && is_string($value) && ($parameter['schema']['type'] ?? null) === 'array') {
-            $value = explode(',', $value);
-        }
-        $issues = [];
-        foreach ($this->checker->check($value, $parameter['schema'], true) as $issue) {
-            $issues[] = [
-                'in' => $in,
-                'name' => $name,
-                'pointer' => $issue['pointer'],
-                'message' => $issue['message'],
-            ];
-        }
-
-        return $issues;
-    }
-
-    /**
-     * @param array{name: string, in: string, required: bool, schema: array<mixed, mixed>} $parameter
-     *
-     * @return list<GateIssue>
-     */
-    private function missingParameterIssues(array $parameter): array
-    {
-        if (!$parameter['required']) {
-            return [];
-        }
-
-        return [[
-            'in' => $parameter['in'],
-            'name' => $parameter['name'],
-            'pointer' => '',
-            'message' => "required {$parameter['in']} parameter '{$parameter['name']}' is missing",
-        ]];
-    }
-
-    /**
-     * B6 strict mode: query keys the operation does not declare.
-     *
-     * @param array<mixed, mixed> $operation
-     *
-     * @return list<GateIssue>
-     */
-    private function undeclaredQueryIssues(array $operation, OpenApiGateRequest $request): array
-    {
-        $declared = [];
-        foreach ($this->declaredParameters($operation) as $parameter) {
-            if ($parameter['in'] === 'query') {
-                $declared[$parameter['name']] = true;
-            }
-        }
-
-        $issues = [];
-        foreach ($request->query as $key => $_value) {
-            if (!isset($declared[$key])) {
-                $issues[] = [
-                    'in' => 'query',
-                    'name' => $key,
-                    'pointer' => '',
-                    'message' => "undeclared query parameter '{$key}' is not allowed",
-                ];
-            }
-        }
-
-        return $issues;
-    }
-
-    /**
-     * Normalized declared-parameter list: name non-empty, in one of the four
-     * locations, required flag resolved, schema normalized to an array
-     * (absent schema = presence-only contract).
-     *
-     * @param array<mixed, mixed> $operation
-     *
-     * @return list<array{name: string, in: string, required: bool, schema: array<mixed, mixed>}>
-     */
-    private function declaredParameters(array $operation): array
-    {
-        $parameters = is_array($operation['parameters'] ?? null) ? $operation['parameters'] : [];
-        $declared = [];
-
-        // B12 trust: the boot validator already refused parameters without
-        // non-empty names or with unknown locations — the annotation below
-        // is a phpstan assertion, not a runtime guard.
-        /** @var array{name: string, in: string, required?: bool, schema?: mixed} $parameter */
-        foreach ($parameters as $parameter) {
-            $schema = $parameter['schema'] ?? null;
-
-            $declared[] = [
-                'name' => $parameter['name'],
-                'in' => $parameter['in'],
-                'required' => ($parameter['required'] ?? false) === true || $parameter['in'] === 'path',
-                'schema' => is_array($schema) ? $schema : [],
-            ];
-        }
-
-        return $declared;
     }
 }

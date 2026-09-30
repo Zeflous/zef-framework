@@ -27,10 +27,10 @@ namespace Zef\Framework\OpenApi;
  *     extensions: array<string, mixed>,
  * }
  */
-final class OpenApiBodyContract
+final readonly class OpenApiBodyContract
 {
     public function __construct(
-        private readonly OpenApiSchemaChecker $checker,
+        private OpenApiSchemaChecker $checker,
     ) {}
 
     /**
