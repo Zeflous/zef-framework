@@ -7,13 +7,14 @@ declare(strict_types=1);
 namespace Zef\Framework\OpenApi;
 
 /**
- * Structural constraints of the OpenAPI runtime gate: the array, object
- * and composition keyword families. Extracted from
+ * Structural constraints of the OpenAPI runtime gate: the array and
+ * object keyword families (the composition family lives in
+ * {@see OpenApiCompositionConstraints}). Extracted from
  * {@see OpenApiSchemaChecker} for the class-size and method-count budgets
  * (php:S2042 / php:S1448); behaviour, messages, pointer accumulation and
  * depth accounting are carried over verbatim.
  *
- * Statelesss by construction: the recursive core is reached through the
+ * Stateless by construction: the recursive core is reached through the
  * checker's public {@see OpenApiSchemaChecker::checkAt()} entry, so no
  * instance or cycle is needed.
  */
@@ -63,26 +64,6 @@ final class OpenApiStructureConstraints
             ...self::requiredIssues($value, $schema, $pointer),
             ...self::propertyIssues($checker, $value, $schema, $coerce, $pointer, $depth),
             ...self::propertyCountIssues($value, $schema, $pointer),
-        ];
-    }
-
-    /**
-     * @param array<mixed, mixed> $schema
-     *
-     * @return list<array{pointer: string, message: string}>
-     */
-    public static function compositionIssues(
-        OpenApiSchemaChecker $checker,
-        mixed $value,
-        array $schema,
-        bool $coerce,
-        string $pointer,
-        int $depth,
-    ): array {
-        return [
-            ...self::oneOfIssues($checker, $value, $schema['oneOf'] ?? null, $coerce, $pointer, $depth),
-            ...self::anyOfIssues($checker, $value, $schema['anyOf'] ?? null, $coerce, $pointer, $depth),
-            ...self::allOfIssues($checker, $value, $schema['allOf'] ?? null, $coerce, $pointer, $depth),
         ];
     }
 
@@ -202,7 +183,8 @@ final class OpenApiStructureConstraints
 
     /**
      * One object key against the declared properties and the
-     * additionalProperties policy.
+     * additionalProperties policy: the declared-property recursion, the
+     * closed-policy issue, or nothing.
      *
      * @param array<mixed, mixed> $properties
      *
@@ -252,82 +234,6 @@ final class OpenApiStructureConstraints
         $maxProperties = $schema['maxProperties'] ?? null;
         if (is_int($maxProperties) && count($value) > $maxProperties) {
             $issues[] = ['pointer' => $pointer, 'message' => "object has more than maxProperties {$maxProperties}"];
-        }
-
-        return $issues;
-    }
-
-    /**
-     * @return list<array{pointer: string, message: string}>
-     */
-    private static function oneOfIssues(
-        OpenApiSchemaChecker $checker,
-        mixed $value,
-        mixed $oneOf,
-        bool $coerce,
-        string $pointer,
-        int $depth,
-    ): array {
-        if (!is_array($oneOf) || $oneOf === []) {
-            return [];
-        }
-        $matched = 0;
-        foreach ($oneOf as $branch) {
-            if (is_array($branch) && $checker->checkAt($value, $branch, $coerce, $pointer, $depth + 1) === []) {
-                ++$matched;
-            }
-        }
-
-        return match ($matched) {
-            1 => [],
-            0 => [['pointer' => $pointer, 'message' => 'value matches none of the oneOf branches']],
-            default => [['pointer' => $pointer, 'message' => 'value matches more than one oneOf branch']],
-        };
-    }
-
-    /**
-     * @return list<array{pointer: string, message: string}>
-     */
-    private static function anyOfIssues(
-        OpenApiSchemaChecker $checker,
-        mixed $value,
-        mixed $anyOf,
-        bool $coerce,
-        string $pointer,
-        int $depth,
-    ): array {
-        if (!is_array($anyOf) || $anyOf === []) {
-            return [];
-        }
-        foreach ($anyOf as $branch) {
-            if (is_array($branch) && $checker->checkAt($value, $branch, $coerce, $pointer, $depth + 1) === []) {
-                return [];
-            }
-        }
-
-        return [['pointer' => $pointer, 'message' => 'value matches none of the anyOf branches']];
-    }
-
-    /**
-     * @return list<array{pointer: string, message: string}>
-     */
-    private static function allOfIssues(
-        OpenApiSchemaChecker $checker,
-        mixed $value,
-        mixed $allOf,
-        bool $coerce,
-        string $pointer,
-        int $depth,
-    ): array {
-        if (!is_array($allOf) || $allOf === []) {
-            return [];
-        }
-        $issues = [];
-        foreach ($allOf as $branch) {
-            if (!is_array($branch)) {
-                continue;
-            }
-            $issues = [...$issues, ...$checker->checkAt($value, $branch, $coerce, $pointer, $depth + 1)];
         }
 
         return $issues;

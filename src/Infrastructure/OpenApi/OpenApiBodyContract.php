@@ -51,7 +51,6 @@ final readonly class OpenApiBodyContract
             return null;
         }
 
-        /** @var array<string, mixed> $content */
         $raw = $request->bodyContents();
         if ($raw === null || trim($raw) === '') {
             return $this->requiredRejection($requestBody);
@@ -90,7 +89,7 @@ final readonly class OpenApiBodyContract
     }
 
     /**
-     * @param array<string, mixed> $content
+     * @param array<mixed, mixed> $content
      *
      * @return null|GateBodyRejection
      */
@@ -109,7 +108,7 @@ final readonly class OpenApiBodyContract
     }
 
     /**
-     * @param array<string, mixed> $content
+     * @param array<mixed, mixed> $content
      *
      * @return GateBodyRejection
      */

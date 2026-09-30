@@ -92,7 +92,7 @@ final readonly class OpenApiGateSecurity
 
         return array_all(
             $requirement,
-            fn ($neededScopes, $schemeName): bool => $this->schemeSatisfied(
+            fn ($neededScopes, int|string $schemeName): bool => $this->schemeSatisfied(
                 $schemeName,
                 $neededScopes,
                 $identity,
@@ -106,13 +106,12 @@ final readonly class OpenApiGateSecurity
      * @param null|array<string> $scopes
      */
     private function schemeSatisfied(
-        mixed $schemeName,
+        int|string $schemeName,
         mixed $neededScopes,
         ?string $identity,
         ?array $scopes,
         OpenApiGateRequest $request,
     ): bool {
-        /** @var int|string $schemeName */
         $scheme = $this->index->securitySchemes[$schemeName] ?? null;
         $satisfied = $identity !== null
             || (is_array($scheme) && $this->schemeEvidence($scheme, $request));

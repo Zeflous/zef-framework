@@ -49,7 +49,8 @@ Prinsip pembatas peran (boundary of responsibility):
 | `OpenApiGateIndex` | `src/Infrastructure/OpenApi` | kompilasi spec → indeks path-template + metode + skema |
 | `OpenApiSchemaChecker` | `src/Infrastructure/OpenApi` | inti rekursif checker (traversal, guard, `$ref`) |
 | `OpenApiScalarConstraints` | `src/Infrastructure/OpenApi` | batasan skalar: enum, string, number, pattern |
-| `OpenApiStructureConstraints` | `src/Infrastructure/OpenApi` | batasan struktur: array, object, komposisi oneOf/anyOf/allOf |
+| `OpenApiStructureConstraints` | `src/Infrastructure/OpenApi` | batasan struktur: array, object |
+| `OpenApiCompositionConstraints` | `src/Infrastructure/OpenApi` | komposisi: oneOf/anyOf/allOf |
 | `OpenApiSchemaTypes` | `src/Infrastructure/OpenApi` | sistem tipe: pencocokan, label, coercion string-transport |
 | `OpenApiGateRequest` | `src/Infrastructure/OpenApi` | input VO engine (metode, path, query, header, cookie, CT, lazy body, atribut) |
 | `OpenApiGateVerdict` | `src/Infrastructure/OpenApi` | hasil: admitted + konteks operasi, atau rejected + status/detail/isu/header |
@@ -57,7 +58,7 @@ Prinsip pembatas peran (boundary of responsibility):
 | `OpenApiGateException` | `src/Infrastructure/OpenApi` | boot-time failure (extends `OpenApiException`) |
 
 *Pemecahan kelas dua tahap mengikuti anggaran SonarCloud (php:S2042/S1448
-— 15 berkas, semua ≤ 200 baris & ≤ 20 metode); perilaku, pesan dan
+— 16 berkas, semua ≤ 200 baris & ≤ 20 metode); perilaku, pesan dan
 precedensi dibawa verbatim — 187 test gate hijau tanpa perubahan.*
 
 ## Matriks 12 batas

@@ -65,12 +65,10 @@ final readonly class OpenApiResponseContract
         if (array_key_exists($status, $responses)) {
             return $status;
         }
-        if (array_key_exists('default', $responses)) {
-            return 'default';
-        }
-        $range = intdiv($status, 100) . 'XX';
-        if (array_key_exists($range, $responses)) {
-            return $range;
+        foreach (['default', intdiv($status, 100) . 'XX'] as $fallback) {
+            if (array_key_exists($fallback, $responses)) {
+                return $fallback;
+            }
         }
 
         return null;

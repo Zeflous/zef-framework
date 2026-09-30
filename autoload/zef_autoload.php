@@ -447,6 +447,7 @@ if (!function_exists('zef_framework_autoload')) {
                 "Zef\\Framework\\OpenApi\\License" => __DIR__ . '/../src/Domain/OpenApi/License.php',
                 "Zef\\Framework\\OpenApi\\MediaType" => __DIR__ . '/../src/Domain/OpenApi/MediaType.php',
                 "Zef\\Framework\\OpenApi\\OpenApiBodyContract" => __DIR__ . '/../src/Infrastructure/OpenApi/OpenApiBodyContract.php',
+                "Zef\\Framework\\OpenApi\\OpenApiCompositionConstraints" => __DIR__ . '/../src/Infrastructure/OpenApi/OpenApiCompositionConstraints.php',
                 "Zef\\Framework\\OpenApi\\OpenApiException" => __DIR__ . '/../src/Domain/OpenApi/OpenApiException.php',
                 "Zef\\Framework\\OpenApi\\OpenApiGateException" => __DIR__ . '/../src/Infrastructure/OpenApi/OpenApiGateException.php',
                 "Zef\\Framework\\OpenApi\\OpenApiGateIndex" => __DIR__ . '/../src/Infrastructure/OpenApi/OpenApiGateIndex.php',

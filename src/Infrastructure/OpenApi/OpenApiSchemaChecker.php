@@ -96,7 +96,7 @@ final class OpenApiSchemaChecker
             ...OpenApiScalarConstraints::numericIssues($typedValue, $schema, $pointer),
             ...OpenApiStructureConstraints::arrayIssues($this, $typedValue, $schema, $coerce, $pointer, $depth),
             ...OpenApiStructureConstraints::objectIssues($this, $typedValue, $schema, $coerce, $pointer, $depth),
-            ...OpenApiStructureConstraints::compositionIssues($this, $typedValue, $schema, $coerce, $pointer, $depth),
+            ...OpenApiCompositionConstraints::issues($this, $typedValue, $schema, $coerce, $pointer, $depth),
         ];
     }
 
