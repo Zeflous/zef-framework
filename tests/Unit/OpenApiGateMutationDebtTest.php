@@ -1112,7 +1112,7 @@ final class OpenApiGateMutationDebtTest extends TestCase
             for ($i = 0; $i < $levels; ++$i) {
                 $value = ['k' => $value];
             }
-            \assert(is_array($value));
+            assert(is_array($value));
 
             return $value;
         };
