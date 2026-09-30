@@ -84,7 +84,7 @@ final readonly class QueueFailedLister
                 $job->jobId,
                 $job->jobType,
                 $job->attempt,
-                self::iso($job->availableAtUnixNano),
+                $this->iso($job->availableAtUnixNano),
                 $job->correlationId ?? '-',
             ));
             ++$count;
@@ -105,7 +105,7 @@ final readonly class QueueFailedLister
      * branch to leave untested (64-bit PHP renders pre-epoch seconds as
      * negative years correctly).
      */
-    private static function iso(int $availableAtUnixNano): string
+    private function iso(int $availableAtUnixNano): string
     {
         $seconds = intdiv($availableAtUnixNano, 1_000_000_000);
 

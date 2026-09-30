@@ -53,10 +53,10 @@ final class QueueCliTest extends TestCase
     {
         $io = HermeticConsoleIo::create();
         $queue = new InMemoryJobQueue();
-        $queue->enqueue(self::job('job-wk-0001')); // t.job.ok → done
-        $queue->enqueue(self::job('job-wk-boom', 1, 0, 't.job.boom')); // → default policy retries
+        $queue->enqueue($this->job('job-wk-0001')); // t.job.ok → done
+        $queue->enqueue($this->job('job-wk-boom', 1, 0, 't.job.boom')); // → default policy retries
 
-        $cli = new QueueWorker(self::workerFactory($queue), $io);
+        $cli = new QueueWorker($this->workerFactory($queue), $io);
         $exit = $cli->run(['once' => true]);
 
         self::assertSame(0, $exit);
@@ -71,10 +71,10 @@ final class QueueCliTest extends TestCase
         $io = HermeticConsoleIo::create();
         $queue = new InMemoryJobQueue();
         $dlq = new InMemoryJobQueue();
-        $queue->enqueue(self::job('job-wk-doom', 1, 0, 't.job.boom'));
+        $queue->enqueue($this->job('job-wk-doom', 1, 0, 't.job.boom'));
 
         // maxAttempts=1: the first failure is terminal → dead-lettered.
-        $cli = new QueueWorker(self::workerFactory($queue, $dlq, new RetryPolicy(1)), $io);
+        $cli = new QueueWorker($this->workerFactory($queue, $dlq, new RetryPolicy(1)), $io);
         $exit = $cli->run(['once' => true]);
 
         self::assertSame(0, $exit);
@@ -87,11 +87,11 @@ final class QueueCliTest extends TestCase
     {
         $io = HermeticConsoleIo::create();
         $queue = new InMemoryJobQueue();
-        $queue->enqueue(self::job('job-cap-0001'));
-        $queue->enqueue(self::job('job-cap-0002'));
-        $queue->enqueue(self::job('job-cap-0003'));
+        $queue->enqueue($this->job('job-cap-0001'));
+        $queue->enqueue($this->job('job-cap-0002'));
+        $queue->enqueue($this->job('job-cap-0003'));
 
-        $cli = new QueueWorker(self::workerFactory($queue), $io);
+        $cli = new QueueWorker($this->workerFactory($queue), $io);
         $exit = $cli->run(['max' => '1']);
 
         self::assertSame(0, $exit);
@@ -103,11 +103,11 @@ final class QueueCliTest extends TestCase
     {
         $io = HermeticConsoleIo::create();
         $queue = new InMemoryJobQueue();
-        $queue->enqueue(self::job('job-mem-0001'));
+        $queue->enqueue($this->job('job-mem-0001'));
 
         // A 1 MiB budget is always already exceeded by the test process —
         // the guard must trip before the first job runs.
-        $cli = new QueueWorker(self::workerFactory($queue), $io);
+        $cli = new QueueWorker($this->workerFactory($queue), $io);
         $exit = $cli->run(['once' => true, 'memory' => '1']);
 
         self::assertSame(QueueWorker::EXIT_MEMORY, $exit);
@@ -122,12 +122,12 @@ final class QueueCliTest extends TestCase
     {
         $io = HermeticConsoleIo::create();
         $queue = new InMemoryJobQueue();
-        $queue->enqueue(self::job('job-mem-ok01'));
+        $queue->enqueue($this->job('job-mem-ok01'));
 
         // --memory without a value parses to bool true: the documented
         // bare-flag semantics fall back to "no guard" instead of casting
         // true to 1 MiB (OutboxWorker's Kilo-review rule).
-        $cli = new QueueWorker(self::workerFactory($queue), $io);
+        $cli = new QueueWorker($this->workerFactory($queue), $io);
         $exit = $cli->run(['once' => true, 'memory' => true]);
 
         self::assertSame(0, $exit);
@@ -142,8 +142,8 @@ final class QueueCliTest extends TestCase
     {
         $io = HermeticConsoleIo::create();
         $jobs = [
-            self::job('job-fl-0001', 3, 1_700_000_000_000_000_000),
-            self::job('job-fl-0002', 1, 0),
+            $this->job('job-fl-0001', 3, 1_700_000_000_000_000_000),
+            $this->job('job-fl-0002', 1, 0),
         ];
         $cli = new QueueFailedLister(static fn (int $max): array => array_slice($jobs, 0, $max), $io);
         $exit = $cli->run([]);
@@ -223,7 +223,7 @@ final class QueueCliTest extends TestCase
         $io = HermeticConsoleIo::create();
         $main = new InMemoryJobQueue();
         $failed = new InMemoryJobQueue();
-        $failed->enqueue(self::job('job-rtry-001', 3));
+        $failed->enqueue($this->job('job-rtry-001', 3));
 
         $cli = new QueueRetry(static fn (): JobQueueInterface => $main, static fn (): JobQueueInterface => $failed, $io);
         $exit = $cli->run([]);
@@ -244,7 +244,7 @@ final class QueueCliTest extends TestCase
     {
         $io = HermeticConsoleIo::create();
         $failed = new InMemoryJobQueue();
-        $failed->enqueue(self::job('job-rtry-dup'));
+        $failed->enqueue($this->job('job-rtry-dup'));
         $rejecting = new class implements JobQueueInterface {
             #[\Override]
             public function enqueue(JobEnvelope $job): void
@@ -280,8 +280,8 @@ final class QueueCliTest extends TestCase
         $io = HermeticConsoleIo::create();
         $main = new InMemoryJobQueue();
         $failed = new InMemoryJobQueue();
-        $failed->enqueue(self::job('job-rtry-b01'));
-        $failed->enqueue(self::job('job-rtry-b02'));
+        $failed->enqueue($this->job('job-rtry-b01'));
+        $failed->enqueue($this->job('job-rtry-b02'));
 
         $cli = new QueueRetry(static fn (): JobQueueInterface => $main, static fn (): JobQueueInterface => $failed, $io);
         $exit = $cli->run(['max' => '1']);
@@ -297,8 +297,8 @@ final class QueueCliTest extends TestCase
         $io = HermeticConsoleIo::create();
         $main = new InMemoryJobQueue();
         $failed = new InMemoryJobQueue();
-        $failed->enqueue(self::job('job-rtry-a01'));
-        $failed->enqueue(self::job('job-rtry-a02'));
+        $failed->enqueue($this->job('job-rtry-a01'));
+        $failed->enqueue($this->job('job-rtry-a02'));
 
         $cli = new QueueRetry(static fn (): JobQueueInterface => $main, static fn (): JobQueueInterface => $failed, $io);
         $exit = $cli->run(['all' => true]);
@@ -331,9 +331,9 @@ final class QueueCliTest extends TestCase
     {
         $io = HermeticConsoleIo::create();
         $failed = new InMemoryJobQueue();
-        $failed->enqueue(self::job('job-flsh-001'));
-        $failed->enqueue(self::job('job-flsh-002'));
-        $failed->enqueue(self::job('job-flsh-003'));
+        $failed->enqueue($this->job('job-flsh-001'));
+        $failed->enqueue($this->job('job-flsh-002'));
+        $failed->enqueue($this->job('job-flsh-003'));
 
         $cli = new QueueFlush(static fn (): JobQueueInterface => $failed, $io);
         $exit = $cli->run([]);
@@ -356,9 +356,9 @@ final class QueueCliTest extends TestCase
     {
         $io = HermeticConsoleIo::create();
         $failed = new InMemoryJobQueue();
-        $failed->enqueue(self::job('job-flsh-101'));
-        $failed->enqueue(self::job('job-flsh-102'));
-        $failed->enqueue(self::job('job-flsh-103'));
+        $failed->enqueue($this->job('job-flsh-101'));
+        $failed->enqueue($this->job('job-flsh-102'));
+        $failed->enqueue($this->job('job-flsh-103'));
 
         $cli = new QueueFlush(static fn (): JobQueueInterface => $failed, $io);
         $exit = $cli->run(['max' => '2']);
@@ -382,13 +382,13 @@ final class QueueCliTest extends TestCase
         self::assertStringContainsString('queue:flush could not build the failed-job queue: failed queue missing', implode("\n", $io->errLog()));
     }
 
-    private static function job(string $id, int $attempt = 1, int $availableAt = 0, string $type = 't.job.ok'): JobEnvelope
+    private function job(string $id, int $attempt = 1, int $availableAt = 0, string $type = 't.job.ok'): JobEnvelope
     {
         return new JobEnvelope($id, $type, null, $availableAt, 0, $attempt);
     }
 
     /** A worker factory over an InMemory queue, mirroring the bin/zef wiring. */
-    private static function workerFactory(
+    private function workerFactory(
         InMemoryJobQueue $queue,
         ?InMemoryJobQueue $dlq = null,
         ?RetryPolicy $retryPolicy = null,

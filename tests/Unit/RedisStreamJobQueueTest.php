@@ -60,16 +60,7 @@ final class RedisStreamJobQueueTest extends TestCase
     public function testRoundTripPreservesEveryEnvelopeField(): void
     {
         $queue = new RedisStreamJobQueue($this->liveRedis(), 'rt');
-        $in = self::job(
-            'job-rt-0001',
-            1_700_000_000_123_456_789,
-            7,
-            3,
-            'corr-abc12345',
-            '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01',
-            ['x-header' => 'v', 'n' => '2'],
-            ['deep' => ['list' => [1, 2, 3], 'flag' => true, 'zero' => 0.0]],
-        );
+        $in = $this->job('job-rt-0001', 1_700_000_000_123_456_789, 7, 3, 'corr-abc12345', '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01', ['x-header' => 'v', 'n' => '2'], ['deep' => ['list' => [1, 2, 3], 'flag' => true, 'zero' => 0.0]]);
         $queue->enqueue($in);
 
         $out = $queue->dequeue(2_000_000_000_000_000_000);
@@ -88,7 +79,7 @@ final class RedisStreamJobQueueTest extends TestCase
     public function testNullOptionalsRoundTripViaEmptyStringSentinels(): void
     {
         $queue = new RedisStreamJobQueue($this->liveRedis(), 'nulls');
-        $queue->enqueue(self::job('job-null-01', 0, 0, 1));
+        $queue->enqueue($this->job('job-null-01', 0, 0, 1));
         $out = $queue->dequeue(1);
         self::assertInstanceOf(JobEnvelope::class, $out);
         self::assertNull($out->correlationId);
@@ -101,7 +92,7 @@ final class RedisStreamJobQueueTest extends TestCase
     {
         $queue = new RedisStreamJobQueue($this->liveRedis(), 'fifo');
         foreach (['job-fifo-01', 'job-fifo-02', 'job-fifo-03'] as $id) {
-            $queue->enqueue(self::job($id));
+            $queue->enqueue($this->job($id));
         }
 
         foreach (['job-fifo-01', 'job-fifo-02', 'job-fifo-03'] as $id) {
@@ -114,9 +105,9 @@ final class RedisStreamJobQueueTest extends TestCase
     public function testHigherPriorityWinsOverEnqueueOrder(): void
     {
         $queue = new RedisStreamJobQueue($this->liveRedis(), 'prio');
-        $queue->enqueue(self::job('job-prio-lo1'));
-        $queue->enqueue(self::job('job-prio-hi', 0, 5));
-        $queue->enqueue(self::job('job-prio-lo2'));
+        $queue->enqueue($this->job('job-prio-lo1'));
+        $queue->enqueue($this->job('job-prio-hi', 0, 5));
+        $queue->enqueue($this->job('job-prio-lo2'));
 
         foreach (['job-prio-hi', 'job-prio-lo1', 'job-prio-lo2'] as $id) {
             $out = $queue->dequeue(1);
@@ -128,8 +119,8 @@ final class RedisStreamJobQueueTest extends TestCase
     public function testEqualPriorityEarliestAvailabilityWins(): void
     {
         $queue = new RedisStreamJobQueue($this->liveRedis(), 'avail');
-        $queue->enqueue(self::job('job-avail-late', 5_000_000_000));
-        $queue->enqueue(self::job('job-avail-early', 1_000_000_000));
+        $queue->enqueue($this->job('job-avail-late', 5_000_000_000));
+        $queue->enqueue($this->job('job-avail-early', 1_000_000_000));
 
         self::assertSame('job-avail-early', $queue->dequeue(9_000_000_000)?->jobId);
     }
@@ -137,8 +128,8 @@ final class RedisStreamJobQueueTest extends TestCase
     public function testNotYetDueJobIsNotClaimed(): void
     {
         $queue = new RedisStreamJobQueue($this->liveRedis(), 'delay');
-        $queue->enqueue(self::job('job-delay-01', 10_000_000_000_000));
-        $queue->enqueue(self::job('job-delay-02', 1_000));
+        $queue->enqueue($this->job('job-delay-01', 10_000_000_000_000));
+        $queue->enqueue($this->job('job-delay-02', 1_000));
 
         // now=5000: only the second job (available at 1000) is due.
         $due = $queue->dequeue(5_000);
@@ -154,8 +145,8 @@ final class RedisStreamJobQueueTest extends TestCase
     {
         $redis = $this->liveRedis();
         $queue = new RedisStreamJobQueue($redis, 'claim');
-        $queue->enqueue(self::job('job-claim-01'));
-        $queue->enqueue(self::job('job-claim-02'));
+        $queue->enqueue($this->job('job-claim-01'));
+        $queue->enqueue($this->job('job-claim-02'));
 
         self::assertSame(2, $queue->size());
         $first = $queue->dequeue(1);
@@ -174,24 +165,24 @@ final class RedisStreamJobQueueTest extends TestCase
     {
         $redis = $this->liveRedis();
         $queue = new RedisStreamJobQueue($redis, 'dup');
-        $queue->enqueue(self::job('job-dup-0001'));
-        $queue->enqueue(self::job('job-dup-0002'));
+        $queue->enqueue($this->job('job-dup-0001'));
+        $queue->enqueue($this->job('job-dup-0002'));
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage("Job 'job-dup-0001' is already queued.");
-        $queue->enqueue(self::job('job-dup-0001'));
+        $queue->enqueue($this->job('job-dup-0001'));
     }
 
     public function testReEnqueueAfterClaimIsAllowed(): void
     {
         $redis = $this->liveRedis();
         $queue = new RedisStreamJobQueue($redis, 'reclaim');
-        $queue->enqueue(self::job('job-retry-01'));
+        $queue->enqueue($this->job('job-retry-01'));
         self::assertNotNull($queue->dequeue(1));
 
         // The retry path re-enqueues the same id after the claim removed it
         // from the live-id set — the duplicate backstop must not fire.
-        $queue->enqueue(self::job('job-retry-01', 0, 0, 2));
+        $queue->enqueue($this->job('job-retry-01', 0, 0, 2));
         $out = $queue->dequeue(1);
         self::assertInstanceOf(JobEnvelope::class, $out);
         self::assertSame(2, $out->attempt, 'second delivery carries the bumped attempt');
@@ -200,23 +191,23 @@ final class RedisStreamJobQueueTest extends TestCase
     public function testCapacityGuardThrowsOverflow(): void
     {
         $queue = new RedisStreamJobQueue($this->liveRedis(), 'cap', null, 2);
-        $queue->enqueue(self::job('job-cap-0001'));
-        $queue->enqueue(self::job('job-cap-0002'));
+        $queue->enqueue($this->job('job-cap-0001'));
+        $queue->enqueue($this->job('job-cap-0002'));
 
         $this->expectException(\OverflowException::class);
         $this->expectExceptionMessage('Job queue capacity exceeded.');
-        $queue->enqueue(self::job('job-cap-0003'));
+        $queue->enqueue($this->job('job-cap-0003'));
     }
 
     /** Capacity 1 is the legal boundary (guard is < 1, not <= 1). */
     public function testCapacityOneIsTheLegalBoundary(): void
     {
         $queue = new RedisStreamJobQueue($this->liveRedis(), 'cap1', null, 1);
-        $queue->enqueue(self::job('job-cap1-001'));
+        $queue->enqueue($this->job('job-cap1-001'));
         self::assertSame(1, $queue->size());
 
         $this->expectException(\OverflowException::class);
-        $queue->enqueue(self::job('job-cap1-002'));
+        $queue->enqueue($this->job('job-cap1-002'));
     }
 
     public function testConstructorGuards(): void
@@ -256,8 +247,8 @@ final class RedisStreamJobQueueTest extends TestCase
     {
         $redis = $this->liveRedis();
         $queue = new RedisStreamJobQueue($redis, 'peek');
-        $queue->enqueue(self::job('job-peek-01'));
-        $queue->enqueue(self::job('job-peek-02'));
+        $queue->enqueue($this->job('job-peek-01'));
+        $queue->enqueue($this->job('job-peek-02'));
 
         $seen = $queue->peek(1);
         self::assertCount(1, $seen, 'peek honours the entry budget');
@@ -281,8 +272,8 @@ final class RedisStreamJobQueueTest extends TestCase
         $redis = $this->liveRedis();
         $a = new RedisStreamJobQueue($redis, 'one');
         $b = new RedisStreamJobQueue($redis, 'two');
-        $a->enqueue(self::job('job-iso-0001'));
-        $b->enqueue(self::job('job-iso-0002'));
+        $a->enqueue($this->job('job-iso-0001'));
+        $b->enqueue($this->job('job-iso-0002'));
 
         self::assertSame(1, $a->size());
         self::assertSame(1, $b->size());
@@ -301,7 +292,7 @@ final class RedisStreamJobQueueTest extends TestCase
     {
         $redis = $this->liveRedis();
         $queue = new RedisStreamJobQueue($redis, 'corrupt');
-        $queue->enqueue(self::job('job-good-01'));
+        $queue->enqueue($this->job('job-good-01'));
 
         // Tamper: an entry whose payload is not JSON, written through the
         // raw client the way an operator or a bug would.
@@ -352,7 +343,7 @@ final class RedisStreamJobQueueTest extends TestCase
         $fake = new QueueFakeRedis();
         $fake->evalResult = 1;
         $queue = new RedisStreamJobQueue($fake, 'types', null, 2);
-        $queue->enqueue(self::job('job-types-01', 0, 7, 2));
+        $queue->enqueue($this->job('job-types-01', 0, 7, 2));
 
         self::assertSame('2', $fake->evalArgs[2] ?? null, 'capacity travels as string');
         self::assertSame('00000000000000000000', $fake->evalArgs[6] ?? null, 'zero deadline is zero-padded to 20 digits');
@@ -366,7 +357,7 @@ final class RedisStreamJobQueueTest extends TestCase
         $fake = new QueueFakeRedis();
         $fake->evalResult = 1;
         $queue = new RedisStreamJobQueue($fake, 'neg');
-        $queue->enqueue(self::job('job-neg-0001', -5));
+        $queue->enqueue($this->job('job-neg-0001', -5));
 
         self::assertSame('-5', $fake->evalArgs[6] ?? null, 'negative nano deadline is stored as-is');
     }
@@ -433,7 +424,7 @@ final class RedisStreamJobQueueTest extends TestCase
         $fake = new QueueFakeRedis();
         $fake->evalResult = 1;
         $queue = new RedisStreamJobQueue($fake, 'clock', static fn (): int => 1_000_000);
-        $queue->enqueue(self::job('job-clock-01', 2_000_000));
+        $queue->enqueue($this->job('job-clock-01', 2_000_000));
 
         $fake->evalResult = false; // next eval (dequeue claim) finds nothing
         self::assertNull($queue->dequeue());
@@ -475,14 +466,14 @@ final class RedisStreamJobQueueTest extends TestCase
         $queue = new RedisStreamJobQueue($fake, 'fake');
 
         if ($expectClass === null) {
-            $queue->enqueue(self::job('job-fake-01'));
+            $queue->enqueue($this->job('job-fake-01'));
             self::assertSame(1, $fake->evalCalls, 'eval was invoked exactly once');
 
             return;
         }
 
         try {
-            $queue->enqueue(self::job('job-fake-01'));
+            $queue->enqueue($this->job('job-fake-01'));
             self::fail('eval result ' . var_export($evalResult, true) . ' must throw');
         } catch (\Throwable $e) {
             self::assertSame($expectClass, $e::class);
@@ -638,7 +629,7 @@ final class RedisStreamJobQueueTest extends TestCase
     /**
      * @param array<string, string> $headers
      */
-    private static function job(
+    private function job(
         string $id,
         int $availableAt = 0,
         int $priority = 0,

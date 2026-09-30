@@ -185,7 +185,7 @@ final readonly class RedisStreamJobQueue implements JobQueueInterface
                 $job->jobId,
                 $job->jobType,
                 JobRowCodec::encodePayload($job->payload),
-                self::padNano($job->availableAtUnixNano),
+                $this->padNano($job->availableAtUnixNano),
                 (string) $job->priority,
                 (string) $job->attempt,
                 $job->correlationId ?? '',
@@ -213,7 +213,7 @@ final readonly class RedisStreamJobQueue implements JobQueueInterface
         $now = $nowUnixNano ?? ($this->clock)();
         $fields = $this->redis->eval(
             self::LUA_DEQUEUE,
-            [$this->streamKey, $this->idsKey, self::padNano($now)],
+            [$this->streamKey, $this->idsKey, $this->padNano($now)],
             2,
         );
         if ($fields === false || $fields === null) {
@@ -223,7 +223,7 @@ final readonly class RedisStreamJobQueue implements JobQueueInterface
             throw new RedisJobQueueException('Redis job queue returned an unexpected dequeue result.');
         }
 
-        return JobRowCodec::hydrate(self::rowFromFields($fields));
+        return JobRowCodec::hydrate($this->rowFromFields($fields));
     }
 
     #[\Override]
@@ -296,7 +296,7 @@ final readonly class RedisStreamJobQueue implements JobQueueInterface
      *
      * @return array<string, mixed> JobRowCodec row shape
      */
-    private static function rowFromFields(array $fields): array
+    private function rowFromFields(array $fields): array
     {
         // Empty string is the null sentinel for the two optional columns:
         // the envelope grammar forbids empty correlation/trace values, so ''
@@ -325,7 +325,7 @@ final readonly class RedisStreamJobQueue implements JobQueueInterface
      * and still comparable among themselves for the common same-magnitude
      * case.
      */
-    private static function padNano(int $value): string
+    private function padNano(int $value): string
     {
         return $value < 0 ? (string) $value : sprintf('%020d', $value);
     }
