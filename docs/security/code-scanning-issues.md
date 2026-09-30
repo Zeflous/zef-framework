@@ -14,7 +14,7 @@ so those decisions are reviewable instead of implicit in a shell script.
 
 | Mechanism | Question it answers |
 |---|---|
-| **Code scanning analysis** (Semgrep OSS, SnykCode, CodeQL — see `php-sast.md` and `snyk-security.yml`) | Does the code contain a finding? Is the finding *open* right now? |
+| **Code scanning analysis** (Semgrep OSS, Snyk — one merged tool since the evidence consolidation, CodeQL — see `php-sast.md` and `snyk-security.md`) | Does the code contain a finding? Is the finding *open* right now? |
 | **This mirror** | Does every open finding have a **visible, triageable tracker issue** — without anyone hand-copying alert links? |
 
 The mirror is *not* an analysis and *not* a blocker: it never runs on pull
@@ -40,7 +40,7 @@ The repo-native equivalent, and what this workflow uses:
 
 | Trigger | Covers | Latency |
 |---|---|---|
-| `workflow_run` on **PHP SAST** and **Snyk Security** completing on `main` | Semgrep OSS + SnykCode alerts for the new head commit | minutes (as soon as the analyzers finish) |
+| `workflow_run` on **PHP SAST** and **Snyk Security** completing on `main` | Semgrep OSS + Snyk (merged evidence) alerts for the new head commit | minutes (as soon as the analyzers finish) |
 | `schedule` (daily, 03:23 UTC) | everything, including the CodeQL default setup (a dynamic workflow outside `.github/workflows`, which `workflow_run` cannot target) | ≤ 24 h |
 | `workflow_dispatch` | manual runs, and pre-merge testing on a branch | on demand |
 

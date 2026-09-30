@@ -21,8 +21,10 @@
 #
 # Every scanner runs with `--severity-threshold=low`, so no severity tier is
 # filtered out of the result set. Each scanner records its own exit code as a
-# step output; the SARIF evidence is uploaded to GitHub Code Scanning BEFORE
-# the verdict is computed; and a single explicit final verdict step fails the
+# step output; the SARIF evidence is merged into one document and uploaded to
+# GitHub Code Scanning BEFORE the verdict is computed (a single
+# "Code scanning results / Snyk" check run — see the evidence-consolidation
+# comment below); and a single explicit final verdict step fails the
 # job unless all three scanners reported exit code 0.
 #
 # Exit-code contract (Snyk CLI): 0 = clean, 1 = findings, >1 = scanner error.
@@ -137,31 +139,31 @@ jobs:
         run: python3 scripts/ci/normalize_sarif_severity.py
 
       # ---------------------------------------------------------------------
-      # Evidence upload. Runs even when a scan above reported findings, and
-      # always BEFORE the verdict step, so the Code Scanning tab is populated
-      # regardless of the verdict outcome. Each scanner writes its own SARIF
-      # file (Snyk overwrites a shared path with the most recent scan).
+      # Evidence consolidation + upload. Runs even when a scan above reported
+      # findings, and always BEFORE the verdict step, so the Code Scanning
+      # tab is populated regardless of the verdict outcome.
+      #
+      # The three per-scanner SARIF files are merged into ONE document whose
+      # runs all carry the single tool name "Snyk" (scripts/ci/
+      # merge_snyk_sarif.py), so ONE upload renders ONE check run —
+      # "Code scanning results / Snyk" — for the whole evidence set. This is
+      # the same pattern the CodeQL default-setup analyses use for their
+      # multi-language runs: one tool name, one upload, one check. The three
+      # per-scanner check runs (SnykCode / Snyk Open Source / Snyk IaC) are
+      # retired by this; `snyk` (this job) is the ONLY Snyk status check kept
+      # required on main — see docs/security/snyk-security.md for the audit
+      # behind that decision.
       # ---------------------------------------------------------------------
-      - name: Upload Snyk Code results to GitHub Code Scanning
-        if: always() && hashFiles('snyk-code.sarif') != ''
-        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
-        with:
-          sarif_file: snyk-code.sarif
-          category: snyk-code
+      - name: Merge Snyk SARIF evidence
+        if: always()
+        run: python3 scripts/ci/merge_snyk_sarif.py
 
-      - name: Upload Snyk Open Source results to GitHub Code Scanning
-        if: always() && hashFiles('snyk-sca.sarif') != ''
+      - name: Upload merged Snyk results to GitHub Code Scanning
+        if: always() && hashFiles('snyk.sarif') != ''
         uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
-          sarif_file: snyk-sca.sarif
-          category: snyk-open-source
-
-      - name: Upload Snyk IaC results to GitHub Code Scanning
-        if: always() && hashFiles('snyk-iac.sarif') != ''
-        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
-        with:
-          sarif_file: snyk-iac.sarif
-          category: snyk-iac
+          sarif_file: snyk.sarif
+          category: snyk
 
       # ---------------------------------------------------------------------
       # Explicit final verdict. Fail-closed: this is the ONLY place the job's

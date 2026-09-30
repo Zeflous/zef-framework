@@ -58,6 +58,8 @@ exclude:
         reason: 'Test harness; the catch block echoes the exception CLASS only ($e::class), never the message, so no server error detail is exposed. SnykCode cannot see the class-only narrowing. Semgrep tests/ pass still scans it'
     - scripts/ci/normalize_sarif_severity.py:
         reason: 'CI-only SARIF normalizer; the three input paths are module constants (no CLI argument, no taint source) resolved under the repo root. CodeQL python + Semgrep scripts/ pass still scan it'
+    - scripts/ci/merge_snyk_sarif.py:
+        reason: 'CI-only SARIF merger; the four paths (three inputs, one output) are module constants (no CLI argument, no taint source) resolved under the repo root — the same operation class as normalize_sarif_severity.py, whose python/PT finding this entry mirrors. CodeQL python + Semgrep scripts/ pass still scan it'
 
 # ---------------------------------------------------------------------------
 # 2. Snyk Open Source (SCA) license ignores
