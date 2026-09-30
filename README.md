@@ -18,7 +18,7 @@
   <img src="https://img.shields.io/badge/Mutation%20gate-MSI%20%E2%89%A5%2085-f59e0b?style=for-the-badge" alt="Mutation gate MSI 85">
   <br>
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="MIT">
-  <img src="https://img.shields.io/badge/Rilis%20terdokumentasi-v2.31.0-0ea5e9?style=for-the-badge" alt="v2.31.0">
+  <img src="https://img.shields.io/badge/Rilis%20terdokumentasi-v2.32.0-0ea5e9?style=for-the-badge" alt="v2.32.0">
 
 </div>
 
@@ -129,12 +129,12 @@ Banyak framework PHP tumbuh dari kenyamanan. ZEF tumbuh dari pembongkaran: satu 
   </tr>
   <tr>
     <td><b>Ecosystem</b></td>
-    <td>Object storage port + adapter <code>LocalStorage</code> (tulis atomik) &amp; <code>S3CompatibleStorage</code> (SigV4 in-house tanpa SDK — AWS/MinIO/Ceph/R2/GCS XML-API, v2.30.0) · transport pesan <code>InMemoryMessageTransport</code> (FIFO terbatas, id deterministik, v2.30.0) · antrean job tahan lama <code>PdoJobQueue</code> (klaim transaksional portabel) + <code>PdoJobIdempotencyStore</code> (efek exactly-once, v2.30.0) · peta integrasi <a href="docs/INTEGRATIONS.md">INTEGRATIONS.md</a></td>
+    <td>Object storage port + adapter <code>LocalStorage</code> (tulis atomik) &amp; <code>S3CompatibleStorage</code> (SigV4 in-house tanpa SDK — AWS/MinIO/Ceph/R2/GCS XML-API, v2.30.0) · transport pesan <code>InMemoryMessageTransport</code> (FIFO terbatas, id deterministik, v2.30.0) · antrean job tahan lama <code>PdoJobQueue</code> (klaim transaksional portabel) + <code>PdoJobIdempotencyStore</code> (efek exactly-once, v2.30.0) · antrean durable Redis Streams <code>RedisStreamJobQueue</code> (klaim atomik single-Lua XRANGE→XDEL+SREM, v2.32.0) · CLI antrean <code>queue:work/failed/retry/flush</code> (worker + DLQ ops, v2.32.0) · peta integrasi <a href="docs/INTEGRATIONS.md">INTEGRATIONS.md</a></td>
   </tr>
 </table>
 
 <details>
-<summary><b>Riwayat rilis selengkapnya (v2.8.0 → v2.31.0)</b> — 37 berkas CHANGELOG · 24 entri ringkas</summary>
+<summary><b>Riwayat rilis selengkapnya (v2.8.0 → v2.32.0)</b> — 38 berkas CHANGELOG · 25 entri ringkas</summary>
 
 <br>
 
@@ -166,8 +166,9 @@ Setiap rilis bersifat **aditif**: perilaku lama tidak diubah.
 | **v2.29.0** | **DX Release**: `make:app` scaffold aplikasi standalone (path-repo leluhur bersama + wrapper maker), `rr:init` konfigurasi RoadRunner dari knob `ZEF_*` (collision-safe), `doctor` preflight lingkungan + boot smoke, tutorial Zero-to-Hero `TUTORIAL-CQRS-101.md`, kontrak plugin `PLUGINS.md` |
 | **v2.30.0** | **Ecosystem Ports**: port `ObjectStorageInterface` + adapter `LocalStorage` (atomik, bebas traversal) & `S3CompatibleStorage` (SigV4 in-house, vektor resmi AWS, tanpa SDK), transport `InMemoryMessageTransport` + `ReceivedMessage`, antrean durable `PdoJobQueue` (klaim SELECT+DELETE portabel, seq transaksional, UNIQUE job_id) + `PdoJobIdempotencyStore` (exactly-once effect), `INTEGRATIONS.md` — nol paket runtime baru |
 | **v2.31.0** | **Zero-Debt & Fail-Closed Gates**: SonarCloud 879 → 0 pelanggaran + scope fail-closed milik-ZEF (PR #251/#256/#257), Snyk strict fail-closed + bukti SARIF terkonsolidasi jadi satu check (PR #246/#262), cermin alert code-scanning → issue, antrean PR zero-click (arm-on-open + rantai merge + cron 20m), hardening konfigurasi F-01..F-24 (PR #255), ZEF-DX-01..10 dan ZEF-DEEP-15..22 ditutup — nol fitur runtime baru |
+| **v2.32.0** | **Unified Queue & Broker**: driver antrean durable `RedisStreamJobQueue` di atas Redis Streams (klaim atomik single-Lua XRANGE→XDEL+SREM tanpa XREADGROUP/pending-entry, ordering paritas PDO `priority DESC/available_at ASC/seq ASC`, dedupe SET padanan `UNIQUE(job_id)`, nano zero-padded 20-digit anti Lua-double), CLI terpadu `queue:work`/`queue:failed`/`queue:retry`/`queue:flush` (SIGTERM drain antar-job, memory guard exit 2), zona mutasi `infra-job-redis` MSI 98.35 — nol paket runtime baru |
 
-Rincian per rilis: [`docs/CHANGELOG-v2.31.0.md`](docs/CHANGELOG-v2.31.0.md), [`v2.30.0.md`](docs/CHANGELOG-v2.30.0.md), [`v2.29.0.md`](docs/CHANGELOG-v2.29.0.md), [`v2.28.0.md`](docs/CHANGELOG-v2.28.0.md), [`v2.27.0.md`](docs/CHANGELOG-v2.27.0.md), [`v2.26.0.md`](docs/CHANGELOG-v2.26.0.md), [`v2.25.0.md`](docs/CHANGELOG-v2.25.0.md), [`v2.23.0.md`](docs/CHANGELOG-v2.23.0.md), [`v2.22.0.md`](docs/CHANGELOG-v2.22.0.md), [`v2.21.1.md`](docs/CHANGELOG-v2.21.1.md), [`v2.21.0.md`](docs/CHANGELOG-v2.21.0.md), [`v2.19.0`](docs/CHANGELOG-v2.19.0.md), [`v2.18.0`](docs/CHANGELOG-v2.18.0.md), [`v2.17.0`](docs/CHANGELOG-v2.17.0.md), [`v2.16.0`](docs/CHANGELOG-v2.16.0.md), [`v2.15.0`](docs/CHANGELOG-v2.15.0.md), [`v2.14.0`](docs/CHANGELOG-v2.14.0.md) — atau seluruh berkas lainnya di [`docs/`](docs/README.md).
+Rincian per rilis: [`docs/CHANGELOG-v2.32.0.md`](docs/CHANGELOG-v2.32.0.md), [`v2.31.0.md`](docs/CHANGELOG-v2.31.0.md), [`v2.30.0.md`](docs/CHANGELOG-v2.30.0.md), [`v2.29.0.md`](docs/CHANGELOG-v2.29.0.md), [`v2.28.0.md`](docs/CHANGELOG-v2.28.0.md), [`v2.27.0.md`](docs/CHANGELOG-v2.27.0.md), [`v2.26.0.md`](docs/CHANGELOG-v2.26.0.md), [`v2.25.0.md`](docs/CHANGELOG-v2.25.0.md), [`v2.23.0.md`](docs/CHANGELOG-v2.23.0.md), [`v2.22.0.md`](docs/CHANGELOG-v2.22.0.md), [`v2.21.1.md`](docs/CHANGELOG-v2.21.1.md), [`v2.21.0.md`](docs/CHANGELOG-v2.21.0.md), [`v2.19.0`](docs/CHANGELOG-v2.19.0.md), [`v2.18.0`](docs/CHANGELOG-v2.18.0.md), [`v2.17.0`](docs/CHANGELOG-v2.17.0.md), [`v2.16.0`](docs/CHANGELOG-v2.16.0.md), [`v2.15.0`](docs/CHANGELOG-v2.15.0.md), [`v2.14.0`](docs/CHANGELOG-v2.14.0.md) — atau seluruh berkas lainnya di [`docs/`](docs/README.md).
 
 </details>
 
