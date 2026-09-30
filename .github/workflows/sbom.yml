@@ -22,7 +22,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
-      contents: read
+      # Least-privilege stays intact on branch pushes (read). On tag pushes the
+      # anchore/sbom-action attaches the generated SBOM to the release matching
+      # the tag, which requires contents:write — without it, a release that
+      # already exists when the tag run reaches the attach fails with
+      # "Resource not accessible by integration" (v2.32.0 tag run 36711454066;
+      # v2.31.0 only dodged this by timing — its release was published after
+      # the tag run had finished, so the attach was skipped entirely).
+      contents: ${{ github.ref_type == 'tag' && 'write' || 'read' }}
       id-token: write # required for keyless (OIDC) SBOM attestation
       attestations: write # required to persist the attestation to the attestation store
     steps:
