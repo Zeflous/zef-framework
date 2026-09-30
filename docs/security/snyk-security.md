@@ -72,7 +72,8 @@ CLI gate fails the job before the alert identity matters.
 Before 2026-09-30, branch protection required three Snyk-related contexts at
 once: `snyk` (the workflow job), `SnykCode` (a Code Scanning check run fed by
 this workflow's own upload), and `code/snyk (Zeflous)` (the Snyk GitHub App's
-PR check). The audit that collapsed them to one:
+PR check). The audit that collapsed them to one (the App check was later
+re-promoted as an out-of-band backstop — see the decision below):
 
 * **`SnykCode` was a strict shadow of `snyk`.** Its SARIF came from the same
   CLI run the verdict already gates on: scanner exit 0 → empty SARIF → the
@@ -85,25 +86,45 @@ PR check). The audit that collapsed them to one:
   It is produced by the Snyk GitHub App out-of-band, with the Snyk
   organization's own thresholds rather than the in-repo fail-closed policy, so
   it can pass where this gate fails. Its Details link resolves to
-  `app.snyk.io/org/mbetixz/...` — the Snyk organization is a **personal**
-  account, not an org-owned one — so the check's availability is coupled to
+  `app.snyk.io/org/mbetixz/...` — at audit time the Snyk organization was the
+  **personal** default account, so the check's availability was coupled to
   that account's quota/plan and to Snyk cloud availability. A required context
   that can silently stop being reported (plan lapse, integration removed,
   outage) blocks every merge with no in-repo signal, which is exactly the
   silent-disappearance failure mode this repo avoids elsewhere by keeping
   every other gate repo-native.
 
-**Decision:** `snyk` — the in-repo, fail-closed, severity-floor-`low` job — is
-the **only** Snyk-related required context. The merged evidence check
-(`Code scanning results / Snyk`) and the Snyk GitHub App PR check
-(`code/snyk (Zeflous)`) still run and still report; they are advisory
-evidence, not merge blockers.
+**Decision (2026-09-30):** two Snyk-related required contexts, one in-repo
+and one out-of-band:
 
-If the App check is ever promoted back to required — as a tamper-resistant
-backstop that survives a compromised workflow file — first migrate the Snyk
-integration to an org-owned Snyk organization and align its PR-check
-thresholds with the in-repo policy; until then it cannot be trusted as a
-gate.
+* `snyk` — the in-repo, fail-closed, severity-floor-`low` job — remains the
+  primary gate.
+* `code/snyk (Zeflous)` — the Snyk GitHub App PR check — was promoted back to
+  required as a **tamper-resistant backstop**: its verdict is computed in
+  Snyk's cloud out-of-band, so it survives a compromised workflow file, a
+  leaked `SNYK_TOKEN`, or an edited `.snyk` policy — the failure modes an
+  in-repo-only gate cannot defend against.
+
+The promotion followed the preconditions this document set when the check was
+demoted: the Snyk integration now lives in the user-managed Snyk organization
+"Zeflous" (renamed from the personal default; the org slug in
+`app.snyk.io/org/mbetixz/...` URLs does not change on rename), and the
+check's posting behavior was verified empirically before the protection
+change. It is a **commit status** (not a check run), typically posted within a
+minute of a pull request opening (observed: 0.3 min on the three most recent
+PRs at promotion time), and it posts on human and dependabot pull requests
+alike. Slower patches were observed only during the integration's first hours
+(20.9 min and 163 min on 2026-09-29) and delay, not break, auto-merge.
+
+Residual risks, accepted knowingly: the backstop couples merge availability
+to Snyk cloud availability and the org's plan standing — a lapsed integration
+blocks merges with no in-repo signal. The App check is delta-based with the
+Snyk org's thresholds, so it can pass where the in-repo gate fails; it is an
+independent second opinion, never a replacement for the fail-closed job. The
+merged evidence check (`Code scanning results / Snyk`) stays advisory.
+
+Rollback is one branch-protection edit: remove the context from the required
+list.
 
 ## 4. Policy file (`.snyk`) — reviewed boundaries, not silent skips
 

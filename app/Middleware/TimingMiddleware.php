@@ -26,7 +26,8 @@ final class TimingMiddleware implements MiddlewareInterface
         $response = $handler->handle($request);
         $elapsedMs = round((hrtime(true) - $startNs) / 1_000_000, 2);
 
-        return self::asResponse($response->withHeader('X-Response-Time', $elapsedMs . 'ms'));
+        // Same zero-elapsed flake guard as src/Middleware/TimingMiddleware.
+        return self::asResponse($response->withHeader('X-Response-Time', sprintf('%.2fms', $elapsedMs)));
     }
 
     /**
