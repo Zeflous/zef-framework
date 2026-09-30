@@ -23,7 +23,11 @@ namespace Zef\Framework\OpenApi;
  *
  * Construction is fail-closed (B12): the document must pass
  * OpenApiSpecValidator::validate() — which includes the
- * OpenApiSecurityValidator scheme invariants the engine relies on.
+ * OpenApiSecurityValidator scheme invariants the security slice relies on.
+ *
+ * The security/body/response slices live in dedicated collaborators
+ * (class-size budget, php:S2042); this class owns selection, the
+ * parameter boundaries and the admitted-operation context.
  *
  * @phpstan-type GateIssue array{in: string, name: string, pointer: string, message: string}
  * @phpstan-type GateOperationContext array{
@@ -33,20 +37,26 @@ namespace Zef\Framework\OpenApi;
  *     pathParams: array<string, string>,
  *     responses: array<mixed, mixed>,
  * }
- * @phpstan-type GateBodyRejection array{unsupported: bool, detail: string, issues: list<GateIssue>, extensions: array<string, mixed>}
- * @phpstan-type GateSegment array{dynamic: bool, name?: string, value?: string}
+ * @phpstan-type GateCandidate array{
+ *     template: GateTemplate,
+ *     params: array<string, string>,
+ *     method: string,
+ *     operation: array<mixed, mixed>,
+ * }
  * @phpstan-type GateTemplate array{
  *     path: string,
- *     segments: list<GateSegment>,
+ *     segments: list<array{dynamic: bool, name?: string, value?: string}>,
  *     methods: array<string, array<mixed, mixed>>,
  * }
- * @phpstan-type GatePathMatch array{template: GateTemplate, params: array<string, string>}
  */
 final readonly class OpenApiRequestGate
 {
     private function __construct(
         private OpenApiGateIndex $index,
         private OpenApiSchemaChecker $checker,
+        private OpenApiGateSecurity $security,
+        private OpenApiBodyContract $bodyContract,
+        private OpenApiResponseContract $responseContract,
         private OpenApiGateOptions $options,
     ) {}
 
@@ -66,8 +76,16 @@ final readonly class OpenApiRequestGate
         }
 
         $index = OpenApiGateIndex::fromSpec($spec);
+        $checker = new OpenApiSchemaChecker($index->schemas);
 
-        return new self($index, new OpenApiSchemaChecker($index->schemas), $options);
+        return new self(
+            $index,
+            $checker,
+            new OpenApiGateSecurity($index),
+            new OpenApiBodyContract($checker),
+            new OpenApiResponseContract($checker),
+            $options,
+        );
     }
 
     public function evaluate(OpenApiGateRequest $request): OpenApiGateVerdict
@@ -81,77 +99,10 @@ final readonly class OpenApiRequestGate
         $candidates = $this->methodCandidates($request->method, $matches);
         if ($candidates === []) {
             // B2: 405 + Allow, same method set the router would report.
-            $templates = array_map(static fn (array $match): array => $match['template'], $matches);
-            $allowed = $this->index->allowedMethods($templates);
-
-            return OpenApiGateVerdict::rejected(
-                405,
-                "Method '{$request->method}' is not documented for this path.",
-                [],
-                ['Allow' => implode(', ', $allowed)],
-                ['allowed' => $allowed],
-            );
+            return $this->methodNotAllowed($matches, $request->method);
         }
 
-        // B3: the first (sorted) template whose path parameters validate wins.
-        $chosen = null;
-        $firstPathIssues = null;
-        foreach ($candidates as $candidate) {
-            $issues = $this->pathParameterIssues($candidate['operation'], $candidate['params']);
-            if ($issues === []) {
-                $chosen = $candidate;
-
-                break;
-            }
-            $firstPathIssues ??= $issues;
-        }
-        if ($chosen === null) {
-            return OpenApiGateVerdict::rejected(
-                400,
-                'Path parameters violate the documented schema.',
-                $firstPathIssues ?? [],
-            );
-        }
-
-        $operation = $chosen['operation'];
-
-        // B10: security before validation — precedence 401/403 over 415/400.
-        $security = $this->securityVerdict($operation, $request);
-        if ($security instanceof OpenApiGateVerdict) {
-            return $security;
-        }
-
-        $parameterIssues = $this->parameterIssues($operation, $request);
-        if ($this->options->strictQuery) {
-            // Undeclared-query rejections append after the declared ones.
-            $parameterIssues = [...$parameterIssues, ...$this->undeclaredQueryIssues($operation, $request)];
-        }
-
-        $body = $this->bodyRejection($operation, $request);
-        if ($body !== null && $body['unsupported']) {
-            return OpenApiGateVerdict::rejected(415, $body['detail'], $body['issues'], [], $body['extensions']);
-        }
-
-        $issues = [...$parameterIssues, ...($body['issues'] ?? [])];
-        if ($issues !== []) {
-            $detail = 'The request violates the documented API contract.';
-            if ($parameterIssues === [] && $body !== null) {
-                $detail = $body['detail'];
-            }
-
-            return OpenApiGateVerdict::rejected(400, $detail, $issues);
-        }
-
-        /** @var GateOperationContext $context */
-        $context = [
-            'operationId' => is_string($operation['operationId'] ?? null) ? $operation['operationId'] : '',
-            'path' => $chosen['template']['path'],
-            'method' => strtoupper($chosen['method']),
-            'pathParams' => $chosen['params'],
-            'responses' => is_array($operation['responses'] ?? null) ? $operation['responses'] : [],
-        ];
-
-        return OpenApiGateVerdict::admitted($context);
+        return $this->candidateVerdict($candidates, $request);
     }
 
     /**
@@ -163,114 +114,150 @@ final readonly class OpenApiRequestGate
      */
     public function checkResponse(array $responses, int $status, string $mediaType, ?string $body): array
     {
-        $key = $this->responseKey($responses, $status);
-        if ($key === null) {
-            return [[
-                'in' => 'response',
-                'name' => (string) $status,
-                'pointer' => '',
-                'message' => "response status {$status} is not documented",
-            ]];
-        }
-        $response = $responses[$key] ?? null;
-        if (!is_array($response)) {
-            // Defensive: the boot-time validator requires response objects.
-            return [];
-        }
-
-        $content = $response['content'] ?? null;
-        if (!is_array($content) || $content === []) {
-            if ($body !== null && trim($body) !== '') {
-                return [[
-                    'in' => 'response',
-                    'name' => '',
-                    'pointer' => '',
-                    'message' => 'response body is present but no content is documented',
-                ]];
-            }
-
-            return [];
-        }
-        if ($body === null || trim($body) === '') {
-            // Nothing to validate: an empty body cannot violate a schema.
-            return [];
-        }
-
-        $normalized = strtolower(trim(explode(';', $mediaType)[0]));
-        if ($normalized === '') {
-            return [[
-                'in' => 'response',
-                'name' => '',
-                'pointer' => '',
-                'message' => 'response has no Content-Type header',
-            ]];
-        }
-        $definition = $content[$normalized] ?? null;
-        if (!is_array($definition)) {
-            return [[
-                'in' => 'response',
-                'name' => $normalized,
-                'pointer' => '',
-                'message' => "response media type '{$normalized}' is not documented",
-            ]];
-        }
-        if (!$this->isJsonMediaType($normalized)) {
-            return [];
-        }
-
-        try {
-            $decoded = json_decode($body, true, 512, JSON_THROW_ON_ERROR);
-        } catch (\JsonException) {
-            return [[
-                'in' => 'response',
-                'name' => $normalized,
-                'pointer' => '',
-                'message' => 'response body is not valid JSON',
-            ]];
-        }
-
-        $schema = is_array($definition['schema'] ?? null) ? $definition['schema'] : null;
-        $issues = [];
-        foreach ($this->checker->check($decoded, $schema, false) as $issue) {
-            $issues[] = [
-                'in' => 'response',
-                'name' => $normalized,
-                'pointer' => $issue['pointer'],
-                'message' => $issue['message'],
-            ];
-        }
-
-        return $issues;
+        return $this->responseContract->issues($responses, $status, $mediaType, $body);
     }
 
     /**
-     * Exact status key, then 'default', then the 'NXX' range form.
+     * B3 template choice, then the operation's request contract.
      *
-     * @param array<int|string, mixed> $responses
+     * @param list<GateCandidate> $candidates
      */
-    private function responseKey(array $responses, int $status): int|string|null
+    private function candidateVerdict(array $candidates, OpenApiGateRequest $request): OpenApiGateVerdict
     {
-        if (array_key_exists($status, $responses)) {
-            return $status;
+        $chosen = $this->chooseTemplate($candidates);
+        if ($chosen === null) {
+            return OpenApiGateVerdict::rejected(
+                400,
+                'Path parameters violate the documented schema.',
+                $this->firstPathIssues($candidates),
+            );
         }
-        if (array_key_exists('default', $responses)) {
-            return 'default';
-        }
-        $range = intdiv($status, 100) . 'XX';
-        if (array_key_exists($range, $responses)) {
-            return $range;
+
+        return $this->operationVerdict($chosen, $request);
+    }
+
+    /**
+     * The first (sorted) template whose path parameters validate wins.
+     *
+     * @param list<GateCandidate> $candidates
+     *
+     * @return null|GateCandidate
+     */
+    private function chooseTemplate(array $candidates): ?array
+    {
+        foreach ($candidates as $candidate) {
+            if ($this->pathParameterIssues($candidate['operation'], $candidate['params']) === []) {
+                return $candidate;
+            }
         }
 
         return null;
     }
 
     /**
+     * The deterministic first-failure report for the 400 verdict.
+     *
+     * @param list<GateCandidate> $candidates
+     *
+     * @return list<GateIssue>
+     */
+    private function firstPathIssues(array $candidates): array
+    {
+        foreach ($candidates as $candidate) {
+            $issues = $this->pathParameterIssues($candidate['operation'], $candidate['params']);
+            if ($issues !== []) {
+                return $issues;
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * B10 first (security before validation), then the parameter/body
+     * contract with its 400/415 precedence.
+     *
+     * @param GateCandidate $chosen
+     */
+    private function operationVerdict(array $chosen, OpenApiGateRequest $request): OpenApiGateVerdict
+    {
+        $security = $this->security->verdict($chosen['operation'], $request);
+        if ($security instanceof OpenApiGateVerdict) {
+            return $security;
+        }
+
+        return $this->validationVerdict($chosen, $request);
+    }
+
+    /**
+     * @param GateCandidate $chosen
+     */
+    private function validationVerdict(array $chosen, OpenApiGateRequest $request): OpenApiGateVerdict
+    {
+        $body = $this->bodyContract->rejection($chosen['operation'], $request);
+        if ($body !== null && $body['unsupported']) {
+            return OpenApiGateVerdict::rejected(415, $body['detail'], $body['issues'], [], $body['extensions']);
+        }
+
+        $parameterIssues = $this->parameterIssues($chosen['operation'], $request);
+        if ($this->options->strictQuery) {
+            // Undeclared-query rejections append after the declared ones.
+            $parameterIssues = [...$parameterIssues, ...$this->undeclaredQueryIssues($chosen['operation'], $request)];
+        }
+
+        $issues = [...$parameterIssues, ...($body['issues'] ?? [])];
+        if ($issues !== []) {
+            return OpenApiGateVerdict::rejected(400, $this->rejectionDetail($parameterIssues, $body), $issues);
+        }
+
+        return OpenApiGateVerdict::admitted($this->operationContext($chosen));
+    }
+
+    /**
+     * @param list<GateIssue>            $parameterIssues
+     * @param null|array<string, mixed>  $body
+     */
+    private function rejectionDetail(array $parameterIssues, ?array $body): string
+    {
+        $detail = $body['detail'] ?? null;
+        if ($parameterIssues === [] && is_string($detail)) {
+            return $detail;
+        }
+
+        return 'The request violates the documented API contract.';
+    }
+
+    /**
+     * @param GateCandidate $chosen
+     *
+     * @return GateOperationContext
+     */
+    private function operationContext(array $chosen): array
+    {
+        $operation = $chosen['operation'];
+        $path = $chosen['template']['path'] ?? '';
+
+        return [
+            'operationId' => is_string($operation['operationId'] ?? null) ? $operation['operationId'] : '',
+            'path' => is_string($path) ? $path : '',
+            'method' => strtoupper($chosen['method']),
+            'pathParams' => $chosen['params'],
+            'responses' => is_array($operation['responses'] ?? null) ? $operation['responses'] : [],
+        ];
+    }
+
+    /**
      * Templates that carry the request method. HEAD falls back to GET —
      * the router's effective-methods parity (B2).
      *
-     * @param list<GatePathMatch> $matches
+     * @param list<array{template: array<string, mixed>, params: array<string, string>}> $matches
      *
-     * @return list<array{template: GateTemplate, params: array<string, string>, method: string, operation: array<mixed, mixed>}>
+     * @return list<GateCandidate>
+     */
+    /**
+     * @param list<array{template: GateTemplate, params: array<string, string>}> $matches
+     *
+     * @return list<GateCandidate>
      */
     private function methodCandidates(string $method, array $matches): array
     {
@@ -279,6 +266,7 @@ final readonly class OpenApiRequestGate
 
         $candidates = [];
         foreach ($matches as $match) {
+            /** @var array<string, array<mixed, mixed>> $methods */
             $methods = $match['template']['methods'];
             foreach ($keys as $key) {
                 $operation = $methods[$key] ?? null;
@@ -299,6 +287,24 @@ final readonly class OpenApiRequestGate
     }
 
     /**
+     * @param list<array{template: GateTemplate, params: array<string, string>}> $matches
+     */
+    private function methodNotAllowed(array $matches, string $method): OpenApiGateVerdict
+    {
+        /** @var list<GateTemplate> $templates */
+        $templates = array_map(static fn (array $match): array => $match['template'], $matches);
+        $allowed = $this->index->allowedMethods($templates);
+
+        return OpenApiGateVerdict::rejected(
+            405,
+            "Method '{$method}' is not documented for this path.",
+            [],
+            ['Allow' => implode(', ', $allowed)],
+            ['allowed' => $allowed],
+        );
+    }
+
+    /**
      * Boundary B3: path parameters of one candidate, coerced as string
      * transport. Undeclared placeholders stay unconstrained (the boot
      * validator requires declared path parameters to be required:true,
@@ -316,19 +322,32 @@ final readonly class OpenApiRequestGate
             if ($parameter['in'] !== 'path') {
                 continue;
             }
-            $name = $parameter['name'];
-            $value = $params[$name] ?? null;
-            if ($value === null) {
-                continue;
-            }
-            foreach ($this->checker->check($value, $parameter['schema'], true) as $issue) {
-                $issues[] = [
-                    'in' => 'path',
-                    'name' => $name,
-                    'pointer' => $issue['pointer'],
-                    'message' => $issue['message'],
-                ];
-            }
+            $issues = [...$issues, ...$this->pathIssue($parameter, $params)];
+        }
+
+        return $issues;
+    }
+
+    /**
+     * @param array{name: string, in: string, required: bool, schema: array<mixed, mixed>} $parameter
+     * @param array<string, string> $params
+     *
+     * @return list<GateIssue>
+     */
+    private function pathIssue(array $parameter, array $params): array
+    {
+        $value = $params[$parameter['name']] ?? null;
+        if ($value === null) {
+            return [];
+        }
+        $issues = [];
+        foreach ($this->checker->check($value, $parameter['schema'], true) as $issue) {
+            $issues[] = [
+                'in' => 'path',
+                'name' => $parameter['name'],
+                'pointer' => $issue['pointer'],
+                'message' => $issue['message'],
+            ];
         }
 
         return $issues;
@@ -345,49 +364,71 @@ final readonly class OpenApiRequestGate
     {
         $issues = [];
         foreach ($this->declaredParameters($operation) as $parameter) {
-            $in = $parameter['in'];
-            if ($in === 'path') {
+            if ($parameter['in'] === 'path') {
                 continue;
             }
-            $name = $parameter['name'];
-
-            $value = match ($in) {
-                'query' => $request->query[$name] ?? null,
-                'header' => $request->headers[strtolower($name)] ?? null,
-                'cookie' => $request->cookies[$name] ?? null,
-                default => null,
-            };
-            if ($value === null || $value === '') {
-                if ($parameter['required']) {
-                    $issues[] = [
-                        'in' => $in,
-                        'name' => $name,
-                        'pointer' => '',
-                        'message' => "required {$in} parameter '{$name}' is missing",
-                    ];
-                }
-
-                continue;
-            }
-
-            // B5 array style: a query parameter typed array accepts the PHP
-            // repeated-key form (style=form, explode=true) or a single
-            // comma-separated string (explode=false). Headers stay verbatim.
-            if ($in === 'query' && is_string($value) && ($parameter['schema']['type'] ?? null) === 'array') {
-                $value = explode(',', $value);
-            }
-
-            foreach ($this->checker->check($value, $parameter['schema'], true) as $issue) {
-                $issues[] = [
-                    'in' => $in,
-                    'name' => $name,
-                    'pointer' => $issue['pointer'],
-                    'message' => $issue['message'],
-                ];
-            }
+            $issues = [...$issues, ...$this->parameterIssue($parameter, $request)];
         }
 
         return $issues;
+    }
+
+    /**
+     * @param array{name: string, in: string, required: bool, schema: array<mixed, mixed>} $parameter
+     *
+     * @return list<GateIssue>
+     */
+    private function parameterIssue(array $parameter, OpenApiGateRequest $request): array
+    {
+        $in = $parameter['in'];
+        $name = $parameter['name'];
+
+        $value = match ($in) {
+            'query' => $request->query[$name] ?? null,
+            'header' => $request->headers[strtolower($name)] ?? null,
+            'cookie' => $request->cookies[$name] ?? null,
+            default => null,
+        };
+        if ($value === null || $value === '') {
+            return $this->missingParameterIssues($parameter);
+        }
+
+        // B5 array style: a query parameter typed array accepts the PHP
+        // repeated-key form (style=form, explode=true) or a single
+        // comma-separated string (explode=false). Headers stay verbatim.
+        if ($in === 'query' && is_string($value) && ($parameter['schema']['type'] ?? null) === 'array') {
+            $value = explode(',', $value);
+        }
+        $issues = [];
+        foreach ($this->checker->check($value, $parameter['schema'], true) as $issue) {
+            $issues[] = [
+                'in' => $in,
+                'name' => $name,
+                'pointer' => $issue['pointer'],
+                'message' => $issue['message'],
+            ];
+        }
+
+        return $issues;
+    }
+
+    /**
+     * @param array{name: string, in: string, required: bool, schema: array<mixed, mixed>} $parameter
+     *
+     * @return list<GateIssue>
+     */
+    private function missingParameterIssues(array $parameter): array
+    {
+        if (!$parameter['required']) {
+            return [];
+        }
+
+        return [[
+            'in' => $parameter['in'],
+            'name' => $parameter['name'],
+            'pointer' => '',
+            'message' => "required {$parameter['in']} parameter '{$parameter['name']}' is missing",
+        ]];
     }
 
     /**
@@ -434,11 +475,12 @@ final readonly class OpenApiRequestGate
     {
         $parameters = is_array($operation['parameters'] ?? null) ? $operation['parameters'] : [];
         $declared = [];
+
+        // B12 trust: the boot validator already refused parameters without
+        // non-empty names or with unknown locations — the annotation below
+        // is a phpstan assertion, not a runtime guard.
+        /** @var array{name: string, in: string, required?: bool, schema?: mixed} $parameter */
         foreach ($parameters as $parameter) {
-            // B12 trust: the boot validator already refused parameters
-            // without non-empty names or with unknown locations — the
-            // annotation below is a phpstan assertion, not a runtime guard.
-            /** @var array{name: string, in: string, required?: bool, schema?: mixed} $parameter */
             $schema = $parameter['schema'] ?? null;
 
             $declared[] = [
@@ -450,255 +492,5 @@ final readonly class OpenApiRequestGate
         }
 
         return $declared;
-    }
-
-    /**
-     * Boundary B10. Null = satisfied (or no security contract at all).
-     *
-     * @param array<mixed, mixed> $operation
-     */
-    private function securityVerdict(array $operation, OpenApiGateRequest $request): ?OpenApiGateVerdict
-    {
-        $requirements = $this->effectiveRequirements($operation);
-        if ($requirements === []) {
-            return null;
-        }
-
-        $identity = $request->authenticatedIdentity();
-        $scopes = $request->grantedScopes();
-
-        foreach ($requirements as $requirement) {
-            if (!is_array($requirement)) {
-                // Malformed requirement: the boot validator's shape check
-                // (OpenApiSecurityValidator) already refused these documents.
-                continue;
-            }
-            if ($requirement === []) {
-                // An empty requirement object is satisfied by definition.
-                return null;
-            }
-
-            $unsatisfied = [];
-            foreach ($requirement as $schemeName => $neededScopes) {
-                // A non-string scheme name is an unknown scheme (fail-closed,
-                // same as an undefined string name) — never silently skipped.
-                $scheme = $this->index->securitySchemes[$schemeName] ?? null;
-                $satisfied = $identity !== null
-                    || (is_array($scheme) && $this->schemeEvidence($scheme, $request));
-
-                // Scope checks only run when the application exposes grants;
-                // otherwise the decision is delegated to the authorization
-                // layer (parity matrix B10, documented pass-through).
-                if ($satisfied && $scopes !== null && is_array($neededScopes) && $neededScopes !== []) {
-                    foreach ($neededScopes as $scope) {
-                        if (is_string($scope) && !in_array($scope, $scopes, true)) {
-                            $satisfied = false;
-
-                            break;
-                        }
-                    }
-                }
-                if (!$satisfied) {
-                    $unsatisfied[] = $schemeName;
-                }
-            }
-            if ($unsatisfied === []) {
-                return null;
-            }
-        }
-
-        $status = $identity !== null ? 403 : 401;
-        $first = is_array($requirements[0] ?? null) ? $requirements[0] : [];
-        $names = [];
-        foreach ($first as $schemeName => $_scopes) {
-            // Array keys are int|string; both render deterministically.
-            $names[] = is_string($schemeName) ? $schemeName : (string) $schemeName;
-        }
-
-        $issues = [];
-        foreach ($names as $schemeName) {
-            $issues[] = [
-                'in' => 'security',
-                'name' => $schemeName,
-                'pointer' => '',
-                'message' => "security scheme '{$schemeName}' is not satisfied",
-            ];
-        }
-
-        return OpenApiGateVerdict::rejected(
-            $status,
-            'The security requirement (' . implode(', ', $names) . ') is not satisfied.',
-            $issues,
-        );
-    }
-
-    /**
-     * @param array<mixed, mixed> $operation
-     *
-     * @return array<mixed, mixed>
-     */
-    private function effectiveRequirements(array $operation): array
-    {
-        if (array_key_exists('security', $operation)) {
-            $security = $operation['security'];
-
-            return is_array($security) ? $security : [];
-        }
-        if ($this->index->specSecurity !== null) {
-            return $this->index->specSecurity;
-        }
-
-        return [];
-    }
-
-    /**
-     * Cheap presence-of-evidence check — never a credential verification.
-     *
-     * @param array<mixed, mixed> $scheme
-     */
-    private function schemeEvidence(array $scheme, OpenApiGateRequest $request): bool
-    {
-        $type = $scheme['type'] ?? null;
-
-        if ($type === 'http') {
-            $authorization = $request->headers['authorization'] ?? '';
-            if ($authorization === '') {
-                return false;
-            }
-            $name = is_string($scheme['scheme'] ?? null) ? strtolower(trim($scheme['scheme'])) : '';
-
-            return match ($name) {
-                'bearer', 'basic', 'digest' => str_starts_with(strtolower($authorization), $name . ' '),
-                default => true,
-            };
-        }
-
-        if ($type === 'apiKey') {
-            $in = $scheme['in'] ?? null;
-            $name = is_string($scheme['name'] ?? null) ? $scheme['name'] : '';
-            if ($name === '') {
-                return false;
-            }
-
-            return match ($in) {
-                'header' => ($request->headers[strtolower($name)] ?? '') !== '',
-                'query' => ($request->query[$name] ?? null) !== null && $request->query[$name] !== '',
-                'cookie' => ($request->cookies[$name] ?? null) !== null && $request->cookies[$name] !== '',
-                default => false,
-            };
-        }
-
-        // oauth2 / openIdConnect / mutualTLS have no cheap evidence path —
-        // only a verified identity attribute satisfies them (documented).
-        return false;
-    }
-
-    /**
-     * Boundaries B7/B8/B9. Null = no rejection. The lazy body provider is
-     * invoked ONLY here — operations without a requestBody never read the
-     * stream, and operations with one only read it after security passed.
-     *
-     * @param array<mixed, mixed> $operation
-     *
-     * @return null|GateBodyRejection
-     */
-    private function bodyRejection(array $operation, OpenApiGateRequest $request): ?array
-    {
-        $requestBody = $operation['requestBody'] ?? null;
-        if (!is_array($requestBody)) {
-            return null;
-        }
-        $content = $requestBody['content'] ?? null;
-        if (!is_array($content) || $content === []) {
-            // A body contract without media types has nothing enforceable.
-            return null;
-        }
-
-        $raw = $request->bodyContents();
-        if ($raw === null || trim($raw) === '') {
-            if (($requestBody['required'] ?? false) === true) {
-                return [
-                    'unsupported' => false,
-                    'detail' => 'The request body is required.',
-                    'issues' => [
-                        ['in' => 'body', 'name' => '', 'pointer' => '', 'message' => 'request body is required'],
-                    ],
-                    'extensions' => [],
-                ];
-            }
-
-            return null;
-        }
-
-        $mediaType = strtolower(trim(explode(';', $request->contentType)[0]));
-        if ($mediaType === '' || !isset($content[$mediaType])) {
-            $supported = [];
-            foreach ($content as $key => $_definition) {
-                if (is_string($key)) {
-                    $supported[] = $key;
-                }
-            }
-
-            return [
-                'unsupported' => true,
-                'detail' => $mediaType === ''
-                    ? 'A Content-Type header is required for this operation.'
-                    : "Media type '{$mediaType}' is not offered by this operation.",
-                'issues' => [
-                    [
-                        'in' => 'body',
-                        'name' => $mediaType,
-                        'pointer' => '',
-                        'message' => "media type '{$mediaType}' is not documented",
-                    ],
-                ],
-                'extensions' => ['supported' => $supported],
-            ];
-        }
-
-        if (!$this->isJsonMediaType($mediaType)) {
-            // Declared non-JSON media type: no schema check (non-goal #3).
-            return null;
-        }
-
-        try {
-            $decoded = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
-        } catch (\JsonException) {
-            return [
-                'unsupported' => false,
-                'detail' => 'The request body is not valid JSON.',
-                'issues' => [
-                    ['in' => 'body', 'name' => $mediaType, 'pointer' => '', 'message' => 'malformed JSON body'],
-                ],
-                'extensions' => [],
-            ];
-        }
-
-        $schema = is_array($content[$mediaType] ?? null) ? ($content[$mediaType]['schema'] ?? null) : null;
-        $schema = is_array($schema) ? $schema : null;
-        $issues = [];
-        foreach ($this->checker->check($decoded, $schema, false) as $issue) {
-            $issues[] = [
-                'in' => 'body',
-                'name' => $mediaType,
-                'pointer' => $issue['pointer'],
-                'message' => $issue['message'],
-            ];
-        }
-        if ($issues !== []) {
-            return [
-                'unsupported' => false,
-                'detail' => 'The request body violates the documented schema.',
-                'issues' => $issues,
-                'extensions' => [],
-            ];
-        }
-
-        return null;
-    }
-
-    private function isJsonMediaType(string $mediaType): bool
-    {
-        return $mediaType === 'application/json' || str_ends_with($mediaType, '+json');
     }
 }

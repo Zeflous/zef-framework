@@ -32,6 +32,12 @@ namespace Zef\Framework\OpenApi;
 final readonly class OpenApiGateIndex
 {
     /**
+     * The placeholder identifier alphabet: ASCII letters, digits and the
+     * underscore — the same alphabet the router's pattern parser uses.
+     */
+    private const string IDENTIFIER_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_';
+
+    /**
      * @param list<GateTemplate>              $templates
      * @param array<mixed, mixed>             $schemas
      * @param array<mixed, mixed>             $securitySchemes
@@ -53,17 +59,19 @@ final readonly class OpenApiGateIndex
         $components = is_array($spec['components'] ?? null) ? $spec['components'] : [];
 
         $templates = [];
+
+        // B12 trust: the boot validator already refused non-string path keys
+        // and non-object path items — the type assertions below are
+        // phpstan-only annotations, not runtime guards.
+        /** @var string $pathKey */
+        /** @var array<string, array<mixed, mixed>> $operations */
         foreach ($paths as $pathKey => $operations) {
-            // B12 trust: the boot validator already refused non-string path
-            // keys and non-object path items — the type assertions below
-            // are phpstan-only annotations, not runtime guards.
-            /** @var string $pathKey */
-            /** @var array<string, array<mixed, mixed>> $operations */
             $methods = [];
+
+            // Method keys are guaranteed lowercase by the same validator
+            // (unknown or cased keys fail construction).
+            /** @var string $method */
             foreach ($operations as $method => $operation) {
-                // Method keys are guaranteed lowercase by the same
-                // validator (unknown or cased keys fail construction).
-                // @var string $method
                 $methods[$method] = $operation;
             }
             $templates[] = [
@@ -169,8 +177,9 @@ final readonly class OpenApiGateIndex
     {
         $segments = [];
         foreach (self::splitPath($pathKey) as $part) {
-            if (preg_match('/^\{([A-Za-z_]\w*)\}$/', $part, $matches) === 1) {
-                $segments[] = ['dynamic' => true, 'name' => $matches[1]];
+            $name = self::placeholderName($part);
+            if ($name !== null) {
+                $segments[] = ['dynamic' => true, 'name' => $name];
 
                 continue;
             }
@@ -178,6 +187,28 @@ final readonly class OpenApiGateIndex
         }
 
         return $segments;
+    }
+
+    /**
+     * The inner identifier of a '{name}' segment, null for anything
+     * else. Identifier characters are checked with strspn — ASCII by
+     * design (router parity) and no character-range regex (php:S5867).
+     */
+    private static function placeholderName(string $part): ?string
+    {
+        $length = strlen($part);
+        if ($length < 3 || $part[0] !== '{' || $part[$length - 1] !== '}') {
+            return null;
+        }
+        $inner = substr($part, 1, -1);
+        if ($inner === '' || (!ctype_alpha($inner[0]) && $inner[0] !== '_')) {
+            return null;
+        }
+        if (strspn($inner, self::IDENTIFIER_ALPHABET) !== strlen($inner)) {
+            return null;
+        }
+
+        return $inner;
     }
 
     /**
@@ -194,6 +225,11 @@ final readonly class OpenApiGateIndex
             return [];
         }
 
-        return array_values(array_filter(explode('/', trim($path, '/')), static fn (string $part): bool => $part !== ''));
+        return array_values(
+            array_filter(
+                explode('/', trim($path, '/')),
+                static fn (string $part): bool => $part !== '',
+            ),
+        );
     }
 }

@@ -1156,6 +1156,65 @@ final class OpenApiGateMutationDebtTest extends TestCase
         self::assertSame('root', $verdict->operation['operationId']);
     }
 
+    /*
+     * Round-7 closers after the SonarCloud split: contradiction bounds,
+     * declared non-JSON request bodies, garbage type-array entries and
+     * malformed placeholder segments (digit-leading / invalid-character).
+     */
+
+    public function testContradictingBoundsProduceBothIssues(): void
+    {
+        $issues = new OpenApiSchemaChecker([])->check(
+            5,
+            ['type' => 'integer', 'minimum' => 10, 'maximum' => 0],
+            false,
+        );
+        self::assertSame([
+            ['pointer' => '', 'message' => 'value is below the minimum 10'],
+            ['pointer' => '', 'message' => 'value is above the maximum 0'],
+        ], $issues);
+    }
+
+    public function testDeclaredNonJsonRequestBodyIsNotSchemaChecked(): void
+    {
+        $spec = $this->baseSpec([
+            '/b' => ['post' => $this->operation('postB', [], [
+                'requestBody' => ['required' => true, 'content' => ['text/plain' => ['schema' => ['type' => 'integer']]]],
+            ])],
+        ]);
+        $gate = OpenApiRequestGate::fromSpec($spec, new OpenApiGateOptions());
+
+        $verdict = $gate->evaluate($this->request('POST', '/b', contentType: 'text/plain', body: 'not json at all'));
+        self::assertTrue($verdict->admitted);
+    }
+
+    public function testTypeArrayGarbageEntriesAreSkipped(): void
+    {
+        self::assertSame([], new OpenApiSchemaChecker([])->check('x', ['type' => ['string', 42]], false));
+    }
+
+    public function testDigitLeadingPlaceholderIsAStaticLiteral(): void
+    {
+        $spec = $this->baseSpec(['/d/{9abc}' => ['get' => $this->operation('d')]]);
+        $gate = OpenApiRequestGate::fromSpec($spec, new OpenApiGateOptions());
+
+        // '{9abc}' is not a valid identifier placeholder: the segment is a
+        // static literal, so nothing dynamic matches.
+        $verdict = $gate->evaluate($this->request('GET', '/d/9abc'));
+        self::assertTrue($verdict->admitted);
+        self::assertNull($verdict->operation);
+    }
+
+    public function testInvalidCharacterPlaceholderIsAStaticLiteral(): void
+    {
+        $spec = $this->baseSpec(['/e/{a-b}' => ['get' => $this->operation('e')]]);
+        $gate = OpenApiRequestGate::fromSpec($spec, new OpenApiGateOptions());
+
+        $verdict = $gate->evaluate($this->request('GET', '/e/x'));
+        self::assertTrue($verdict->admitted);
+        self::assertNull($verdict->operation);
+    }
+
     /**
      * @return array<string, mixed>
      */

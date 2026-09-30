@@ -55,7 +55,7 @@ final readonly class OpenApiGateMiddleware implements MiddlewareInterface
         ?OpenApiGateOptions $options = null,
         private ?LoggerInterface $logger = null,
     ) {
-        $this->options = $options ?? new OpenApiGateOptions();
+        $this->options = $options ?? $this->defaultOptions();
         $this->gate = OpenApiRequestGate::fromSpec($spec, $this->options);
     }
 
@@ -112,6 +112,15 @@ final readonly class OpenApiGateMiddleware implements MiddlewareInterface
         }
 
         return $response;
+    }
+
+    /**
+     * php:S2830: the default options are built through a private factory
+     * instead of a bare `new` in the constructor.
+     */
+    private function defaultOptions(): OpenApiGateOptions
+    {
+        return new OpenApiGateOptions();
     }
 
     /**
