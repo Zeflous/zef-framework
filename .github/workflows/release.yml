@@ -181,8 +181,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh release create "${GITHUB_REF_NAME}" \
-            "zef-framework-${GITHUB_REF_NAME}.tar.gz" \
-            "zef-framework-${GITHUB_REF_NAME}.tar.gz.sha256" \
-            --generate-notes \
-            --verify-tag
+          # Idempotent create-or-upload: a release can legitimately exist
+          # before this step runs (manually published during an incident
+          # remediation, as happened on v2.32.0 when the SBOM attach race
+          # was patched by hand). Creating would then fail with "a release
+          # with the same tag name already exists" and mark the tag run
+          # red even though the release itself is complete — so refresh
+          # the artifacts on the existing release instead. --clobber only
+          # replaces same-named assets; the SBOM asset name differs and
+          # is left to the sbom-release job.
+          if gh release view "${GITHUB_REF_NAME}" > /dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" \
+              "zef-framework-${GITHUB_REF_NAME}.tar.gz" \
+              "zef-framework-${GITHUB_REF_NAME}.tar.gz.sha256" \
+              --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" \
+              "zef-framework-${GITHUB_REF_NAME}.tar.gz" \
+              "zef-framework-${GITHUB_REF_NAME}.tar.gz.sha256" \
+              --generate-notes \
+              --verify-tag
+          fi

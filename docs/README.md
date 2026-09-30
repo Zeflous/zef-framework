@@ -22,6 +22,7 @@ berarsitektur *Hexagonal (Ports & Adapters)* dengan worker RoadRunner.
 | [`DEPLOYMENT.md`](DEPLOYMENT.md) | Pola produksi: RoadRunner (persistent worker), graceful shutdown, observabilitas, health probe, keamanan | SRE, DevOps |
 | [`ROADMAP.md`](ROADMAP.md) | Rencana kerja dan status fitur | Product, kontributor |
 | [`EDGE-CASE-MATRIX.md`](EDGE-CASE-MATRIX.md) | Kurikulum uji edge-case per fase kampanye mutasi | QA, kontributor |
+| [`OPENAPI-GATE-PARITY.md`](OPENAPI-GATE-PARITY.md) | **v2.33.0** — kontrak paritas 12 batas runtime gate OpenAPI (B1–B12) + wire-up + non-goals | Kontributor API, QA |
 | `CHANGELOG-v*.md` | Catatan rilis per versi (append-only) | Semua |
 
 ## Rujukan cepat
@@ -54,6 +55,7 @@ docs/
 ├── DEPLOYMENT.md
 ├── ROADMAP.md
 ├── EDGE-CASE-MATRIX.md
+├── OPENAPI-GATE-PARITY.md
 ├── security/
 │   ├── php-sast.md
 │   ├── sonarcloud.md
