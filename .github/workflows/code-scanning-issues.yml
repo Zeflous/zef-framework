@@ -1,9 +1,9 @@
 # Code scanning alerts → tracker issues (automatic mirror).
 #
 # What this workflow is: every finding in Security & Quality → Code scanning
-# (Semgrep OSS from php-sast.yml, SnykCode from snyk-security.yml, and the
-# CodeQL default-setup analyses) becomes an ordinary, triageable tracker
-# issue automatically, and stops being one automatically when the alert is
+# (Semgrep OSS from php-sast.yml, Snyk from snyk-security.yml — one merged
+# tool since the evidence consolidation — and the CodeQL default-setup
+# analyses) becomes an ordinary, triageable tracker issue automatically, and stops being one automatically when the alert is
 # fixed or dismissed. The synchroniser is scripts/ci/sync-code-scanning-
 # issues.sh; the full contract (dedup marker, labels, close/reopen rules,
 # per-run creation cap, triage guide) is documented in
