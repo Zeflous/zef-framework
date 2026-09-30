@@ -513,6 +513,7 @@ Situs dokumentasi diterbitkan otomatis ke GitHub Pages pada setiap push ke `main
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) | Rencana &amp; status fitur |
 | [`docs/EDGE-CASE-MATRIX.md`](docs/EDGE-CASE-MATRIX.md) | Kurikulum uji edge-case per fase kampanye mutasi |
 | [`docs/security/php-sast.md`](docs/security/php-sast.md) | Panduan SAST PHP |
+| [`docs/security/stub-prescan.md`](docs/security/stub-prescan.md) | Matriks paritas pre-scan korpus fixture `tests/` (12 dimensi INCLUDED/EXCLUDED) |
 | [`docs/security/snyk-security.md`](docs/security/snyk-security.md) | Gate keamanan Snyk (SAST/SCA/IaC) & strategi status check |
 
 ```bash
