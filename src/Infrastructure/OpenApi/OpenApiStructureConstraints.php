@@ -166,35 +166,60 @@ final class OpenApiStructureConstraints
         $additional = $schema['additionalProperties'] ?? null;
         $issues = [];
         foreach ($value as $key => $itemValue) {
-            $issues = [...$issues, ...self::keyIssues(
+            // A declared key never reaches the additionalProperties policy;
+            // null from the declared arm means "not declared here".
+            $declared = self::declaredKeyIssue($checker, $key, $itemValue, $properties, $coerce, $pointer, $depth);
+            $issues = [...$issues, ...($declared ?? self::additionalKeyIssue(
                 $checker,
                 $key,
                 $itemValue,
-                $properties,
                 $additional,
                 $coerce,
                 $pointer,
                 $depth,
-            )];
+            ))];
         }
 
         return $issues;
     }
 
     /**
-     * One object key against the declared properties and the
-     * additionalProperties policy: the declared-property recursion, the
-     * closed-policy issue, or nothing.
+     * The declared-property arm: the recursion when the key is declared,
+     * null when it is not (or the key is not usable at all).
      *
      * @param array<mixed, mixed> $properties
      *
-     * @return list<array{pointer: string, message: string}>
+     * @return null|list<array{pointer: string, message: string}>
      */
-    private static function keyIssues(
+    private static function declaredKeyIssue(
         OpenApiSchemaChecker $checker,
         mixed $key,
         mixed $itemValue,
         array $properties,
+        bool $coerce,
+        string $pointer,
+        int $depth,
+    ): ?array {
+        $key = is_int($key) ? (string) $key : $key;
+        if (is_string($key) && array_key_exists($key, $properties)) {
+            $token = $pointer . '/' . self::escapePointerToken($key);
+
+            return $checker->checkAt($itemValue, $properties[$key], $coerce, $token, $depth + 1);
+        }
+
+        return null;
+    }
+
+    /**
+     * The additionalProperties arm: the closed-policy issue, the schema
+     * recursion, or nothing.
+     *
+     * @return list<array{pointer: string, message: string}>
+     */
+    private static function additionalKeyIssue(
+        OpenApiSchemaChecker $checker,
+        mixed $key,
+        mixed $itemValue,
         mixed $additional,
         bool $coerce,
         string $pointer,
@@ -204,18 +229,15 @@ final class OpenApiStructureConstraints
         if (!is_string($key)) {
             return [];
         }
-        $token = $pointer . '/' . self::escapePointerToken($key);
-        if (array_key_exists($key, $properties)) {
-            return $checker->checkAt($itemValue, $properties[$key], $coerce, $token, $depth + 1);
-        }
-        if ($additional === false) {
-            return [['pointer' => $pointer, 'message' => "additional property '{$key}' is not allowed"]];
-        }
         if (is_array($additional) && $additional !== []) {
+            $token = $pointer . '/' . self::escapePointerToken($key);
+
             return $checker->checkAt($itemValue, $additional, $coerce, $token, $depth + 1);
         }
 
-        return [];
+        return $additional === false
+            ? [['pointer' => $pointer, 'message' => "additional property '{$key}' is not allowed"]]
+            : [];
     }
 
     /**

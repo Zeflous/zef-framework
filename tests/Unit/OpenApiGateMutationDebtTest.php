@@ -1215,6 +1215,38 @@ final class OpenApiGateMutationDebtTest extends TestCase
         self::assertNull($verdict->operation);
     }
 
+    /*
+     * Round-8 closers: nullable only excuses null values (never skips
+     * validation of present ones) and integer object keys are cast to
+     * their string key form before the property lookup.
+     */
+
+    public function testNullableOnlyExcusesNullValues(): void
+    {
+        $checker = new OpenApiSchemaChecker([]);
+        self::assertSame([], $checker->check(null, ['type' => 'integer', 'nullable' => true], false));
+        $issues = $checker->check('x', ['type' => 'integer', 'nullable' => true], false);
+        self::assertSame([['pointer' => '', 'message' => 'expected integer, got string']], $issues);
+    }
+
+    public function testIntegerObjectKeysResolveAsDeclaredProperties(): void
+    {
+        $checker = new OpenApiSchemaChecker([]);
+        $schema = ['type' => 'object', 'properties' => [0 => ['type' => 'integer']]];
+        // The 'z' key keeps the value associative; the integer key 0 is the
+        // subject — it must resolve against the integer-keyed property.
+        $issues = $checker->check([0 => 'x', 'z' => 1], $schema, false);
+        self::assertSame([['pointer' => '/0', 'message' => 'expected integer, got string']], $issues);
+    }
+
+    public function testIntegerObjectKeysCarryTheCastInPolicyMessages(): void
+    {
+        $checker = new OpenApiSchemaChecker([]);
+        $schema = ['type' => 'object', 'properties' => [0 => ['type' => 'integer']], 'additionalProperties' => false];
+        $issues = $checker->check([0 => 1, 5 => 2], $schema, false);
+        self::assertSame([['pointer' => '', 'message' => "additional property '5' is not allowed"]], $issues);
+    }
+
     /**
      * @return array<string, mixed>
      */

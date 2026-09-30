@@ -62,7 +62,10 @@ final class OpenApiSchemaChecker
             return $early;
         }
 
-        /** @var array<mixed, mixed> $schema */
+        // Non-object schemas impose nothing (the ternary also narrows the
+        // type for the ref check and every keyword family below, without a
+        // docblock guard the inline-doc sniff would reject).
+        $schema = is_array($schema) ? $schema : [];
         $ref = $schema['$ref'] ?? null;
         if (is_string($ref) && $ref !== '') {
             return $this->checkRef($value, $schema, $ref, $coerce, $pointer, $depth);
@@ -113,13 +116,12 @@ final class OpenApiSchemaChecker
         }
 
         return match (true) {
-            !is_array($schema) => [],
             // Nullable is honoured BEFORE the $ref branch: the document
             // generator emits {$ref, nullable: true} for nullable references
             // (OpenAPI 3.0-style union-with-null), so a null value must be
             // admitted by the sibling flag even when the referenced schema
             // itself only allows the base type.
-            $value === null && ($schema['nullable'] ?? null) === true => [],
+            $value === null && is_array($schema) && ($schema['nullable'] ?? null) === true => [],
             default => null,
         };
     }
