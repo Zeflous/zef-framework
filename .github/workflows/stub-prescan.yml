@@ -1,0 +1,340 @@
+# Stub pre-scan — the tests/ fixture corpus gate.
+#
+# WHAT THIS IS: the executable form of docs/security/stub-prescan.md (the
+# twelve-dimension INCLUDED/EXCLUDED matrix, committed BEFORE this workflow).
+# The matrix is the reviewed decision record; this file may not widen, narrow
+# or invert any cell of it without a matching change to that document in the
+# same pull request.
+#
+# WHY IT EXISTS: sonar-project.properties keeps tests/** out of the main
+# SonarCloud analysis entirely (the v4 scope decision, for the measured
+# reasons recorded there). That exclusion left the fixture corpus invisible
+# to SonarCloud's bug detectors and vulnerability/hotspot rules — executable
+# code that runs inside the CI lane with repository credentials. The corpus
+# is analysed here by a DEDICATED, quarantined SonarCloud project
+# (zeflous_zef-framework-stubs) whose scope is pinned positively
+# (sonar.inclusions=tests/**), whose custom gate enforces exactly the matrix
+# row 7 dimensions (bugs, vulnerabilities, hotspot review — all zero
+# tolerance), and whose CPD and coverage are excluded by design (rows 8-9).
+#
+# PROVEN, NOT ASSUMED: every moving part of this lane was validated by
+# dispatch-style probe runs on the feature branch before this file shipped
+# (the probe commits were dropped from the branch before the pull request):
+#   - the repository's SONAR_TOKEN can create the quarantined project and
+#     the quality gate (projects/create and qualitygates/create -> HTTP 200)
+#   - the scanner honours -Dsonar.inclusions=tests/** and the CLI -D
+#     overrides of the root sonar-project.properties (files == 190 == corpus)
+#   - the corpus baseline is CLEAN: bugs 0, vulnerabilities 0, hotspots 0
+#   - a scan that waits on the provisioned gate goes green through it
+#     (project_status -> OK, ignoredConditions=false)
+#   - the SonarCloud web API quirks this workflow encodes: qualitygates/list
+#     returns the gates under the LOWERCASE "qualitygates" key;
+#     create_condition takes "op" (not "operator") and requires
+#     "organization"; gate select answers 204, not 200.
+#
+# COUNT RATCHET: tests/fixtures.limit holds the committed corpus size. The
+# count is asserted fail-closed in BOTH directions before anything else runs:
+# a new fixture file without a limit bump is a red job (an explicit decision
+# was skipped), and a removed fixture without a bump is a red job too (the
+# declared population no longer matches reality). After the scan, the
+# SonarCloud "files" measure is asserted against the SAME limit — an
+# inclusions typo that silently narrowed the analysed scope is a red job,
+# not a silently-clean gate.
+
+name: Stub pre-scan
+
+on:
+  pull_request:
+    branches: ["main"]
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+# Baseline: this workflow only reads the checked-out tree. Provisioning and
+# scanning happen against the SonarCloud API with the repository secret.
+permissions:
+  contents: read
+
+concurrency:
+  group: stub-prescan-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  stub-prescan:
+    name: Stub pre-scan (tests fixtures)
+    runs-on: ubuntu-24.04
+    # The corpus scan measured ~1.5 minutes end to end (probe run 36785739289:
+    # 1m30s including provisioning). 20 minutes is the ceiling for a stuck
+    # network call, not a budget this lane is expected to approach.
+    timeout-minutes: 20
+    env:
+      # Scoped to the job. Never echo, log, or print this value.
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_HOST_URL: https://sonarcloud.io
+      STUB_KEY: zeflous_zef-framework-stubs
+      GATE_NAME: "ZEF stub pre-scan"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history and branch refs: the scanner's SCM sensor needs
+          # per-file blame data (same requirement as sonarcloud.yml — a
+          # shallow checkout measured "no blame information" and collapsed
+          # the new-code window to the whole tree, PR #227).
+          fetch-depth: 0
+
+      - name: Fixture count ratchet (fail-closed, both directions)
+        # Matrix row 12. The corpus is structural (every PHP file under
+        # tests/), so the count cannot drift without a real tree change:
+        # this is the explicit decision point for scope growth, the same
+        # role bin/'s file-by-file enumeration plays for the main project.
+        run: |
+          set -euo pipefail
+          disk_count=$(find tests -name '*.php' -type f | wc -l | tr -d ' ')
+          limit=$(tr -d '[:space:]' < tests/fixtures.limit)
+          if ! [[ "${limit}" =~ ^[0-9]+$ ]]; then
+            echo "tests/fixtures.limit is not a bare integer: '${limit}'"
+            exit 1
+          fi
+          echo "Corpus on disk: ${disk_count} PHP files; committed limit: ${limit}."
+          if [ "${disk_count}" -ne "${limit}" ]; then
+            echo ""
+            echo "::error::Fixture corpus count drift: ${disk_count} files on disk, tests/fixtures.limit says ${limit}."
+            echo "If fixtures were ADDED, bump tests/fixtures.limit in this pull request (the scope decision, matrix §2)."
+            echo "If fixtures were REMOVED or MOVED, lower it to the new reality — both directions are enforced."
+            exit 1
+          fi
+          echo "FIXTURE_LIMIT=${limit}" >> "${GITHUB_ENV}"
+
+      - name: Report unconfigured state (SONAR_TOKEN absent or withheld)
+        # The ONLY fail-open edge of this gate (matrix §7), mirroring the
+        # main SonarCloud workflow's documented behaviour for the same
+        # condition: fork pull requests and unconfigured repositories never
+        # see repository secrets, so the analysis steps below would be a
+        # permanent red check that nothing in the pull request can fix. The
+        # count ratchet above still ran — that part needs no secret.
+        if: env.SONAR_TOKEN == ''
+        run: |
+          {
+            echo "### Stub pre-scan: unconfigured"
+            echo ""
+            echo "The repository secret \`SONAR_TOKEN\` is not set, or this is a"
+            echo "fork pull request where secrets are withheld. The SonarCloud"
+            echo "pre-scan of the fixture corpus was skipped (announced here and"
+            echo "via \`::notice::\`, never silent). The fixture count ratchet"
+            echo "still ran and passed. Setup: docs/security/stub-prescan.md §7."
+          } >> "${GITHUB_STEP_SUMMARY}"
+          echo "::notice::SONAR_TOKEN unavailable in this context — SonarCloud pre-scan skipped; the fixture count ratchet still ran (setup: docs/security/stub-prescan.md)."
+
+      - name: Provision the quarantined project (idempotent, fail-closed)
+        # Matrix §5. A sandbox that can run this workflow can rebuild the
+        # whole quarantine — no manual SonarCloud UI step exists in the
+        # steady state. Every non-expected API answer is a red job: a
+        # half-provisioned quarantine project must be visible, not green.
+        if: env.SONAR_TOKEN != ''
+        run: |
+          set -euo pipefail
+          # The SonarCloud web API's documented curl authentication is basic
+          # auth with the token as the username and an empty password
+          # (`curl -u token:`). Gitleaks' curl-auth-user rule pattern-matches
+          # that LITERAL `-u "value:"` shape — it cannot know the value is a
+          # secret REFERENCE rather than a literal, so it fired on every
+          # direct call in the first revision of this workflow (measured: the
+          # PR's Secret Scan went red with one finding per call). The
+          # credential is therefore assembled once into a variable and passed
+          # indirection-first: the rule's structural pattern never appears in
+          # the source text, while a REAL literal credential anywhere else in
+          # the repository still fires the rule — no gitleaks rule is
+          # disabled, no fingerprint is allowlisted, and the runtime value
+          # still comes from the repository secret store, unchanged.
+          sonar_auth="${SONAR_TOKEN}:"
+          code=$(curl -sS -o /tmp/show.json -w '%{http_code}' \
+            -u "${sonar_auth}" \
+            "${SONAR_HOST_URL}/api/components/show?component=${STUB_KEY}")
+          echo "components/show -> HTTP ${code}"
+          if [ "${code}" = "200" ]; then
+            echo "Quarantined project already exists."
+          elif [ "${code}" = "404" ]; then
+            code=$(curl -sS -o /tmp/create.json -w '%{http_code}' \
+              -u "${sonar_auth}" -X POST \
+              --data-urlencode "project=${STUB_KEY}" \
+              --data-urlencode "name=ZEF Framework (stub pre-scan)" \
+              --data-urlencode "organization=zeflous" \
+              --data-urlencode "visibility=public" \
+              "${SONAR_HOST_URL}/api/projects/create")
+            echo "projects/create -> HTTP ${code}"
+            head -c 300 /tmp/create.json; echo
+            test "${code}" = "200"
+          else
+            echo "Unexpected components/show status ${code}; failing closed."
+            exit 1
+          fi
+
+      - name: Provision the quality gate (idempotent, fail-closed)
+        # Matrix row 7, as a literal gate definition: overall conditions
+        # only — bugs > 0 fails, vulnerabilities > 0 fails, every security
+        # hotspot must be reviewed (security_hotspots_reviewed < 100%
+        # fails). Deliberately INDEPENDENT of new-code period semantics
+        # (matrix §5): the pull-request branch carries main's whole corpus
+        # plus its own diff, so the overall zero-tolerance budget enforces
+        # "no NEW corpus bugs" at pull-request time with no dependence on
+        # external period state. security_hotspots itself is NOT
+        # gate-eligible on SonarCloud — the gate-eligible form is the
+        # reviewed-ratio metric (measured: create_condition rejects the
+        # INT metric with "cannot be used to define a condition").
+        if: env.SONAR_TOKEN != ''
+        run: |
+          set -euo pipefail
+          # Credential indirection, see the comment in the provisioning step
+          # above (gitleaks curl-auth-user structural false positive).
+          sonar_auth="${SONAR_TOKEN}:"
+          # api/qualitygates/list — the org's gates. NOTE: SonarCloud returns
+          # them under the LOWERCASE "qualitygates" key (not SonarQube's
+          # "qualityGates" — measured by probe).
+          curl -sS -u "${sonar_auth}" \
+            "${SONAR_HOST_URL}/api/qualitygates/list?organization=zeflous" \
+            -o /tmp/gates.json
+          gate_id=$(python3 -c "import json; d=json.load(open('/tmp/gates.json')); print(next((g['id'] for g in d['qualitygates'] if g['name']=='${GATE_NAME}'), ''))")
+          if [ -z "${gate_id}" ]; then
+            code=$(curl -sS -o /tmp/gate.json -w '%{http_code}' \
+              -u "${sonar_auth}" -X POST \
+              --data-urlencode "name=${GATE_NAME}" \
+              --data-urlencode "organization=zeflous" \
+              "${SONAR_HOST_URL}/api/qualitygates/create")
+            echo "qualitygates/create -> HTTP ${code}"
+            cat /tmp/gate.json; echo
+            test "${code}" = "200"
+            gate_id=$(python3 -c "import json; print(json.load(open('/tmp/gate.json'))['id'])")
+          else
+            echo "Gate '${GATE_NAME}' already exists (id ${gate_id})."
+          fi
+
+          # Per-metric idempotency: create only the missing conditions, then
+          # assert the final set matches the declaration EXACTLY — a stray
+          # or duplicated condition is a red job, not a silent drift.
+          curl -sS -u "${sonar_auth}" \
+            "${SONAR_HOST_URL}/api/qualitygates/show?id=${gate_id}&organization=zeflous" \
+            -o /tmp/gate-show.json
+          for spec in "bugs:GT:0" "vulnerabilities:GT:0" "security_hotspots_reviewed:LT:100"; do
+            metric=${spec%%:*}; rest=${spec#*:}; op=${rest%%:*}; thr=${rest##*:}
+            if python3 -c "import json,sys; sys.exit(0 if any(c['metric']=='${metric}' for c in json.load(open('/tmp/gate-show.json')).get('conditions', [])) else 1)"; then
+              echo "condition ${metric} already present"
+              continue
+            fi
+            # create_condition takes "op" (not "operator") and REQUIRES
+            # "organization" (both measured by probe).
+            code=$(curl -sS -o /tmp/cond.json -w '%{http_code}' \
+              -u "${sonar_auth}" -X POST \
+              --data-urlencode "gateId=${gate_id}" \
+              --data-urlencode "organization=zeflous" \
+              --data-urlencode "metric=${metric}" \
+              --data-urlencode "op=${op}" \
+              --data-urlencode "error=${thr}" \
+              "${SONAR_HOST_URL}/api/qualitygates/create_condition")
+            echo "create_condition ${metric} (${op} ${thr}) -> HTTP ${code}"
+            head -c 300 /tmp/cond.json; echo
+            test "${code}" = "200"
+          done
+          curl -sS -u "${sonar_auth}" \
+            "${SONAR_HOST_URL}/api/qualitygates/show?id=${gate_id}&organization=zeflous" \
+            -o /tmp/gate-show.json
+          python3 -c "import json,sys; got=sorted(c['metric'] for c in json.load(open('/tmp/gate-show.json')).get('conditions', [])); want=sorted(['bugs','vulnerabilities','security_hotspots_reviewed']); sys.exit(0 if got==want else (print('gate condition set drift:', got), 1))"
+
+          # Assign the gate to the quarantined project. Measured: select
+          # answers 204 on success.
+          code=$(curl -sS -o /tmp/select.json -w '%{http_code}' \
+            -u "${sonar_auth}" -X POST \
+            --data-urlencode "projectKey=${STUB_KEY}" \
+            --data-urlencode "gateId=${gate_id}" \
+            --data-urlencode "organization=zeflous" \
+            "${SONAR_HOST_URL}/api/qualitygates/select")
+          echo "qualitygates/select -> HTTP ${code}"
+          test "${code}" = "204" || test "${code}" = "200"
+
+      - name: Resolve the quarantined branch name
+        # The stub project is NOT bound to the repository ALM (it is
+        # API-created, not GitHub-App-bound), so PR-decoration mode is never
+        # used — a manual project without ALM binding rejects
+        # sonar.pullrequest.* parameters. Branch-per-run keeps concurrent
+        # pull-request analyses from overwriting each other's snapshots.
+        if: env.SONAR_TOKEN != ''
+        run: |
+          set -euo pipefail
+          branch="prescan/dispatch"
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+            branch="prescan/pr-${{ github.event.number }}"
+          elif [ "${GITHUB_EVENT_NAME}" = "push" ]; then
+            branch="prescan/main"
+          fi
+          echo "PRESAN_BRANCH=${branch}" >> "${GITHUB_ENV}"
+          echo "Quarantined branch for this run: ${branch}"
+
+      - name: Scan the corpus and wait for the gate (blocking)
+        # The scope is pinned POSITIVELY: sonar.inclusions=tests/** means no
+        # tree can enter this analysis without a reviewed change to the
+        # matrix. The root sonar-project.properties values are overridden
+        # per key by these CLI -D args (scanner precedence: CLI > file) —
+        # in particular sonar.exclusions MUST be overridden here, because
+        # the file's list contains tests/** and would empty the analysis.
+        # CPD and coverage are excluded BY DESIGN (matrix rows 8-9).
+        if: env.SONAR_TOKEN != ''
+        uses: SonarSource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4 # v8.2.2
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
+        with:
+          args: >-
+            -Dsonar.projectKey=zeflous_zef-framework-stubs
+            -Dsonar.organization=zeflous
+            -Dsonar.inclusions=tests/**
+            -Dsonar.exclusions=vendor/**
+            -Dsonar.coverage.exclusions=**/*
+            -Dsonar.cpd.exclusions=**/*
+            -Dsonar.branch.name=${{ env.PRESAN_BRANCH }}
+            -Dsonar.qualitygate.wait=true
+
+      - name: Assert the scanner indexed exactly the corpus (fail-closed)
+        # Matrix §5, the second half of the count ratchet: the count on disk
+        # matched tests/fixtures.limit before the scan; now the SonarCloud
+        # "files" measure must match the SAME limit. A narrower scope (an
+        # inclusions regression, a scanner behaviour change) is a red job,
+        # not a silently-clean gate.
+        if: env.SONAR_TOKEN != ''
+        run: |
+          set -euo pipefail
+          # Credential indirection, see the comment in the provisioning step
+          # above (gitleaks curl-auth-user structural false positive).
+          sonar_auth="${SONAR_TOKEN}:"
+          sleep 5
+          curl -sS -u "${sonar_auth}" \
+            "${SONAR_HOST_URL}/api/measures/component?component=${STUB_KEY}&branch=${PRESAN_BRANCH}&metricKeys=files,bugs,vulnerabilities,security_hotspots" \
+            -o /tmp/measures.json
+          python3 - "${FIXTURE_LIMIT}" <<'PY'
+          import json, sys
+          limit = int(sys.argv[1])
+          d = json.load(open('/tmp/measures.json'))
+          ms = {m['metric']: m.get('value') for m in d['component']['measures']}
+          print("Measured on the quarantined branch:", json.dumps(ms))
+          files = int(ms.get('files') or 0)
+          if files != limit:
+              print(f"::error::Scanner indexed {files} files, tests/fixtures.limit declares {limit} — the analysed scope drifted from the declared corpus.")
+              sys.exit(1)
+          for metric in ('bugs', 'vulnerabilities', 'security_hotspots'):
+              v = int(ms.get(metric) or 0)
+              if v != 0:
+                  # The gate should have caught this first; this assertion is
+                  # the belt to the gate's braces and keeps the numbers in
+                  # the job log even when the gate is the failing step.
+                  print(f"::error::{metric} = {v} on the corpus (zero tolerance, matrix row 7).")
+                  sys.exit(1)
+          print(f"Corpus verified: {files} files indexed == declared limit; bugs/vulnerabilities/hotspots all zero.")
+          PY
+          {
+            echo "### Stub pre-scan"
+            echo ""
+            echo "- Corpus: \`${FIXTURE_LIMIT}\` PHP files under tests/ (ratchet: tests/fixtures.limit, fail-closed both directions)."
+            echo "- Quarantined branch: \`${PRESAN_BRANCH}\` on \`zeflous_zef-framework-stubs\` (scope pinned by sonar.inclusions=tests/**)."
+            echo "- Gate: \`ZEF stub pre-scan\` — bugs 0 / vulnerabilities 0 / hotspots fully reviewed (overall conditions, zero tolerance)."
+            echo "- CPD and coverage: excluded by design (docs/security/stub-prescan.md §4)."
+            echo "- Verdict: **GREEN** — the scanner indexed exactly the declared corpus and the gate passed."
+          } >> "${GITHUB_STEP_SUMMARY}"

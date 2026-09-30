@@ -59,7 +59,7 @@ review; the count ratchet is the decision point).
 | 4 | Bugs, deep static analysis | PHPStan level max + strict-rules + frozen baseline — ci.yml | INCLUDED | INCLUDED | Blocking; the strictly stronger engine for the corpus (v4 rationale: PHPStan analyses tests too) |
 | 5 | Bugs, reliability rules | SonarCloud MAIN project (`zeflous_zef-framework`) | INCLUDED | OUT (v4 exclusion, unchanged) | Main project gate; corpus ownership delegated to rows 3–4 and 7 |
 | 6 | Security, vulnerabilities + hotspots | SonarCloud MAIN project | INCLUDED | OUT (v4 exclusion, unchanged) | Main project gate; corpus ownership delegated to rows 1–2 and 7 |
-| 7 | Bugs + Security, quarantined | SonarCloud STUB project (`zeflous_zef-framework-stubs`) — NEW in v2.34.0 | N/A (scope excludes src by pin) | INCLUDED | Custom gate "ZEF stub pre-scan": overall `bugs` ≤ ratchet, overall `vulnerabilities` = 0, overall `security_hotspots` (to review) = 0; scanner waits, fail-closed |
+| 7 | Bugs + Security, quarantined | SonarCloud STUB project (`zeflous_zef-framework-stubs`) — NEW in v2.34.0 | N/A (scope excludes src by pin) | INCLUDED | Custom gate "ZEF stub pre-scan": overall `bugs` = 0, overall `vulnerabilities` = 0, every hotspot reviewed (`security_hotspots_reviewed` = 100%); scanner waits, fail-closed. Baseline MEASURED at provisioning: all three at zero — the strictest possible budget |
 | 8 | CPD, duplication | SonarCloud copy-paste detector | INCLUDED (visible; 3% new-code condition in the main gate) | **EXCLUDED** (`sonar.cpd.exclusions=**/*` on the stub project) | Deliberate: see §4 |
 | 9 | Coverage | PHPUnit clover bridge | INCLUDED (90% statements floor in ci.yml; bridged into the main project) | EXCLUDED (not instrumented; v4 rationale unchanged) | No condition on the stub project |
 | 10 | Secrets | gitleaks (required check) | INCLUDED | INCLUDED | Repo-wide, blocking |
@@ -105,15 +105,27 @@ Challenging it requires a PR that changes this section, not a property edit.
   the steady state — a sandbox that can run the workflow can rebuild the
   project.
 - **Overall-conditions gate, not new-code conditions.** The gate is a
-  deterministic ratchet: `bugs` overall must not exceed the committed budget,
-  `vulnerabilities` overall must be 0, `security_hotspots` (to review) must
-  be 0. This is deliberately INDEPENDENT of SonarCloud new-code period
-  semantics (the main project's `new_lines` on main measured 49719 — period
-  behaviour on a fresh project's baseline scan is exactly the kind of
-  external state a fail-closed gate should not depend on). The PR branch
-  carries main's whole corpus plus its own diff, so the overall budget
-  enforces "no NEW corpus bugs over budget" at pull-request time while the
-  baseline budget absorbs the pre-existing population once, at provisioning.
+  deterministic ratchet: `bugs` overall must be zero, `vulnerabilities`
+  overall must be zero, and every hotspot must be reviewed
+  (`security_hotspots_reviewed` = 100% — the INT metric `security_hotspots`
+  itself is NOT gate-eligible on SonarCloud; measured:
+  `create_condition` rejects it with "cannot be used to define a
+  condition", so the gate-eligible reviewed-ratio form carries the same
+  zero-tolerance semantics: an unreviewed hotspot drops the ratio below
+  100% and fails the gate). This is deliberately INDEPENDENT of SonarCloud
+  new-code period semantics (the main project's `new_lines` on main
+  measured 49719 — period behaviour on a fresh project's baseline scan is
+  exactly the kind of external state a fail-closed gate should not depend
+  on). The PR branch carries main's whole corpus plus its own diff, so the
+  overall budget enforces "no NEW corpus findings" at pull-request time
+  while the measured-zero baseline absorbs nothing — the budget IS zero.
+- **API quirks encoded by measurement** (probe runs on the feature branch,
+  dropped before the PR): `qualitygates/list` returns the gates under the
+  LOWERCASE `qualitygates` key; `create_condition` takes `op` (not
+  `operator`) and requires the `organization` parameter; `qualitygates/select`
+  answers 204 on success. Every one of these was a red probe run before it
+  was a green one — the shipped workflow encodes the measured shapes, not
+  the documented ones.
 - **Branch naming, quarantined**: the workflow passes
   `-Dsonar.branch.name=prescan/pr-<number>` on pull requests and
   `-Dsonar.branch.name=prescan/main` on main pushes. The stub project is
@@ -132,20 +144,20 @@ Challenging it requires a PR that changes this section, not a property edit.
   inclusions typo that silently narrowed the scope is a red job, not a
   silently-clean gate.
 
-## 6. The `bugs` budget and the suppression register
+## 6. The budget is zero, and the suppression register
 
-The initial `bugs` budget is set from the MEASURED baseline of the first
-analysis of the corpus (not estimated). Every finding behind that budget is
-either (a) real and tolerated as fixture idiom with a one-line reason in the
-register below, or (b) real and fixable, in which case fixing it and lowering
-the budget in the same PR is preferred. The budget may only move DOWN
-without review; moving it UP requires a PR that itemises every new finding
-that forced the raise (same discipline as the phpstan baseline ratchet).
+The measured baseline of the first corpus analysis (probe run, 190 files,
+81,122 lines) is **bugs 0, vulnerabilities 0, security hotspots 0** — the
+budget is zero in all three dimensions and there is no tolerated
+population to register. A future finding is therefore always a NEW finding:
+fix it and keep the budget at zero (preferred), or, for a hotspot the
+corpus legitimately needs, review it as safe on SonarCloud so the
+reviewed-ratio condition returns to 100% — and record the one-line reason
+here. The register exists for that second case only:
 
-Register (empty at v2.34.0 — the baseline population is enumerated in the
-release changelog):
+Register (empty at v2.34.0):
 
-<!-- entries: path:line, rule, reason -->
+<!-- entries: path:line, rule/hotspot, reason -->
 
 ## 7. Failure semantics
 

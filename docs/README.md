@@ -59,6 +59,7 @@ docs/
 ├── security/
 │   ├── php-sast.md
 │   ├── sonarcloud.md
+│   ├── stub-prescan.md
 │   ├── snyk-security.md
 │   └── code-scanning-issues.md
 ├── CHANGELOG-v2.7.0.md … CHANGELOG-v2.32.0.md

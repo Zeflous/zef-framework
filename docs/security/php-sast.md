@@ -118,6 +118,18 @@ definition, so the id resolves at a single severity with the **union** of both p
 pattern sets. The pin therefore stays authoritative and no detection is narrowed;
 details and measurements in §7.4.
 
+**The correctness family is loaded too (v2.34.0).** All four scan lanes additionally
+pass `--config=/rules-overlay/php/lang/correctness` — the bug-detector sibling tree
+inside the SAME pinned, digest-verified tarball (`empty-with-boolean-expression`,
+severity WARNING), so the pinning surface did not grow by one byte. This is matrix
+row 3 of `docs/security/stub-prescan.md`: the Semgrep correctness family is INCLUDED
+for the production trees and the tests/ fixture corpus alike, mirroring what the
+security family already does. Measured before enabling, with the pinned ruleset run
+locally over the full targets: **0 findings over 652 production targets and 0 over
+190 corpus targets** — the promotion to blocking shipped with an empty, hence fully
+triaged, population. The four pre-existing lanes, their thresholds and their
+suppressions are otherwise unchanged; only detection width increased.
+
 One behaviour of the tool matters for maintaining this: Semgrep **namespaces rule
 ids by configuration path**, so the local rule reports as
 `github.semgrep.rules.php-lang-security.unlink-use-qualified` rather than as
