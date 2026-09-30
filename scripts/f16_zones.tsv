@@ -31,4 +31,5 @@ app-runtime-async|src/Domain/Runtime/Async,src/Application/Runtime/Async
 app-rules|src/Domain/Rules,src/Application/Rules
 d-storage|src/Domain/Storage
 infra-storage|src/Infrastructure/Storage,src/Infrastructure/Message
-infra-job-pdo|src/Infrastructure/Job
+infra-job-pdo|src/Infrastructure/Job/PdoJobQueue.php,src/Infrastructure/Job/JobRowCodec.php,src/Infrastructure/Job/JobQueueSeqBackstop.php,src/Infrastructure/Job/PdoJobIdempotencyStore.php
+infra-job-redis|src/Infrastructure/Job/RedisStreamJobQueue.php

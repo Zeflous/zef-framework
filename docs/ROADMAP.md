@@ -112,7 +112,7 @@
   - [x] Event Store (v2.19.0: port + InMemory/PDO adapter di atas Database Core — MySQL/SQLite/PostgreSQL-ready) · Event replay (`AggregateRoot::applyStored`) · Snapshot (`SnapshotPolicy` + store) · Projection/Read model sync (`Projector` + checkpoint store) — [ ] Postgres/NoSQL dedicated store optimizations
   - [ ] Event versioning & migration tools
   - [ ] Saga Orchestration/Choreography · Compensating actions · Timeout/circuit breaker
-  - [ ] RabbitMQ · Amazon SQS · Apache Kafka adapters · Protobuf serialization — dasar siap: transport `MessageTransportInterface` + `InMemoryMessageTransport` (v2.30.0), `JsonMessageSerializer`; sisa pekerjaan = adapter broker eksternal (pola suggest + skip-guard)
+  - [ ] RabbitMQ · Amazon SQS · Apache Kafka adapters · Protobuf serialization — dasar siap: transport `MessageTransportInterface` + `InMemoryMessageTransport` (v2.30.0), `JsonMessageSerializer`, queue engine durabel multi-driver (v2.32.0: Redis Streams + PDO + CLI worker `queue:work/failed/retry/flush`); sisa pekerjaan = adapter broker eksternal (pola suggest + skip-guard)
   - [ ] DLQ (parsial: job worker ✔) · Retry policies (parsial: `RetryPolicy`, `RetryBackoffPolicy` ✔)
   - [ ] Message ordering guarantees · Exactly-once semantics
   - [x] v2.8.0: `DeduplicatingMiddleware` (at-least-once → efektif once per messageId via idempotency store)
@@ -165,7 +165,7 @@
 - [x] Dead letter queue · Idempotency store · Cancellation & timeout · Drain mode · [x] Claim idempotent lintas node (v2.24.0: `LockingJobIdempotencyStore` — exactly-once per key dalam window TTL, kegagalan me-release lease agar retry sah)
 - [x] Delayed jobs & priorities (konten queue: `availableAtUnixNano`, `priority`)
 - [x] Scheduled/recurring (v2.8.0: `Scheduler` + `FixedIntervalSchedule` + `CronExpression` 5-field UTC) · [x] Cluster-safe scheduler (v2.24.0: lease `LockStoreInterface` opsional — follower skip tick alih-alih dobel-enqueue, leader lapse diambil alih otomatis setelah TTL)
-- [ ] Multi-driver (Redis, Database, Beanstalk, SQS) · Chaining/batching
+- [x] Multi-driver (v2.32.0: `RedisStreamJobQueue` — XADD + claim Lua atomik (XRANGE→XDEL+SREM satu langkah), ordering paritas PdoJobQueue `priority DESC, available_at ASC, seq ASC`, duplicate-backstop SET id live, zero-pad 20-digit nano anti Lua-double; **CLI `queue:work`** (graceful SIGTERM/SIGINT antar-job + guard `--memory=<mb>` exit 2 untuk supervisor restart) · Database ✔ v2.30) · [x] Worker operasional v2.32.0: **`queue:failed`** (inspeksi DLQ read-only via `peek()`), **`queue:retry`** (re-delivery attempt-dipertahankan, skip duplikat + seen-set anti-siklus), **`queue:flush`** (drain port-agnostic) — failed storage = instansi `JobQueueInterface` kedua (stream `zef.queue.failed` / tabel PDO), driver-agnostic lewat port · [ ] Beanstalk, SQS · Chaining/batching
 - [ ] Job rate limiting · Monitoring dashboard
 
 ---
@@ -219,7 +219,7 @@
 ## 🛠️ 11. DEVELOPER EXPERIENCE
 
 - [x] Self-test runner CLI → `bin/zef --self-test` · Dev server → `bin/zef --serve` · Lint → `composer lint`
-- [x] Route inspector → `bin/zef route:list` (v2.8.0) · Code generators → `bin/zef make:*` (v2.8.0: module/handler/middleware; **v2.16.0 ZEF Maker: plugin, config, command, query, entity, valueobject, service**; **v2.29.0: `make:app` — scaffold aplikasi standalone** — engine hexagonal `src/Infrastructure/Console`) · Command catalog → `bin/zef list [--json]` · Inspectors → `module:list`, `plugin:list`, `config:show` (v2.16.0)
+- [x] Route inspector → `bin/zef route:list` (v2.8.0) · Code generators → `bin/zef make:*` (v2.8.0: module/handler/middleware; **v2.16.0 ZEF Maker: plugin, config, command, query, entity, valueobject, service**; **v2.29.0: `make:app` — scaffold aplikasi standalone** — engine hexagonal `src/Infrastructure/Console`) · Command catalog → `bin/zef list [--json]` · Inspectors → `module:list`, `plugin:list`, `config:show` (v2.16.0) · **Queue ops → `bin/zef queue:work/failed/retry/flush` (v2.32.0: worker daemon + guard memori + harness DLQ)**
 - [x] **v2.29.0 DX release**: standalone app scaffolding (`make:app`) · RoadRunner transparency (`rr:init` dari knob `ZEF_*`, collision-safe) · environment preflight + boot smoke (`doctor`, exit 1 hanya pada FAIL) · tutorial Zero-to-Hero (`TUTORIAL-CQRS-101.md`, diverifikasi end-to-end) · kontrak manifest + registry plugin (`PLUGINS.md`)
 - [x] Tinker/REPL (v2.10.0: `TinkerSession` + `bin/zef tinker`) — [ ] Debug toolbar · [ ] Profiler · [ ] Hot reload
 - [ ] PhpStorm/VS Code plugin · Beautiful error pages (parsial: `ErrorResponseFactory`)

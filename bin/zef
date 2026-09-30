@@ -68,6 +68,30 @@
  *                                  extensions, autoloader, RR binary/bridge,
  *                                  app-boot smoke). Exit 1 only on FAIL.
  *
+ * v2.32.0 Unified queue drivers:
+ *   bin/zef queue:work             Process jobs from the wired queue driver
+ *                                  (InMemory, PDO, or Redis Streams) via
+ *                                  InProcessJobWorker.
+ *                                  [--once] drain and exit when empty;
+ *                                  [--max=<n>] stop after n jobs;
+ *                                  [--memory=<mb>] leak guard — exit 2 when
+ *                                  real usage crosses the MiB budget so the
+ *                                  supervisor replaces the process.
+ *                                  Requires InProcessJobWorker wired in the
+ *                                  container.
+ *   bin/zef queue:failed           List dead-lettered jobs from the wired
+ *                                  failed-job queue (any JobQueueInterface;
+ *                                  typically a dedicated RedisStreamJobQueue
+ *                                  stream or a PDO table).
+ *                                  [--max=<n>] entry budget (default 50).
+ *   bin/zef queue:retry            Move dead-lettered jobs back to the main
+ *                                  queue (envelope as-is, attempt kept).
+ *                                  [--max=<n>] move at most n (default 50);
+ *                                  [--all] move every entry.
+ *   bin/zef queue:flush            Purge dead-lettered jobs from the wired
+ *                                  failed-job queue.
+ *                                  [--max=<n>] purge at most n (default all).
+ *
  * v2.31.0 Outbox relay worker (lease-based, concurrent-safe):
  *   bin/zef outbox:work            Relay outbox entries to the event bus via
  *                                  lease claiming — safe with N workers.
@@ -200,6 +224,115 @@ if ($command === 'doctor') {
         return 'Application booted (ZEF v' . \Zef\Framework\Foundation\ZefVersion::VERSION . ')';
     };
     exit((new \Zef\Framework\Console\Inspector\Doctor($root, $io, $bootSmoke))->run());
+}
+
+if ($command === 'queue:work') {
+    $app = \Zef\App\Bootstrap::createApp(false);
+    $app->boot();
+    $container = $app->getContainer();
+    $workerFactory = static function () use ($container): \Zef\Framework\Job\InProcessJobWorker {
+        $id = \Zef\Framework\Job\InProcessJobWorker::class;
+        if (!$container->has($id)) {
+            throw new \RuntimeException(
+                "InProcessJobWorker ({$id}) is not wired in the container.\n"
+                . 'Register it from a ConfigProvider, e.g.:'
+                . "\n  new InProcessJobWorker(\$c->get(JobQueueInterface::class),"
+                . "\n      retryPolicy: new RetryPolicy(3, 100, 30_000),"
+                . "\n      deadLetterQueue: \$c->get('zef.queue.failed'))",
+            );
+        }
+
+        return $container->get($id);
+    };
+
+    exit((new \Zef\Framework\Console\Inspector\QueueWorker($workerFactory, $io))->run(
+        zef_cli_options(array_slice($args, 2)),
+    ));
+}
+
+if ($command === 'queue:failed') {
+    $app = \Zef\App\Bootstrap::createApp(false);
+    $app->boot();
+    $container = $app->getContainer();
+    $failedQueueFactory = static function () use ($container): \Zef\Framework\Job\RedisStreamJobQueue {
+        foreach ([
+            'zef.queue.failed' => 'failed-job queue (zef.queue.failed)',
+            \Zef\Framework\Job\RedisStreamJobQueue::class => 'failed-job queue (RedisStreamJobQueue)',
+        ] as $id => $label) {
+            if ($container->has($id)) {
+                return $container->get($id);
+            }
+        }
+        throw new \RuntimeException(
+            "No failed-job queue is wired in the container (looked for 'zef.queue.failed'"
+            . ' and ' . \Zef\Framework\Job\RedisStreamJobQueue::class . ").\n"
+            . 'Register one from a ConfigProvider, e.g. a dedicated Redis stream:'
+            . "\n  \$services['zef.queue.failed'] = fn () => new RedisStreamJobQueue("
+            . "\$c->get(\\Redis::class), 'failed');"
+            . "\nand wire it as InProcessJobWorker's deadLetterQueue.",
+        );
+    };
+    $jobsProvider = static function (int $max) use ($failedQueueFactory): iterable {
+        return $failedQueueFactory()->peek($max);
+    };
+
+    exit((new \Zef\Framework\Console\Inspector\QueueFailedLister($jobsProvider, $io))->run(
+        zef_cli_options(array_slice($args, 2)),
+    ));
+}
+
+if ($command === 'queue:retry') {
+    $app = \Zef\App\Bootstrap::createApp(false);
+    $app->boot();
+    $container = $app->getContainer();
+    $mainQueueFactory = static function () use ($container): \Zef\Framework\Job\JobQueueInterface {
+        $id = \Zef\Framework\Job\JobQueueInterface::class;
+        if (!$container->has($id)) {
+            throw new \RuntimeException("JobQueueInterface ({$id}) is not wired in the container.");
+        }
+
+        return $container->get($id);
+    };
+    $failedQueueFactory = static function () use ($container): \Zef\Framework\Job\JobQueueInterface {
+        foreach (['zef.queue.failed'] as $id) {
+            if ($container->has($id)) {
+                return $container->get($id);
+            }
+        }
+        throw new \RuntimeException(
+            "No failed-job queue is wired in the container (looked for 'zef.queue.failed').\n"
+            . 'Register one from a ConfigProvider, e.g. a dedicated Redis stream:'
+            . "\n  \$services['zef.queue.failed'] = fn () => new RedisStreamJobQueue("
+            . "\$c->get(\\Redis::class), 'failed');"
+            . "\nand wire it as InProcessJobWorker's deadLetterQueue.",
+        );
+    };
+
+    exit((new \Zef\Framework\Console\Inspector\QueueRetry($mainQueueFactory, $failedQueueFactory, $io))->run(
+        zef_cli_options(array_slice($args, 2)),
+    ));
+}
+
+if ($command === 'queue:flush') {
+    $app = \Zef\App\Bootstrap::createApp(false);
+    $app->boot();
+    $container = $app->getContainer();
+    $failedQueueFactory = static function () use ($container): \Zef\Framework\Job\JobQueueInterface {
+        if ($container->has('zef.queue.failed')) {
+            return $container->get('zef.queue.failed');
+        }
+        throw new \RuntimeException(
+            "No failed-job queue is wired in the container (looked for 'zef.queue.failed').\n"
+            . 'Register one from a ConfigProvider, e.g. a dedicated Redis stream:'
+            . "\n  \$services['zef.queue.failed'] = fn () => new RedisStreamJobQueue("
+            . "\$c->get(\\Redis::class), 'failed');"
+            . "\nand wire it as InProcessJobWorker's deadLetterQueue.",
+        );
+    };
+
+    exit((new \Zef\Framework\Console\Inspector\QueueFlush($failedQueueFactory, $io))->run(
+        zef_cli_options(array_slice($args, 2)),
+    ));
 }
 
 if ($command === 'outbox:work') {

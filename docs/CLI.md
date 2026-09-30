@@ -191,12 +191,96 @@ REPL mengeksekusi kode arbitrer; `--force` adalah *override* eksplisit.
 
 ---
 
-## 6. Keluar-kode
+## 6. Antrean kerja — `bin/zef queue:*` (v2.32.0)
+
+Empat perintah operasional di atas driver antrean yang di-wire di container
+(`InMemoryJobQueue`, `PdoJobQueue`, atau `RedisStreamJobQueue` — semuanya
+mengimplementasikan port `JobQueueInterface`, jadi CLI-nya driver-agnostic).
+
+### `bin/zef queue:work`
+
+Worker daemon: memproses job dari antrean lewat `InProcessJobWorker` yang
+terdaftar di container. Loop memakai stop-signal antar-job, sehingga sinyal
+atau ambang memori **tidak pernah memotong job yang sedang berjalan** (port
+`dequeue()` bersifat destruktif — job in-flight dibiarkan selesai, jalur
+retry/DLQ tetap berlaku saat gagal).
+
+```bash
+php bin/zef queue:work                    # daemon: jalan sampai dihentikan
+php bin/zef queue:work --once             # batch: drain lalu keluar saat kosong
+php bin/zef queue:work --max=100          # berhenti setelah 100 job
+php bin/zef queue:work --memory=128       # guard kebocoran memori (MiB)
+```
+
+| Opsi | Efek |
+|------|------|
+| `--once` | mode batch — keluar saat antrean kosong |
+| `--max=<n>` | batas jumlah job yang diproses |
+| `--memory=<mb>` | berhenti bila `memory_get_usage(true)` melewati anggaran MiB |
+
+**Guard memori keluar dengan kode `2`** — supervisor (systemd
+`Restart=on-failure`, RoadRunner, K8s) mengganti proses yang bocor alih-alih
+menampungnya. Flag telanjang (`--memory` tanpa nilai) berarti tanpa guard
+(semantika bare-flag `outbox:work`, bukan cast `true` → 1 MiB).
+
+### `bin/zef queue:failed`
+
+Inspeksi read-only DLQ: mendaftar job yang dead-letter ke antrean gagal yang
+di-wire (biasanya stream Redis khusus `zef.queue.failed`).
+
+```bash
+php bin/zef queue:failed                  # 50 entri teratas
+php bin/zef queue:failed --max=200
+```
+
+### `bin/zef queue:retry`
+
+Memindahkan job dead-letter kembali ke antrean utama — **envelope apa adanya
+(attempt dipertahankan)**: retry adalah keputusan re-delivery, bukan reset
+ percobaan. Job dengan attempt yang sudah menguras `RetryPolicy` akan
+dead-letter lagi bila tetap gagal. Id yang sudah hidup di antrean utama
+**di-skip** (bukan crash) — backstop duplikat PDO `UNIQUE(job_id)` / SET id
+live Redis yang bekerja, bukan bug.
+
+```bash
+php bin/zef queue:retry                   # hingga 50 job
+php bin/zef queue:retry --all             # semua entri
+php bin/zef queue:retry --max=5
+```
+
+### `bin/zef queue:flush`
+
+Menguras job gagal dari DLQ — padanan port-agnostic dari `TRUNCATE`:
+drain `dequeue()` berulang, jadi bekerja untuk stream Redis, tabel PDO, dan
+`InMemoryJobQueue` dengan satu jalur kode.
+
+```bash
+php bin/zef queue:flush                   # kuras semua
+php bin/zef queue:flush --max=100         # batch terbatas
+```
+
+**Wiring yang diharapkan** (dari ConfigProvider aplikasi):
+
+```php
+$services[JobQueueInterface::class]     = fn () => new RedisStreamJobQueue($c->get(\Redis::class), 'default');
+$services['zef.queue.failed']           = fn () => new RedisStreamJobQueue($c->get(\Redis::class), 'failed');
+$services[InProcessJobWorker::class]    = fn () => new InProcessJobWorker(
+    $c->get(JobQueueInterface::class),
+    new RetryPolicy(3, 100, 30_000),
+    null,
+    $c->get('zef.queue.failed'),
+);
+```
+
+---
+
+## 7. Keluar-kode
 
 | Kode | Arti |
 |------|------|
 | `0` | sukses |
 | `1` | command tak dikenal, nama/filter invalid, tabrakan scaffold, key config tidak ada, atau suite self-test tidak menemukan kecocokan |
+| `2` | `queue:work --memory` terpicu — restart proses disarankan |
 
 Kontrak ini membuat `bin/zef` aman dipakai di pipeline CI: kegagalan tidak pernah
 dilaporkan sebagai sukses.
