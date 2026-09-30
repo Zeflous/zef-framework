@@ -18,7 +18,7 @@
   <img src="https://img.shields.io/badge/Mutation%20gate-MSI%20%E2%89%A5%2085-f59e0b?style=for-the-badge" alt="Mutation gate MSI 85">
   <br>
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="MIT">
-  <img src="https://img.shields.io/badge/Rilis%20terdokumentasi-v2.33.0-0ea5e9?style=for-the-badge" alt="v2.33.0">
+  <img src="https://img.shields.io/badge/Rilis%20terdokumentasi-v2.34.0-0ea5e9?style=for-the-badge" alt="v2.34.0">
 
 </div>
 
@@ -134,7 +134,7 @@ Banyak framework PHP tumbuh dari kenyamanan. ZEF tumbuh dari pembongkaran: satu 
 </table>
 
 <details>
-<summary><b>Riwayat rilis selengkapnya (v2.8.0 → v2.33.0)</b> — 39 berkas CHANGELOG · 26 entri ringkas</summary>
+<summary><b>Riwayat rilis selengkapnya (v2.8.0 → v2.34.0)</b> — 40 berkas CHANGELOG · 27 entri ringkas</summary>
 
 <br>
 
@@ -168,8 +168,9 @@ Setiap rilis bersifat **aditif**: perilaku lama tidak diubah.
 | **v2.31.0** | **Zero-Debt & Fail-Closed Gates**: SonarCloud 879 → 0 pelanggaran + scope fail-closed milik-ZEF (PR #251/#256/#257), Snyk strict fail-closed + bukti SARIF terkonsolidasi jadi satu check (PR #246/#262), cermin alert code-scanning → issue, antrean PR zero-click (arm-on-open + rantai merge + cron 20m), hardening konfigurasi F-01..F-24 (PR #255), ZEF-DX-01..10 dan ZEF-DEEP-15..22 ditutup — nol fitur runtime baru |
 | **v2.32.0** | **Unified Queue & Broker**: driver antrean durable `RedisStreamJobQueue` di atas Redis Streams (klaim atomik single-Lua XRANGE→XDEL+SREM tanpa XREADGROUP/pending-entry, ordering paritas PDO `priority DESC/available_at ASC/seq ASC`, dedupe SET padanan `UNIQUE(job_id)`, nano zero-padded 20-digit anti Lua-double), CLI terpadu `queue:work`/`queue:failed`/`queue:retry`/`queue:flush` (SIGTERM drain antar-job, memory guard exit 2), zona mutasi `infra-job-redis` MSI 98.35 — nol paket runtime baru |
 | **v2.33.0** | **OpenAPI Runtime Gate**: PSR-15 `OpenApiGateMiddleware` menegakkan kontrak dokumen OpenAPI 3.1 per-request (matriks paritas 12 batas dikommit sebelum implementasi; precedensi 405→401/403→415→400; rejection RFC 9457 problem+json + `Allow`; security dari identitas terverifikasi `zef.auth.identity` + bukti kehadiran; boot fail-closed reuse `OpenApiSpecValidator`/`OpenApiSecurityValidator`; `forRoutes()` — dokumen yang ditegakkan = yang di-serve), `OpenApiSchemaChecker` subset JSON-Schema persis `Schema::toArray()`, fix `release.yml` create-release idempotent, zona mutasi `openapi-gate` MSI 95.39/1064 — nol paket runtime baru |
+| **v2.34.0** | **Stub Pre-scan CI**: pre-scan korpus fixture `tests/` (matriks paritas 12 dimensi INCLUDED/EXCLUDED dikommit sebelum implementasi) — project SonarCloud terkarantina `zeflous_zef-framework-stubs` di-scan scope ter-pin positif dengan gate zero-tolerance bugs/vulnerabilities/hotspots (baseline terukur nol; kondisi overall tanpa dependensi new-code period; provisioning idempotent fail-closed di dalam workflow), ratchet jumlah fixture `tests/fixtures.limit` fail-closed dua arah + assert ukuran `files` SonarCloud, keluarga correctness Semgrep masuk 4 lane php-sast dari tarball ter-pin yang sama (0/652 + 0/190 terukur), fix `release.yml` publish draft blind-spot (v2.32.0+v2.33.0), required checks 11→12, indirection kredensial curl anti-FP gitleaks — nol paket baru, nol kode produk berubah |
 
-Rincian per rilis: [`docs/CHANGELOG-v2.33.0.md`](docs/CHANGELOG-v2.33.0.md), [`v2.32.0.md`](docs/CHANGELOG-v2.32.0.md), [`v2.31.0.md`](docs/CHANGELOG-v2.31.0.md), [`v2.30.0.md`](docs/CHANGELOG-v2.30.0.md), [`v2.29.0.md`](docs/CHANGELOG-v2.29.0.md), [`v2.28.0.md`](docs/CHANGELOG-v2.28.0.md), [`v2.27.0.md`](docs/CHANGELOG-v2.27.0.md), [`v2.26.0.md`](docs/CHANGELOG-v2.26.0.md), [`v2.25.0.md`](docs/CHANGELOG-v2.25.0.md), [`v2.23.0.md`](docs/CHANGELOG-v2.23.0.md), [`v2.22.0.md`](docs/CHANGELOG-v2.22.0.md), [`v2.21.1.md`](docs/CHANGELOG-v2.21.1.md), [`v2.21.0.md`](docs/CHANGELOG-v2.21.0.md), [`v2.19.0`](docs/CHANGELOG-v2.19.0.md), [`v2.18.0`](docs/CHANGELOG-v2.18.0.md), [`v2.17.0`](docs/CHANGELOG-v2.17.0.md), [`v2.16.0`](docs/CHANGELOG-v2.16.0.md), [`v2.15.0`](docs/CHANGELOG-v2.15.0.md), [`v2.14.0`](docs/CHANGELOG-v2.14.0.md) — atau seluruh berkas lainnya di [`docs/`](docs/README.md).
+Rincian per rilis: [`docs/CHANGELOG-v2.34.0.md`](docs/CHANGELOG-v2.34.0.md), [`v2.33.0.md`](docs/CHANGELOG-v2.33.0.md), [`v2.32.0.md`](docs/CHANGELOG-v2.32.0.md), [`v2.31.0.md`](docs/CHANGELOG-v2.31.0.md), [`v2.30.0.md`](docs/CHANGELOG-v2.30.0.md), [`v2.29.0.md`](docs/CHANGELOG-v2.29.0.md), [`v2.28.0.md`](docs/CHANGELOG-v2.28.0.md), [`v2.27.0.md`](docs/CHANGELOG-v2.27.0.md), [`v2.26.0.md`](docs/CHANGELOG-v2.26.0.md), [`v2.25.0.md`](docs/CHANGELOG-v2.25.0.md), [`v2.23.0.md`](docs/CHANGELOG-v2.23.0.md), [`v2.22.0.md`](docs/CHANGELOG-v2.22.0.md), [`v2.21.1.md`](docs/CHANGELOG-v2.21.1.md), [`v2.21.0.md`](docs/CHANGELOG-v2.21.0.md), [`v2.19.0`](docs/CHANGELOG-v2.19.0.md), [`v2.18.0`](docs/CHANGELOG-v2.18.0.md), [`v2.17.0`](docs/CHANGELOG-v2.17.0.md), [`v2.16.0`](docs/CHANGELOG-v2.16.0.md), [`v2.15.0`](docs/CHANGELOG-v2.15.0.md), [`v2.14.0`](docs/CHANGELOG-v2.14.0.md) — atau seluruh berkas lainnya di [`docs/`](docs/README.md).
 
 </details>
 
@@ -409,7 +410,7 @@ Runtime worker persisten berbeda mendasar dari PHP-FPM: proses hidup lama, sehin
   </tr>
   <tr>
     <td><b>SAST &amp; rahasia</b></td>
-    <td>Semgrep (<code>php-sast.yml</code>), CodeQL, dan pemindaian rahasia (<code>gitleaks</code>) berjalan sebagai check wajib pada setiap PR.</td>
+    <td>Semgrep (<code>php-sast.yml</code>), CodeQL, dan pemindaian rahasia (<code>gitleaks</code>) berjalan sebagai check wajib pada setiap PR — kini termasuk <b>pre-scan korpus fixture <code>tests/</code></b>: Bugs/Security SonarCloud lewat project terkarantina dengan gate zero-tolerance + ratchet jumlah fixture fail-closed dua arah (v2.34.0).</td>
   </tr>
 </table>
 
@@ -482,12 +483,13 @@ Kampanye mutasi dijalankan per **zona kanonik** (`scripts/f16_zones.tsv`, 27 zon
 
 ## CI/CD
 
-13 workflow pada `.github/workflows/`. `main` dilindungi: 7 check wajib, PR wajib, dan aturan berlaku juga untuk admin.
+14 workflow pada `.github/workflows/`. `main` dilindungi: 12 check wajib, PR wajib, dan aturan berlaku juga untuk admin.
 
 | Workflow | Peran |
 |:---------|:------|
 | `ci.yml` | Lint, self-test, PHPStan, PHPCS, Deptrac, ratchet mutasi per-zona |
-| `php-sast.yml` | Semgrep — termasuk ERROR floor atas `tests/`, `scripts/`, `tools/` |
+| `php-sast.yml` | Semgrep — termasuk ERROR floor atas `tests/`, `scripts/`, `tools/` + keluarga correctness |
+| `stub-prescan.yml` | Pre-scan korpus fixture `tests/` — project SonarCloud terkarantina + ratchet jumlah fixture fail-closed |
 | `mutation.yml` | Suite mutasi agregat (tag rilis & dispatch manual) |
 | `secret-scan.yml` · `dependency-review.yml` | Pemindaian rahasia (gitleaks) & review dependensi |
 | `docs-check.yml` · `pages.yml` | Pemeriksaan API docs & publikasi situs dokumentasi |
