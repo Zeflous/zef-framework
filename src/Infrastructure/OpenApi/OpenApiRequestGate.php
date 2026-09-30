@@ -117,7 +117,7 @@ final readonly class OpenApiRequestGate
 
         // B10: security before validation — precedence 401/403 over 415/400.
         $security = $this->securityVerdict($operation, $request);
-        if ($security !== null) {
+        if ($security instanceof OpenApiGateVerdict) {
             return $security;
         }
 
@@ -256,7 +256,7 @@ final readonly class OpenApiRequestGate
         if (array_key_exists('default', $responses)) {
             return 'default';
         }
-        $range = ((string) intdiv($status, 100)) . 'XX';
+        $range = intdiv($status, 100) . 'XX';
         if (array_key_exists($range, $responses)) {
             return $range;
         }

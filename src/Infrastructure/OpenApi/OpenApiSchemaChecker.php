@@ -134,7 +134,7 @@ final class OpenApiSchemaChecker
         $siblings = $schema;
         unset($siblings['$ref']);
         if ($siblings !== []) {
-            $issues = [...$issues, ...$this->checkValue($value, $siblings, $coerce, $pointer, $depth + 1)];
+            return [...$issues, ...$this->checkValue($value, $siblings, $coerce, $pointer, $depth + 1)];
         }
 
         return $issues;
@@ -264,9 +264,10 @@ final class OpenApiSchemaChecker
      * PHP warning: the scoped error handler keeps the suite's
      * fail-on-warning policy intact (no '@' suppression, php:S2002).
      */
-    private function patternResult(string $pattern, string $value): int|false
+    private function patternResult(string $pattern, string $value): false|int
     {
         set_error_handler(static fn (): bool => true);
+
         try {
             return preg_match('~(' . $pattern . ')~', $value);
         } finally {

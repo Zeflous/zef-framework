@@ -108,7 +108,7 @@ final readonly class OpenApiGateMiddleware implements MiddlewareInterface
         $response = $handler->handle($request);
 
         if ($this->options->validateResponses && $verdict->operation !== null) {
-            $response = $this->validateResponse($response, $verdict->operation, $request);
+            return $this->validateResponse($response, $verdict->operation, $request);
         }
 
         return $response;

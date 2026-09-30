@@ -41,7 +41,7 @@ final readonly class OpenApiGateRequest
     /** Invokes the lazy body provider exactly where the engine needs it. */
     public function bodyContents(): ?string
     {
-        if ($this->body === null) {
+        if (!$this->body instanceof \Closure) {
             return null;
         }
 

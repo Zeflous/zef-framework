@@ -156,7 +156,9 @@ final class OpenApiGateMiddlewareTest extends TestCase
         $router->add('GET', '/ping', 'ping.handler');
         $router->add('POST', '/users/{id:int}', 'users.create');
 
-        $middleware = OpenApiGateMiddleware::forRoutes($router->getRoutes());
+        /** @var list<array<string, mixed>> $routes */
+        $routes = $router->getRoutes();
+        $middleware = OpenApiGateMiddleware::forRoutes($routes);
         $handler = new RecordingHandler(new HttpTextResponse(200, [], 'ok'));
 
         $response = $middleware->process($this->request('GET', '/ping'), $handler);
@@ -199,7 +201,11 @@ final class OpenApiGateMiddlewareTest extends TestCase
         $body = json_decode((string) $response->getBody(), true);
         self::assertSame('The response violated the API contract.', $body['detail']);
         self::assertSame('echo', $body['operationId']);
-        self::assertSame('response', $body['errors'][0]['in']);
+        $errors = $body['errors'] ?? null;
+        self::assertIsArray($errors);
+        $first = $errors[0] ?? null;
+        self::assertIsArray($first);
+        self::assertSame('response', $first['in']);
 
         self::assertNotEmpty($logger->errors);
         self::assertStringContainsString('echo', $logger->errors[0]);
@@ -218,7 +224,11 @@ final class OpenApiGateMiddlewareTest extends TestCase
 
         /** @var array<string, mixed> $body */
         $body = json_decode((string) $response->getBody(), true);
-        self::assertSame('response status 204 is not documented', $body['errors'][0]['message']);
+        $errors = $body['errors'] ?? null;
+        self::assertIsArray($errors);
+        $first = $errors[0] ?? null;
+        self::assertIsArray($first);
+        self::assertSame('response status 204 is not documented', $first['message']);
     }
 
     public function testValidatedResponseStaysReadableAndPassesThrough(): void
@@ -362,7 +372,7 @@ final class NonSeekableBodyStream implements StreamInterface
         $remaining = substr($this->content, $this->position);
         $this->position = strlen($this->content);
 
-        return $remaining === false ? '' : $remaining;
+        return $remaining;
     }
 
     #[\Override]
@@ -375,7 +385,7 @@ final class NonSeekableBodyStream implements StreamInterface
     }
 
     #[\Override]
-    public function getSize(): ?int
+    public function getSize(): int
     {
         return strlen($this->content);
     }
@@ -432,9 +442,6 @@ final class NonSeekableBodyStream implements StreamInterface
     public function read(int $length): string
     {
         $chunk = substr($this->content, $this->position, $length);
-        if ($chunk === false) {
-            return '';
-        }
         $this->position += strlen($chunk);
 
         return $chunk;

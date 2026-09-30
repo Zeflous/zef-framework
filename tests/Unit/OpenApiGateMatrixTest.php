@@ -424,6 +424,7 @@ final class OpenApiGateMatrixTest extends TestCase
 
     public function testB10ApiKeyWithoutNameHasNoEvidencePath(): void
     {
+        /** @var array{components: array{securitySchemes: array<string, mixed>}} $spec */
         $spec = $this->apiKeySpec('header');
         $spec['components']['securitySchemes']['key'] = ['type' => 'apiKey', 'in' => 'header'];
         $gate = OpenApiRequestGate::fromSpec($spec, new OpenApiGateOptions());
@@ -548,6 +549,7 @@ final class OpenApiGateMatrixTest extends TestCase
 
     public function testB12InvalidSecuritySchemeIsRejectedThroughValidatorReuse(): void
     {
+        /** @var array{components: array{securitySchemes: array<string, mixed>}} $spec */
         $spec = $this->apiKeySpec('header');
         $spec['components']['securitySchemes']['key'] = ['type' => 'apiKey'];
 
@@ -584,8 +586,10 @@ final class OpenApiGateMatrixTest extends TestCase
         self::assertSame('/users/{id}', $verdict->operation['path']);
         self::assertSame('GET', $verdict->operation['method']);
         self::assertSame(['id' => '7'], $verdict->operation['pathParams']);
-        self::assertArrayHasKey(200, $verdict->operation['responses']);
-        self::assertArrayHasKey(404, $verdict->operation['responses']);
+        $responses = $verdict->operation['responses'] ?? null;
+        self::assertIsArray($responses);
+        self::assertArrayHasKey(200, $responses);
+        self::assertArrayHasKey(404, $responses);
     }
 
     /**
@@ -602,7 +606,7 @@ final class OpenApiGateMatrixTest extends TestCase
                 'id' => new Schema(type: SchemaType::Integer, minimum: 1),
                 'email' => new Schema(type: SchemaType::String, format: 'email'),
                 'status' => new Schema(type: SchemaType::String, enum: ['active', 'off']),
-                'tags' => new Schema(type: SchemaType::Array, items: new Schema(type: SchemaType::String), uniqueItems: true, minItems: 1),
+                'tags' => new Schema(type: SchemaType::Array, minItems: 1, uniqueItems: true, items: new Schema(type: SchemaType::String)),
             ],
         ));
         $builder->addOperation(new Operation(
@@ -617,7 +621,7 @@ final class OpenApiGateMatrixTest extends TestCase
                 new Parameter('id', ParameterLocation::Path, new Schema(type: SchemaType::Integer, minimum: 1), 'User id'),
                 new Parameter('expand', ParameterLocation::Query, new Schema(type: SchemaType::String), '', required: true),
                 new Parameter('page', ParameterLocation::Query, new Schema(type: SchemaType::Integer, minimum: 1)),
-                new Parameter('tag', ParameterLocation::Query, new Schema(type: SchemaType::Array, items: new Schema(type: SchemaType::String), uniqueItems: true)),
+                new Parameter('tag', ParameterLocation::Query, new Schema(type: SchemaType::Array, uniqueItems: true, items: new Schema(type: SchemaType::String))),
                 new Parameter('X-Request-Id', ParameterLocation::Header, new Schema(type: SchemaType::String, maxLength: 8), '', required: true),
             ],
             security: [new SecurityRequirement(['bearer' => ['users:read']])],
@@ -795,7 +799,7 @@ final class OpenApiGateMatrixTest extends TestCase
             $headers,
             $cookies,
             $contentType,
-            $body === null ? null : static fn (): ?string => $body,
+            $body === null ? null : static fn (): string => $body,
             $attributes,
         );
     }
