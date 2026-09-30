@@ -59,8 +59,8 @@ docs/
 │   ├── sonarcloud.md
 │   ├── snyk-security.md
 │   └── code-scanning-issues.md
-├── CHANGELOG-v2.7.0.md … CHANGELOG-v2.30.0.md
-└── CHANGELOG-v2.31.0.md   (rilis terbaru)
+├── CHANGELOG-v2.7.0.md … CHANGELOG-v2.31.0.md
+└── CHANGELOG-v2.32.0.md   (rilis terbaru)
 ```
 
 ## Konvensi dokumen
