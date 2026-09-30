@@ -16,6 +16,11 @@ namespace Zef\Framework\OpenApi;
  * the deterministic issue list, extra response headers (Allow on 405) and
  * extra problem extensions (allowed/supported).
  *
+ * The reason-phrase title is deliberately NOT duplicated here: the
+ * middleware renders rejections through ProblemDetails, which derives the
+ * RFC 9110 title from the status itself — a second copy would be dead
+ * data that can drift.
+ *
  * A pass-through (boundary B1: no template matched) is an admitted verdict
  * with a null operation — the router stays the owner of that request.
  *
@@ -31,16 +36,15 @@ namespace Zef\Framework\OpenApi;
 final readonly class OpenApiGateVerdict
 {
     /**
-     * @param list<GateIssue>                $issues
-     * @param array<string, string>          $headers
-     * @param array<string, mixed>           $extensions
-     * @param null|array<string, mixed>      $operation
+     * @param list<GateIssue>           $issues
+     * @param array<string, string>     $headers
+     * @param array<string, mixed>      $extensions
+     * @param null|array<string, mixed> $operation
      */
     public function __construct(
         public bool $admitted,
         public ?array $operation = null,
         public ?int $status = null,
-        public string $title = '',
         public string $detail = '',
         public array $issues = [],
         public array $headers = [],
@@ -56,9 +60,9 @@ final readonly class OpenApiGateVerdict
     }
 
     /**
-     * @param list<GateIssue>       $issues
-     * @param array<string, string> $headers
-     * @param array<string, mixed>  $extensions
+     * @param list<GateIssue>          $issues
+     * @param array<string, string>    $headers
+     * @param array<string, mixed>     $extensions
      */
     public static function rejected(
         int $status,
@@ -70,24 +74,10 @@ final readonly class OpenApiGateVerdict
         return new self(
             admitted: false,
             status: $status,
-            title: self::titleFor($status),
             detail: $detail,
             issues: $issues,
             headers: $headers,
             extensions: $extensions,
         );
-    }
-
-    /** Deterministic RFC 9110 reason phrase for the statuses the gate emits. */
-    private static function titleFor(int $status): string
-    {
-        return match ($status) {
-            400 => 'Bad Request',
-            401 => 'Unauthorized',
-            403 => 'Forbidden',
-            405 => 'Method Not Allowed',
-            415 => 'Unsupported Media Type',
-            default => 'Internal Server Error',
-        };
     }
 }

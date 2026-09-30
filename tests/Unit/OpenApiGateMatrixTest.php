@@ -72,7 +72,6 @@ final class OpenApiGateMatrixTest extends TestCase
         $verdict = $this->gate->evaluate($this->request('DELETE', '/users/7'));
         self::assertFalse($verdict->admitted);
         self::assertSame(405, $verdict->status);
-        self::assertSame('Method Not Allowed', $verdict->title);
         self::assertSame("Method 'DELETE' is not documented for this path.", $verdict->detail);
         self::assertSame(['Allow' => 'GET, HEAD'], $verdict->headers);
         self::assertSame(['GET', 'HEAD'], $verdict->extensions['allowed']);
@@ -209,7 +208,6 @@ final class OpenApiGateMatrixTest extends TestCase
         $verdict = $this->gate->evaluate($this->request('POST', '/users', contentType: 'text/plain', body: '{}'));
         self::assertFalse($verdict->admitted);
         self::assertSame(415, $verdict->status);
-        self::assertSame('Unsupported Media Type', $verdict->title);
         self::assertSame("Media type 'text/plain' is not offered by this operation.", $verdict->detail);
         self::assertSame(['application/json'], $verdict->extensions['supported']);
         self::assertSame([
@@ -316,7 +314,6 @@ final class OpenApiGateMatrixTest extends TestCase
         );
         self::assertFalse($verdict->admitted);
         self::assertSame(401, $verdict->status);
-        self::assertSame('Unauthorized', $verdict->title);
         self::assertSame('The security requirement (bearer) is not satisfied.', $verdict->detail);
         self::assertSame([
             ['in' => 'security', 'name' => 'bearer', 'pointer' => '', 'message' => "security scheme 'bearer' is not satisfied"],
@@ -385,7 +382,6 @@ final class OpenApiGateMatrixTest extends TestCase
         );
         self::assertFalse($verdict->admitted);
         self::assertSame(403, $verdict->status);
-        self::assertSame('Forbidden', $verdict->title);
     }
 
     public function testB10OperationWithoutSecurityIsAnonymousAdmissible(): void

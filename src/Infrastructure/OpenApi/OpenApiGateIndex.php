@@ -54,16 +54,17 @@ final readonly class OpenApiGateIndex
 
         $templates = [];
         foreach ($paths as $pathKey => $operations) {
-            if (!is_string($pathKey) || !is_array($operations)) {
-                continue;
-            }
+            // B12 trust: the boot validator already refused non-string path
+            // keys and non-object path items — the type assertions below
+            // are phpstan-only annotations, not runtime guards.
+            /** @var string $pathKey */
+            /** @var array<string, array<mixed, mixed>> $operations */
             $methods = [];
             foreach ($operations as $method => $operation) {
-                // Method keys are guaranteed lowercase by the boot-time
-                // OpenApiSpecValidator (unknown or cased keys fail B12).
-                if (is_string($method) && is_array($operation)) {
-                    $methods[strtolower($method)] = $operation;
-                }
+                // Method keys are guaranteed lowercase by the same
+                // validator (unknown or cased keys fail construction).
+                // @var string $method
+                $methods[$method] = $operation;
             }
             $templates[] = [
                 'path' => $pathKey,

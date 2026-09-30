@@ -14,7 +14,9 @@ if (!interface_exists(StreamFactoryInterface::class)) {
     interface StreamFactoryInterface
     {
         public function createStream(string $content = ''): StreamInterface;
+
         public function createStreamFromFile(string $filename, string $mode = 'r'): StreamInterface;
+
         public function createStreamFromResource($resource): StreamInterface;
     }
 }

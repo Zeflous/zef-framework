@@ -33,7 +33,7 @@ namespace Zef\Framework\OpenApi;
  *     pathParams: array<string, string>,
  *     responses: array<mixed, mixed>,
  * }
- * @phpstan-type GateBodyRejection array{status: int, detail: string, issues: list<GateIssue>, extensions: array<string, mixed>}
+ * @phpstan-type GateBodyRejection array{unsupported: bool, detail: string, issues: list<GateIssue>, extensions: array<string, mixed>}
  * @phpstan-type GateSegment array{dynamic: bool, name?: string, value?: string}
  * @phpstan-type GateTemplate array{
  *     path: string,
@@ -128,7 +128,7 @@ final readonly class OpenApiRequestGate
         }
 
         $body = $this->bodyRejection($operation, $request);
-        if ($body !== null && $body['status'] === 415) {
+        if ($body !== null && $body['unsupported']) {
             return OpenApiGateVerdict::rejected(415, $body['detail'], $body['issues'], [], $body['extensions']);
         }
 
@@ -435,23 +435,16 @@ final readonly class OpenApiRequestGate
         $parameters = is_array($operation['parameters'] ?? null) ? $operation['parameters'] : [];
         $declared = [];
         foreach ($parameters as $parameter) {
-            if (!is_array($parameter)) {
-                continue;
-            }
-            $name = $parameter['name'] ?? null;
-            $in = $parameter['in'] ?? null;
-            if (!is_string($name) || $name === '' || !is_string($in)) {
-                continue;
-            }
-            if (!in_array($in, ['query', 'header', 'path', 'cookie'], true)) {
-                continue;
-            }
+            // B12 trust: the boot validator already refused parameters
+            // without non-empty names or with unknown locations — the
+            // annotation below is a phpstan assertion, not a runtime guard.
+            /** @var array{name: string, in: string, required?: bool, schema?: mixed} $parameter */
             $schema = $parameter['schema'] ?? null;
 
             $declared[] = [
-                'name' => $name,
-                'in' => $in,
-                'required' => ($parameter['required'] ?? false) === true || $in === 'path',
+                'name' => $parameter['name'],
+                'in' => $parameter['in'],
+                'required' => ($parameter['required'] ?? false) === true || $parameter['in'] === 'path',
                 'schema' => is_array($schema) ? $schema : [],
             ];
         }
@@ -487,9 +480,8 @@ final readonly class OpenApiRequestGate
 
             $unsatisfied = [];
             foreach ($requirement as $schemeName => $neededScopes) {
-                if (!is_string($schemeName)) {
-                    continue;
-                }
+                // A non-string scheme name is an unknown scheme (fail-closed,
+                // same as an undefined string name) — never silently skipped.
                 $scheme = $this->index->securitySchemes[$schemeName] ?? null;
                 $satisfied = $identity !== null
                     || (is_array($scheme) && $this->schemeEvidence($scheme, $request));
@@ -519,9 +511,8 @@ final readonly class OpenApiRequestGate
         $first = is_array($requirements[0] ?? null) ? $requirements[0] : [];
         $names = [];
         foreach ($first as $schemeName => $_scopes) {
-            if (is_string($schemeName)) {
-                $names[] = $schemeName;
-            }
+            // Array keys are int|string; both render deterministically.
+            $names[] = is_string($schemeName) ? $schemeName : (string) $schemeName;
         }
 
         $issues = [];
@@ -627,7 +618,7 @@ final readonly class OpenApiRequestGate
         if ($raw === null || trim($raw) === '') {
             if (($requestBody['required'] ?? false) === true) {
                 return [
-                    'status' => 400,
+                    'unsupported' => false,
                     'detail' => 'The request body is required.',
                     'issues' => [
                         ['in' => 'body', 'name' => '', 'pointer' => '', 'message' => 'request body is required'],
@@ -649,7 +640,7 @@ final readonly class OpenApiRequestGate
             }
 
             return [
-                'status' => 415,
+                'unsupported' => true,
                 'detail' => $mediaType === ''
                     ? 'A Content-Type header is required for this operation.'
                     : "Media type '{$mediaType}' is not offered by this operation.",
@@ -674,7 +665,7 @@ final readonly class OpenApiRequestGate
             $decoded = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
         } catch (\JsonException) {
             return [
-                'status' => 400,
+                'unsupported' => false,
                 'detail' => 'The request body is not valid JSON.',
                 'issues' => [
                     ['in' => 'body', 'name' => $mediaType, 'pointer' => '', 'message' => 'malformed JSON body'],
@@ -696,7 +687,7 @@ final readonly class OpenApiRequestGate
         }
         if ($issues !== []) {
             return [
-                'status' => 400,
+                'unsupported' => false,
                 'detail' => 'The request body violates the documented schema.',
                 'issues' => $issues,
                 'extensions' => [],

@@ -701,6 +701,7 @@ if (!function_exists('zef_framework_autoload')) {
                 "Zef\\Test\\Unit\\NonSeekableBodyStream" => __DIR__ . '/../tests/Unit/OpenApiGateMiddlewareTest.php',
                 "Zef\\Test\\Unit\\OpenApiGateMatrixTest" => __DIR__ . '/../tests/Unit/OpenApiGateMatrixTest.php',
                 "Zef\\Test\\Unit\\OpenApiGateMiddlewareTest" => __DIR__ . '/../tests/Unit/OpenApiGateMiddlewareTest.php',
+                "Zef\\Test\\Unit\\OpenApiGateMutationDebtTest" => __DIR__ . '/../tests/Unit/OpenApiGateMutationDebtTest.php',
                 "Zef\\Test\\Unit\\OpenApiSchemaCheckerTest" => __DIR__ . '/../tests/Unit/OpenApiSchemaCheckerTest.php',
                 "Zef\\Test\\Unit\\QueueCliTest" => __DIR__ . '/../tests/Unit/QueueCliTest.php',
                 "Zef\\Test\\Unit\\QueueFakeRedis" => __DIR__ . '/../tests/Unit/RedisStreamJobQueueTest.php',

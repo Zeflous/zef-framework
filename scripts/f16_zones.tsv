@@ -33,3 +33,4 @@ d-storage|src/Domain/Storage
 infra-storage|src/Infrastructure/Storage,src/Infrastructure/Message
 infra-job-pdo|src/Infrastructure/Job/PdoJobQueue.php,src/Infrastructure/Job/JobRowCodec.php,src/Infrastructure/Job/JobQueueSeqBackstop.php,src/Infrastructure/Job/PdoJobIdempotencyStore.php
 infra-job-redis|src/Infrastructure/Job/RedisStreamJobQueue.php
+openapi-gate|src/Infrastructure/OpenApi/OpenApiGateException.php,src/Infrastructure/OpenApi/OpenApiGateOptions.php,src/Infrastructure/OpenApi/OpenApiGateVerdict.php,src/Infrastructure/OpenApi/OpenApiGateRequest.php,src/Infrastructure/OpenApi/OpenApiSchemaChecker.php,src/Infrastructure/OpenApi/OpenApiGateIndex.php,src/Infrastructure/OpenApi/OpenApiRequestGate.php,src/Adapters/OpenApi/Http/OpenApiGateMiddleware.php

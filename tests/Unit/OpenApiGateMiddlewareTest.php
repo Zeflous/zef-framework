@@ -109,6 +109,35 @@ final class OpenApiGateMiddlewareTest extends TestCase
         ], $body['errors']);
     }
 
+    public function testRealHeadersAreMatchedCaseInsensitively(): void
+    {
+        $handler = new RecordingHandler(new HttpTextResponse(200, [], 'ok'));
+        $middleware = new OpenApiGateMiddleware($this->middlewareSpec());
+
+        // PSR-7 preserves the original header case ('X-REQUEST-ID'); the
+        // documented parameter name is 'X-Request-Id' — the lookup must be
+        // case-insensitive and the value still schema-checked.
+        $response = $middleware->process(
+            $this->request('GET', '/users/7', headers: [
+                'Authorization' => 'Bearer tok',
+                'X-REQUEST-ID' => 'abcdefghijk',
+            ]),
+            $handler,
+        );
+
+        self::assertSame(400, $response->getStatusCode());
+
+        /** @var array<string, mixed> $body */
+        $body = json_decode((string) $response->getBody(), true);
+        $errors = $body['errors'] ?? null;
+        self::assertIsArray($errors);
+        $first = $errors[0] ?? null;
+        self::assertIsArray($first);
+        self::assertSame('header', $first['in']);
+        self::assertSame('X-Request-Id', $first['name']);
+        self::assertSame('string is longer than maxLength 8', $first['message']);
+    }
+
     public function testConstructionFailsClosedOnInvalidDocument(): void
     {
         $this->expectException(OpenApiGateException::class);
@@ -208,7 +237,10 @@ final class OpenApiGateMiddlewareTest extends TestCase
         self::assertSame('response', $first['in']);
 
         self::assertNotEmpty($logger->errors);
-        self::assertStringContainsString('echo', $logger->errors[0]);
+        self::assertSame(
+            '[ZEF][openapi] response contract violation for echo: expected string, got object',
+            $logger->errors[0],
+        );
     }
 
     public function testResponseValidationFlagsUndocumentedStatus(): void
@@ -267,6 +299,7 @@ final class OpenApiGateMiddlewareTest extends TestCase
             responses: ['200' => new Response('User')],
             parameters: [
                 new Parameter('id', ParameterLocation::Path, new Schema(type: SchemaType::Integer)),
+                new Parameter('X-Request-Id', ParameterLocation::Header, new Schema(type: SchemaType::String, maxLength: 8), '', required: true),
             ],
             security: [new SecurityRequirement(['bearer' => []])],
         ));
