@@ -1,8 +1,14 @@
-# Arsitektur — ZEF Framework v2.7.0 (Edisi Hexagonal)
+# Arsitektur — ZEF Framework (Edisi Hexagonal)
 
 Dokumen ini menjelaskan bagaimana monolith `zef_framework_v2.7.0.php` dipecah menjadi
 struktur hexagonal (Ports & Adapters), aturan arah dependensi antar-layer, dan peta
 pemindahan setiap subsistem.
+
+> **Snapshot struktur: v2.34.1.** Section 1–7 menggambarkan prinsip dan keadaan
+> terkini pohon `src/` (630 file PHP: Domain 287 · Application 136 · Infrastructure 115 ·
+> Adapters 60 · Compat 23). Section 8–11 adalah catatan historis per rilis
+> (v2.8.0–v2.11.0) yang dipertahankan sebagai rekam jejak refactor; evolusi lanjutan
+> v2.12.0–v2.34.1 diringkas di section 12. Rincian per rilis: `docs/CHANGELOG-v*.md`.
 
 ---
 
@@ -32,19 +38,23 @@ Tiga keputusan desain yang menentukan seluruh hasil refactor:
                     ┌─────────────────────────────────────────┐
                     │              ADAPTERS (inbound)          │
                     │  HTTP · Router · Kernel · Runtime · MW   │
+                    │  Security MW · OpenApi gate + CLI        │
                     └───────────────────────┬─────────────────┘
                                             │ memakai
                     ┌───────────────────────▼─────────────────┐
                     │        APPLICATION (orkestrasi)          │
                     │  Container · CQRS · Message · Job ·      │
                     │  Event · Observability · Security core   │
+                    │  Database · EventSourcing · OpenApi ·    │
+                    │  Resource · Rules · Runtime async        │
                     └──────────┬────────────────┬─────────────┘
                                │ memakai port   │ delegasi teknologi
                     ┌──────────▼──────────┐  ┌──▼───────────────────┐
                     │  DOMAIN (port, VO)  │  │ INFRASTRUCTURE       │
                     │  kontrak murni,     │  │ (adapter outbound)   │
-                    │  tanpa I/O          │  │ cache · redis · otlp │
-                    └─────────────────────┘  │ config · env · apcu  │
+                    │  tanpa I/O          │  │ cache · redis · pdo  │
+                    └─────────────────────┘  │ otlp · s3 · console  │
+                                             │ config · env · apcu  │
                                              └──────────────────────┘
                     ┌─────────────────────────────────────────┐
                     │  COMPAT — shim PSR kondisional (23)      │
@@ -71,43 +81,53 @@ Aturan arah dependensi (diberlakukan secara dokumentatif; bisa diperiksa dengan 
 
 ## 3. Definisi Layer
 
-### `src/Domain` — Port, Kontrak, Value Object (116 file)
+### `src/Domain` — Port, Kontrak, Value Object (287 file)
 Lapisan terdalam. Berisi **semua interface port** (Cache, CQRS, Message, Job, Security,
-Observability, Resource, Runtime), **value object murni** (`JobEnvelope`, `MessageEnvelope`,
-`SpanContext`, `CqrsContext`, `RateLimitDecision`, `SecurityRequest`, …), **enum** hasil
+Observability, Resource, Runtime, Database, EventSourcing, OpenApi, Storage, Rules),
+**value object murni** (`JobEnvelope`, `MessageEnvelope`, `SpanContext`, `CqrsContext`,
+`RateLimitDecision`, `SecurityRequest`, …), **enum** hasil
 keputusan (`SecurityVerdict`, `ReplayDecision`, `AuthenticationStatus`, `ServiceLifetime`),
 **validator murni** (`HeaderValidator`, `RouteConstraintValidator`, `DependencyGraphValidator`,
 …), **exception** kontrak kegagalan seluruh framework, serta konstanta
 (`HttpReasonPhrases`) dan kebijakan arsitektur (`ArchitecturePolicy`).
-**Ciri layer:** tidak ada I/O, tidak ada global state, tidak tahu HTTP/Redis/dll.
+**Ciri layer:** tidak ada I/O, tidak ada global state, tidak tahu HTTP/Redis/PDO/dll.
 
-### `src/Application` — Mesin Orkestrasi In-Process (45 file)
+### `src/Application` — Mesin Orkestrasi In-Process (136 file)
 Implementasi alur kerja framework yang berjalan dalam satu proses:
-`Container` (auto-wiring, compiler, registry, scope), bus `CQRS` (Command/Query + idempotency),
-`InProcessMessageBus` + serializer, `InProcessJobWorker` + queue in-memory, `EventDispatcher`
-(PSR-14), inti `Observability` (Span, Tracer, Telemetry facade, BatchSpanProcessor,
-CorrelationPropagator), dan mesin keamanan in-process (boundary, CSRF manager, origin policy,
-rate limiter in-memory, replay protector).
+`Container` (auto-wiring, compiler, registry, scope, radix-tree namespace), bus `CQRS`
+(Command/Query + idempotency), `InProcessMessageBus` + serializer, `InProcessJobWorker` +
+queue in-memory, `EventDispatcher` (PSR-14), inti `Observability` (Span, Tracer, Telemetry
+facade, BatchSpanProcessor, CorrelationPropagator), mesin keamanan in-process (boundary,
+CSRF manager, origin policy, rate limiter in-memory, replay protector), orkestrasi
+`Database` (QueryBuilder, Migrator, Repository), `EventSourcing` (AggregateRoot, Projector),
+`OpenApi` (spec builder + validation engine), `Resource`, `Rules` (sync + async engine),
+dan `Runtime` async fiber-native (v2.26.0).
 **Ciri layer:** mengorkestrasi port dari Domain; tidak menyentuh jaringan/disk secara langsung.
 
-### `src/Infrastructure` — Adapter Outbound (15 file)
+### `src/Infrastructure` — Adapter Outbound (115 file)
 Semua titik sentuh teknologi eksternal: `ConfigAggregator` + modul registry (I/O konfigurasi),
 `EnvironmentSecretProvider`, `Env` (getenv), cache store in-memory + clock + normalizer,
-`RedisRateLimiter` & `RedisSharedRateLimitStore` (script Lua), `ApcuRateLimiter`, dan
-`OtlpHttpJsonExporter` (exporter telemetri via HTTP).
-**Ciri layer:** satu-satunya tempat yang tahu Redis/APCu/OTLP/getenv.
+`RedisRateLimiter` & `RedisSharedRateLimitStore` (script Lua), `ApcuRateLimiter`,
+`OtlpHttpJsonExporter` (exporter telemetri via HTTP), `Database` (PDO connection, job queue
+tabel, outbox), `EventSourcing` (EventStore + outbox PDO), `Job` (`RedisStreamJobQueue`,
+failed-storage), `Message` (transport in-memory), `OpenApi` (serializer JSON/YAML + cache),
+`Security` (AES-GCM, key ring, lock Redis), `Storage` (S3-compatible SigV4 in-house + Local),
+dan `Console` (mesin generator ZEF Maker, 22 kelas, v2.16.0).
+**Ciri layer:** satu-satunya tempat yang tahu Redis/APCu/OTLP/PDO/S3/getenv.
 
-### `src/Adapters` — Adapter Inbound (29 file)
+### `src/Adapters` — Adapter Inbound (60 file)
 Semua cara dunia luar **masuk** ke framework:
 - `Adapters/Http` — implementasi PSR-7/17 (`Request`, `Response`, `Stream`, `Uri`,
   `UploadedFile`, `RequestFactory`, `Psr17Factory`, `RequestBodyPolicy`, …).
-- `Adapters/Router` — radix tree router O(log n) + `RouteDefinition`.
+- `Adapters/Router` — radix tree router O(log n) + `RouteDefinition` + `RouteCache`.
 - `Adapters/Kernel` — `Application`, `Dispatcher`, `MiddlewarePipeline`, `PipelineFactory`,
   `ResponseEmitter`, `ModuleBootstrapper` (composition root HTTP).
 - `Adapters/Runtime` — `RoadRunnerRuntime`, `RoadRunnerWorkerAdapter`, `InMemoryWorker`,
-  `BlockingSleeper`.
+  `BlockingSleeper`, `TinkerSession`.
 - `Adapters/Security` — middleware PSR-15 (`AuthenticationMiddleware`,
-  `SecurityRuntimeMiddleware`).
+  `SecurityRuntimeMiddleware`, `RateLimitMiddleware` v2.25.0).
+- `Adapters/OpenApi` — `OpenApiGateMiddleware` (runtime validation + security enforcement,
+  v2.33.0) + `GenerateSpecCommand` (CLI `openapi:generate`, v2.20.0).
 
 ### `src/Compat` — Shared Kernel PSR (23 file)
 Shim kondisional PSR-3/7/11/14/15/17 (`if (!interface_exists(...))`) — mempertahankan
@@ -164,6 +184,12 @@ perilaku monolith; guard membuatnya no-op ketika paket `psr/*` resmi terpasang.
    kedua mekanisme hidup berdampingan tanpa konflik.
 
 ## 6. Verifikasi Perilaku (hasil nyata)
+
+Angka pada tabel di bawah adalah hasil verifikasi **saat pemecahan monolith** (v2.7.0).
+Keadaan v2.34.1: 630 file PHP di `src/` (Domain 287 · Application 136 · Infrastructure 115 ·
+Adapters 60 · Compat 23), lint first-party **861 file / 0 gagal**, self-test **501/501**,
+suite PHPUnit **3.539 test / 140.435 asersi / 6 skipped** (evidence junit CI), gate mutasi
+agregat **85/90** tercapai sejak v2.15.0 (lihat `docs/QUALITY.md`).
 
 | Pengujian                                  | Monolith | Hasil refactor |
 |--------------------------------------------|----------|----------------|
@@ -415,3 +441,36 @@ sehingga semua ID kanonik dan terbukti ada. ID sintetis mesin internal (`@inner:
 - Bukti dunia nyata: boot aplikasi demo penuh → tree sealed otomatis, 18 service,
   71 segmen mentah → 23 edge (**rasio kompresi 3.09**), batch fetch
   `getByPrefix('Zef\Framework\Container')` live.
+
+## 12. Evolusi v2.12.0 – v2.34.1 (ringkas)
+
+Rilis pasca-v2.11.0 tetap memegang disiplin yang sama (aditif, satu gerbang
+`validateAndFreeze()`, deptrac fail-on-uncovered). Peta singkat tambahan struktur per
+rilis — rincian lengkap di `docs/CHANGELOG-v<versi>.md`:
+
+| Rilis | Tema | Tambahan struktur utama |
+|-------|------|--------------------------|
+| v2.12.0 | Composer packaging & QA toolchain | — (tooling) |
+| v2.13.0–v2.13.1 | Hardening + baseline mutasi (Infection, 8.907 mutan) | — |
+| v2.14.0–v2.14.9 | Mutation deep-dive (kurikulum `EDGE-CASE-MATRIX.md`) | test `EdgeMatrix*` |
+| v2.15.0 | Fase 10 — **gate mutasi 85/90 TERCAPAI** (9.032 mutan, MSI 90.4/93.1) | `src/Middleware` masuk scope |
+| v2.16.0 | ZEF Maker (scaffold CLI) | `Infrastructure/Console` (22 kelas) |
+| v2.17.0 | Dokumentasi resmi + toolchain | — |
+| v2.18.0 | Database Core | `Domain/Database`, `Infrastructure/Database` (PDO, QueryBuilder, Migrator, Repository) |
+| v2.19.0 | Event Sourcing + Transactional Outbox | `Domain/EventSourcing`, `Infrastructure/EventSourcing` (EventStore PDO/InMemory, relay `outbox:work`) |
+| v2.20.0 | OpenAPI 3.1 Documentation Module | `Domain/OpenApi`, `Infrastructure/OpenApi`, `Adapters/OpenApi` (CLI `openapi:generate`) |
+| v2.21.0–v2.21.1 | Configuration System v2 (+ hardening) | overlay env `ZEF_*__KEY`, secrets provider, skema fail-fast |
+| v2.22.0 | Transaction orchestration & UoW-lite | hook after-commit, command bus transaksional (`TRANSACTION-HOOKS.md`) |
+| v2.23.0 | Config observability + cache index radix | `RadixTreeCache`, `MeterConfigMetrics`, `ConfigMigrator` |
+| v2.24.0 | Redis Distributed Lock (issue #68) | `RedisLockStore`, `LeaderElector`, scheduler cluster-safe |
+| v2.25.0 | Rate limiting lanjutan | sliding window + token bucket, `TieredRateLimiter`, `RateLimitMiddleware` |
+| v2.26.0 | Async Runtime fiber-native | `FiberScheduler`, `FiberChannel`, `Semaphore`, `WaitGroup` |
+| v2.27.0 | Async Rules | `AsyncRuleEngine` konkuren di atas fiber scheduler |
+| v2.28.0 | Env static facade deprecation | jalur migrasi `EnvInterface` (issue #55) |
+| v2.29.0 | DX release | `make:app`, `rr:init`, `doctor`, `TUTORIAL-CQRS-101.md`, `PLUGINS.md` |
+| v2.30.0 | Ecosystem Ports | `Domain/Storage`, `Infrastructure/Storage` (S3 SigV4 in-house, Local), `MessageTransportInterface`, `PdoJobQueue` |
+| v2.31.0 | Zero-Debt & Fail-Closed Gates | relay outbox lease-based `outbox:work` |
+| v2.32.0 | Unified Queue & Broker | `RedisStreamJobQueue`, CLI `queue:work/failed/retry/flush` |
+| v2.33.0 | OpenAPI Runtime Gate | `OpenApiGateMiddleware` (`OPENAPI-GATE-PARITY.md`) |
+| v2.34.0 | Stub Pre-scan CI | korpus fixture `tests/**` masuk gate (`docs/security/stub-prescan.md`) |
+| v2.34.1 | Signed Available-at Parity | perbaikan padNano/`JobRowCodec` (`JOB-QUEUE-PARITY.md`) |

@@ -1,8 +1,16 @@
-# ZEF — Edge-Case Matrix (Mutation Deep-Dive Round 3, v2.14.2)
+# ZEF — Edge-Case Matrix (Kurikulum Uji Adversarial)
 
 > Prinsip: **mutan yang lolos = edge case yang belum di-assert.** Dokumen ini adalah
 > kurikulum adversarial untuk ronde 3: setiap test yang lahir harus mewakili
 > skenario nyata (bukan tautologis), dan chunk Infection adalah ujiannya.
+
+> **STATUS: KAMPANYE SELESAI.** Tujuan multi-ronde **MSI 85/90 TERCAPAI di v2.15.0**
+> (full-run 9.032 mutan: MSI 90.4 / Covered 93.1) dan dipertahankan setelah ZEF Maker
+> masuk scope (v2.16.0: 9.419 mutan, MSI 90.77 / Covered 93.38; zona Console 100%).
+> Gate `--min-msi=85 --min-covered-msi=90` kini dijalankan `mutation.yml` pada setiap
+> rilis tag. Dokumen ini dipertahankan sebagai rekam jejak kurikulum + triage
+> ekuivalen-mutant; seluruh angka pada section 1 adalah **keadaan awal ronde 3
+> (v2.14.2)**, bukan keadaan saat ini.
 
 ## 1. Baseline terukur (awal ronde 3, komposisi segar)
 
@@ -22,9 +30,11 @@
 | adapters-runtime-sec | 518 | 270 | 204 | 38 | 53.3 | 57.5 |
 | **GLOBAL** | **8907** | **5892** | **~2267** | **~734** | **~66.2** | **~72.3** |
 
-Gate aktif: `--min-msi=64 --min-covered-msi=68` (ronde 2). Target ronde 3:
-**MSI ≥ 74 / covered ≥ 78** (naik bertahap bersama tiap tier; 85/90 tetap tujuan
-multi-ronde — sisa adalah ekuivalen-mutant & not-covered struktural).
+Gate aktif **saat dokumen ditulis** (awal ronde 3): `--min-msi=64 --min-covered-msi=68`
+(ronde 2). Target ronde 3: **MSI ≥ 74 / covered ≥ 78** (naik bertahap bersama tiap
+tier; 85/90 tetap tujuan multi-ronde — sisa adalah ekuivalen-mutant & not-covered
+struktural). Keadaan akhir kampanye: gate **85/90** (v2.15.0) — lihat banner status
+di atas dan `docs/QUALITY.md`.
 
 ## 2. Peta mutator → dimensi adversarial
 
@@ -146,6 +156,8 @@ guard dedup.
 | fase 6 (Domain inti) | 5 chunk: rescfg 73→**86**, sec 85→**95**, rest 64→**89**, core-a 72→**89**, core-b 59→**93** | escape **487→132** (+509 kill / 2.151 mutan) | EdgeMatrixF6Core/Rest/Mixed **124 test / 818 asersi** + Round2 **26 test / 87 asersi**; lingkungan dipulihkan dari 7z v2.14.7 (8 detik); gate 71.5/76→**75/80**; v2.14.8 |
 | fase 7 (app zones) | job/rest-a/rest-b/message/container (5 sub-chunk) | job 50, rest-a 49, rest-b 39, message 26, container 29 mutan dibunuh | job **90/92**, rest-a **92/96**, rest-b **91/93**, message **97/97**, container **88/92** | EdgeMatrixF7* 6 file **99 test / 434 asersi**; gate tetap 75/80; arsip kembali ke ZIP normal (permintaan user) |
 | fase 8–9 (Infra + c3) | f8-cache **96/98**, f8-config **94/96**, f8-secinfra **85/89**, f8-obsinfra **90/91**, f9-c3a **83/89**, f9-c3b **82/82**, f9-c3c **96/96** | secinfra 11→28 tertriase (not-covered 121→12 via ekstensi nyata); obsinfra 35→22; c3a 34→32; c3b 23 (semua timing-equivalent) | zone baru seluruhnya ≥ 82, mayoritas ≥ 90 | EdgeMatrixF8* (4 file) + EdgeMatrixF9C3Test +18 test; APCu/phpredis/redis-server 8.0.2 lokal (6 test berhenti skip); inventaris ekuivalen di CHANGELOG-v2.14.9; gate 75/80→**77/82**; v2.14.9 |
+| fase 10 (Container sisa + Kernel/Application + Middleware) | zona sisa Container + `Application.php` + `src/Middleware` masuk scope | Container sisa 67 → zona 96/97/99; Application.php 63 → 92 | full-run 9.032 mutan — **MSI 90.4 / Covered 93.1** | ~35 anotasi `@infection-ignore-all` terjustifikasi; **gate 85/90 TERCAPAI**; v2.15.0 |
+| fase 16 (ZEF Maker) | `src/Infrastructure/Console` (22 kelas) masuk `source.directories` | Console 387/387 mutan mati | **MSI 100% / Covered 100%** (zona) | EdgeMatrixMakerTest + EdgeMatrixMakerGeneratorsTest 66 test / 503 asersi; full-run 9.419 mutan MSI **90.77/93.38**; gate tertahan 85/90; v2.16.0 |
 
 ## 6. Inventaris ekuivalen-mutant (jujur, tidak dipalsukan)
 
@@ -177,7 +189,12 @@ CHANGELOG-v2.14.4.md):**
 - Guard `function_exists` platform-invariant; `ini_restore` vs `ini_set` pada
   routing error_log Infection (akar fatal lingkungan uji — diperbaiki).
 
-## Fase 10 — Container sisa + Kernel/Application + Middleware masuk scope (v2.15.0)
+## 7. Penutup kampanye (v2.15.0 & v2.16.0)
+
+Dua fase penutup yang menuntaskan target multi-ronde 85/90 — detail lengkap di
+`docs/CHANGELOG-v2.15.0.md` dan `docs/CHANGELOG-v2.16.0.md`.
+
+### Fase 10 — Container sisa + Kernel/Application + Middleware masuk scope (v2.15.0)
 
 - Zona Container sisa 67 escape → 96/97/99; Application.php 63 → 92 (OTLP sink E2E:
   span attr/status/durasi, event exception, log lifecycle, flush per-request);
@@ -192,7 +209,7 @@ CHANGELOG-v2.14.4.md):**
   edgeKey tak-terobservasi, jalur lempar identik, dsb.).
 - Full-run akhir: 9.032 mutan — MSI 90.4 / Covered MSI 93.1 → gate 85/90 TERCAPAI.
 
-## Fase 16 — ZEF Maker: seluruh permukaan CLI masuk gate (v2.16.0)
+### Fase 16 — ZEF Maker: seluruh permukaan CLI masuk gate (v2.16.0)
 
 - Logika generator dikeluarkan dari `bin/zef` (procedural, di luar gate) →
   `src/Infrastructure/Console` (22 class, masuk `source.directories`). Kurikulum:

@@ -191,7 +191,35 @@ REPL mengeksekusi kode arbitrer; `--force` adalah *override* eksplisit.
 
 ---
 
-## 6. Antrean kerja — `bin/zef queue:*` (v2.32.0)
+## 6. Dokumentasi API — `bin/zef openapi:generate` (v2.20.0)
+
+Merakit dokumen **OpenAPI 3.1** dari route table + atribut PHP 8.4 — tanpa dependensi
+eksternal (serializer JSON/YAML in-house) — lalu menulisnya ke `openapi.json` /
+`openapi.yaml`. Spesifikasi yang sama disajikan `SpecHandler` dengan ETag/304 dan
+Swagger UI dev-only di mode pengembangan.
+
+```bash
+php bin/zef openapi:generate                        # openapi.json (default)
+php bin/zef openapi:generate --format=yaml          # openapi.yaml
+php bin/zef openapi:generate --output=api/spec.json --pretty
+php bin/zef openapi:generate --postman=postman.json # export Postman v2.1
+php bin/zef openapi:generate --base-url=https://api.example.test
+```
+
+| Opsi | Efek |
+|------|------|
+| `--format=json\|yaml` | format keluaran (default `json`) |
+| `--output=<path>` | path berkas hasil (default `openapi.<format>`) |
+| `--pretty` / `--no-pretty` | pretty-print JSON/YAML |
+| `--postman=<path>` | export tambahan Postman v2.1 dari spesifikasi |
+| `--base-url=<url>` | tambahkan entri `server` ke dokumen |
+
+Validasi **runtime** berjalan terpisah lewat `OpenApiGateMiddleware` (v2.33.0) —
+matriks paritas 12 batas: [`OPENAPI-GATE-PARITY.md`](OPENAPI-GATE-PARITY.md).
+
+---
+
+## 7. Antrean kerja — `bin/zef queue:*` (v2.32.0)
 
 Empat perintah operasional di atas driver antrean yang di-wire di container
 (`InMemoryJobQueue`, `PdoJobQueue`, atau `RedisStreamJobQueue` — semuanya
@@ -274,7 +302,31 @@ $services[InProcessJobWorker::class]    = fn () => new InProcessJobWorker(
 
 ---
 
-## 7. Keluar-kode
+## 8. Relay outbox — `bin/zef outbox:work` (v2.31.0)
+
+Worker relay untuk **transactional outbox** (pola dikirim v2.19.0 bersama Event
+Sourcing): memindahkan entri outbox ke event bus via **lease claiming** — aman
+dijalankan N worker sekaligus karena setiap batch diklaim eksklusif dalam window
+lease. Membutuhkan `OutboxRelay` yang di-wire di container.
+
+```bash
+php bin/zef outbox:work                   # daemon: jalan sampai dihentikan
+php bin/zef outbox:work --once            # satu batch lalu keluar
+php bin/zef outbox:work --batch=100 --lease=30
+php bin/zef outbox:work --interval=500 --max=10
+```
+
+| Opsi | Efek |
+|------|------|
+| `--once` | mode batch — drain satu batch lalu keluar |
+| `--batch=<n>` | ukuran klaim per batch (default `100`) |
+| `--lease=<sec>` | window lease detik (default `30`) — worker lain tak boleh mengambil entri yang sama |
+| `--interval=<ms>` | jeda polling saat idle (default `500`) |
+| `--max=<n>` | berhenti setelah `n` batch |
+
+---
+
+## 9. Keluar-kode
 
 | Kode | Arti |
 |------|------|
