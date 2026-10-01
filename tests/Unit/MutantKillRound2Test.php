@@ -219,7 +219,6 @@ final class MutantKillRound2Test extends TestCase
         $obj = $ref->newInstanceWithoutConstructor();
         $ctor = $ref->getConstructor();
         self::assertNotNull($ctor);
-        $ctor->setAccessible(true);
 
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage("Invalid catalog locale 'BAD LOCALE!'.");

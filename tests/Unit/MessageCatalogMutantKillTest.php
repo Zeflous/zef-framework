@@ -24,7 +24,6 @@ final class MessageCatalogMutantKillTest extends TestCase
         $obj = $ref->newInstanceWithoutConstructor();
         $ctor = $ref->getConstructor();
         self::assertNotNull($ctor);
-        $ctor->setAccessible(true);
         $ctor->invoke($obj, $templates);
 
         return $obj;

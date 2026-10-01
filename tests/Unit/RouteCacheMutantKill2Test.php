@@ -59,23 +59,23 @@ final class RouteCacheMutantKill2Test extends TestCase
     /** The temp file is "<path>.<12 hex>.tmp" (kills Concat/ConcatOperandRemoval/Increment/DecrementInteger:59). */
     public function testTempFileNamePatternOnWriteFailure(): void
     {
-        if (function_exists('posix_getuid') && posix_getuid() === 0) {
-            self::markTestSkipped('permission-based test requires a non-root user');
-        }
-        $ro = $this->dir . '/ro';
-        mkdir($ro, 0o777, true);
-        chmod($ro, 0o555);
+        // An over-long temp file name makes file_put_contents() fail on every
+        // platform (Linux NAME_MAX / Windows MAX_PATH) without relying on
+        // POSIX permissions, so the failure path is deterministic.
+        $path = $this->dir . '/' . str_repeat('a', 300) . '.php';
+
+        set_error_handler(static fn (): bool => true); // swallow the expected E_WARNING
 
         try {
-            RouteCache::write($this->router(), $ro . '/routes.php');
-            self::fail('writing into a read-only directory must fail');
+            RouteCache::write($this->router(), $path);
+            self::fail('an over-long temp file name must fail the write');
         } catch (RouteCacheException $e) {
             self::assertMatchesRegularExpression(
-                "#^Cannot write route cache '.*/routes\.php\.[0-9a-f]{12}\.tmp'\.$#",
+                "#^Cannot write route cache '.*\.php\.[0-9a-f]{12}\.tmp'\.$#",
                 $e->getMessage(),
             );
         } finally {
-            chmod($ro, 0o777);
+            restore_error_handler();
         }
     }
 
