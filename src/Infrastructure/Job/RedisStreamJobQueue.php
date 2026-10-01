@@ -130,7 +130,21 @@ final readonly class RedisStreamJobQueue implements JobQueueInterface
         local bestId = false
         for i = 1, #entries do
             local fields = entries[i][2]
-            if fields[8] <= ARGV[1] then
+            local avail = fields[8]
+            -- Well-formed shape: 20 digits, or '-' plus 19 digits. Anything
+            -- else is corrupt and MUST stay claimable: a short positive value
+            -- (e.g. '20') sorts above every 20-char 'now' string, so without
+            -- this guard the entry is never selected, never XDEL'd and never
+            -- reported, wedging the stream forever (issue #280).
+            local wellFormed = false
+            if type(avail) == 'string' and string.len(avail) == 20 then
+                if string.match(avail, '^%d+$') then
+                    wellFormed = true
+                elseif string.sub(avail, 1, 1) == '-' and string.match(string.sub(avail, 2), '^%d+$') then
+                    wellFormed = true
+                end
+            end
+            if (not wellFormed) or avail <= ARGV[1] then
                 if best == false then
                     best = fields
                     bestId = entries[i][1]

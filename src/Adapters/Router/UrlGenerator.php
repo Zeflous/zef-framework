@@ -32,7 +32,7 @@ final readonly class UrlGenerator
     }
 
     /**
-     * @param array<string,null|scalar|\Stringable> $params
+     * @param array<string,scalar|\Stringable> $params
      *
      * @throws \InvalidArgumentException         for unknown route names, missing
      *                                           or invalid parameter types
@@ -62,7 +62,7 @@ final readonly class UrlGenerator
      * placeholders are substituted (validated) and marked consumed; static
      * segments pass through untouched.
      *
-     * @param array<string,null|scalar|\Stringable> $params
+     * @param array<string,scalar|\Stringable> $params
      * @param array<string,true> $consumed
      */
     private function segment(string $name, string $part, array $params, array &$consumed): string
@@ -88,15 +88,24 @@ final readonly class UrlGenerator
     private function stringify(string $route, string $param, mixed $value): string
     {
         if (is_scalar($value)) {
-            return (string) $value;
+            $string = (string) $value;
+        } elseif ($value instanceof \Stringable) {
+            $string = (string) $value;
+        } else {
+            throw new \InvalidArgumentException(
+                "Route '{$route}' parameter '{$param}' must be scalar or Stringable, got "
+                . get_debug_type($value) . '.',
+            );
         }
-        if ($value instanceof \Stringable) {
-            return (string) $value;
+        // A value that stringifies to '' (e.g. false) would produce an empty
+        // path segment, so the generated URL could never match its own route
+        // (issue #282) — reject it instead of emitting a broken URL.
+        if ($string === '') {
+            throw new \InvalidArgumentException(
+                "Route '{$route}' parameter '{$param}' must not be empty.",
+            );
         }
 
-        throw new \InvalidArgumentException(
-            "Route '{$route}' parameter '{$param}' must be scalar or Stringable, got "
-            . get_debug_type($value) . '.',
-        );
+        return $string;
     }
 }

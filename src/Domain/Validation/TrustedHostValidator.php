@@ -12,7 +12,21 @@ namespace Zef\Framework\Validation;
 
 final readonly class TrustedHostValidator
 {
-    public function __construct(private array $trustedHosts = []) {}
+    public function __construct(private array $trustedHosts = [])
+    {
+        // Reject malformed allow-list entries up front: a non-string element
+        // would otherwise reach the `(string) $allowed` cast below, emitting
+        // an "Array to string conversion" warning (fatal under
+        // failOnWarning=true) or an uncaught \Error for objects (issues
+        // #278 / #281). Failing loudly here keeps the cast total.
+        foreach ($trustedHosts as $allowed) {
+            if (!is_string($allowed) && !$allowed instanceof \Stringable) {
+                throw new \InvalidArgumentException(
+                    'Trusted host entries must be strings, got ' . get_debug_type($allowed) . '.',
+                );
+            }
+        }
+    }
 
     /**
      * Reject a host that is not in the trusted allow-list.
