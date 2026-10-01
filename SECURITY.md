@@ -18,12 +18,12 @@ long-term-support branch.
 
 | Version line | Supported with security fixes |
 |:--|:--|
-| `main` — documented release **v2.34.0** | :white_check_mark: Yes |
+| `main` — documented release **v2.34.1** | :white_check_mark: Yes |
 | 2.29.x | :warning: Best effort — the fix lands on `main` first |
 | 2.28.x and older | :x: No |
 
 If you depend on an older line, the fix is available by upgrading. Version history
-is recorded in [`docs/CHANGELOG-v2.34.0.md`](docs/CHANGELOG-v2.34.0.md) and the
+is recorded in [`docs/CHANGELOG-v2.34.1.md`](docs/CHANGELOG-v2.34.1.md) and the
 earlier `docs/CHANGELOG-*.md` files.
 
 ## Reporting a vulnerability
