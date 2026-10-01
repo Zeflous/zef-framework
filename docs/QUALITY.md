@@ -22,7 +22,7 @@ composer format:check && composer phpcs && composer rector:check   # 7. gaya & m
 alat sengaja dilewati agar gerbang mencerminkan kode yang dimiliki proyek ini.
 
 ```
-Linted 417 PHP files — 0 failure(s).
+Linted 861 PHP files — 0 failure(s).
 ```
 
 ## 2. Suite PHPUnit — `composer test`
@@ -32,7 +32,7 @@ Cakupan sumber: `src/`, `modules/`, `plugins/` (kecuali `src/Compat`, yang merup
 artefak byte-stabil hasil ekstraksi v2.7.0).
 
 ```
-Tests: 1498, Assertions: 16861, Skipped: 5
+Tests: 3539, Assertions: 140435, Skipped: 6
 ```
 
 Suite self-test internal (`bin/zef --self-test`) berdiri **terpisah** dan tidak
@@ -201,8 +201,12 @@ apcu, redis`, `apc.enable_cli=1`) dan server Redis pada `127.0.0.1:6399`.
 Workflow pendamping: `docs-check.yml` (bangun dokumentasi read-only untuk PR),
 `pages.yml` (terbitkan API docs ke GitHub Pages), `php-sast.yml`,
 `sonarcloud.yml` (gate kualitas cloud-side SonarCloud),
-`secret-scan.yml`, `dependency-review.yml`, `composer-lock.yml`, `sbom.yml`,
-`phpbench.yml`, `auto-fix.yml`, `release.yml`, `release-drafter.yml`.
+`secret-scan.yml`, `dependency-review.yml`, `composer-lock.yml`, `sbom.yml` +
+`sbom-generate.yml`, `phpbench.yml`, `auto-fix.yml`, `auto-update-prs.yaml`,
+`release.yml`, `release-drafter.yml`, `mutation.yml` (gate agregat 85/90 saat
+rilis tag), `stub-prescan.yml` (pre-scan korpus fixture, v2.34.0),
+`code-scanning-issues.yml`, `snyk-security.yml`, dan `wiki.yml` (manual, opt-in —
+lihat `docs/WIKI-INDEX.md`).
 
 Nama job `PHP lint, audit, static analysis and style` bersifat **load-bearing** —
 nama itu harus persis sama dengan *required status check context* pada branch
