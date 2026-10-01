@@ -141,9 +141,15 @@ final readonly class RedisStreamJobQueue implements JobQueueInterface
                 else
                     local prio = tonumber(fields[10])
                     local bestPrio = tonumber(best[10])
+                    -- Tie-break note: XRANGE returns entries in ascending
+                    -- stream-id order, so the FIRST entry seen with the best
+                    -- (priority, available_at) pair already carries the
+                    -- smallest id. A lexicographic id comparison here would
+                    -- not preserve that order ('...-10' < '...-2' byte-wise)
+                    -- and could replace the earliest entry with a later one
+                    -- (issue #313) — so only strictly-better pairs replace.
                     if prio > bestPrio
-                        or (prio == bestPrio and (fields[8] < best[8]
-                            or (fields[8] == best[8] and entries[i][1] < bestId)))
+                        or (prio == bestPrio and fields[8] < best[8])
                     then
                         best = fields
                         bestId = entries[i][1]
