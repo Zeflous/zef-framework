@@ -211,7 +211,7 @@ final class AuditMedium306to318RegressionTest extends TestCase
     public function testDeferredProviderChainsTriggerBeforeFreeze(): void
     {
         $container = new Container();
-        $container->register('app.svc', static fn ($ctx, string $a) => $a . '/app', ['a.svc']);
+        $container->register('app.svc', static fn ($ctx, string $a): string => $a . '/app', ['a.svc']);
         $container->registerProvider(new AuditMediumDeferredA());
         $container->registerProvider(new AuditMediumDeferredB());
 
@@ -289,7 +289,7 @@ final class AuditMedium306to318RegressionTest extends TestCase
         // Next tick resumes AFTER the committed cursor (10) — fire 10 must
         // not be duplicated.
         $scheduler->tick(100);
-        $times = array_map(static fn (JobEnvelope $e) => $e->availableAtUnixNano, $queue->enqueued);
+        $times = array_map(static fn (JobEnvelope $e): int => $e->availableAtUnixNano, $queue->enqueued);
         self::assertSame([10, 20], $times, 'The next tick must enqueue only the remaining fire, not replay the committed one.');
     }
 
@@ -444,7 +444,7 @@ final class AuditMediumEnvStub implements EnvInterface
     {
         $raw = $this->values[$name] ?? '';
 
-        return $raw === '' ? [] : array_map('trim', explode(',', $raw));
+        return $raw === '' ? [] : array_map(trim(...), explode(',', $raw));
     }
 
     #[\Override]
@@ -465,7 +465,7 @@ final class AuditMediumDeferredA implements ServiceProviderInterface, Deferrable
     {
         // Defines a service that depends on ANOTHER deferred provider's id —
         // the dependency only becomes visible after this provider runs.
-        $container->register('a.svc', static fn ($ctx, string $b) => 'a+' . $b, ['b.svc']);
+        $container->register('a.svc', static fn ($ctx, string $b): string => 'a+' . $b, ['b.svc']);
     }
 }
 
@@ -478,7 +478,7 @@ final class AuditMediumDeferredB implements ServiceProviderInterface, Deferrable
 
     public function register(ServiceRegistrarInterface $container): void
     {
-        $container->register('b.svc', static fn ($ctx) => 'b');
+        $container->register('b.svc', static fn ($ctx): string => 'b');
     }
 }
 

@@ -206,7 +206,9 @@ final class FieldRules
     public function definitions(): array
     {
         return array_map(
-            fn (array $r): array => ['rule' => $r['rule'], 'params' => $r['params'], 'nullable' => $this->nullableChain],
+            fn (array $r): array => [
+                'rule' => $r['rule'], 'params' => $r['params'], 'nullable' => $this->nullableChain,
+            ],
             $this->rules,
         );
     }

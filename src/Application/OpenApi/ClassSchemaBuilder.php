@@ -174,17 +174,17 @@ final readonly class ClassSchemaBuilder
             maxItems: $meta->maxItems ?? $schema->maxItems,
             uniqueItems: $meta->uniqueItems ?? $schema->uniqueItems,
             items: $this->itemsFromMeta($meta) ?? $schema->items,
-            additionalProperties: $schema->additionalProperties,
-            additionalPropertiesAllowed: $schema->additionalPropertiesAllowed,
-            default: $meta->default ?? $schema->default,
-            example: $meta->example ?? $schema->example,
-            enum: $meta->enum ?? $schema->enum,
             // Composition members must survive the meta merge, otherwise an
             // attribute-annotated union/intersection property silently
             // degrades to a bare `type: object` schema (issue #314).
             oneOf: $schema->oneOf,
             anyOf: $schema->anyOf,
             allOf: $schema->allOf,
+            additionalProperties: $schema->additionalProperties,
+            additionalPropertiesAllowed: $schema->additionalPropertiesAllowed,
+            default: $meta->default ?? $schema->default,
+            example: $meta->example ?? $schema->example,
+            enum: $meta->enum ?? $schema->enum,
         );
     }
 
