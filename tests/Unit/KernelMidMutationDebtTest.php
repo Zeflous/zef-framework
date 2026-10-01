@@ -123,41 +123,51 @@ final class KernelMidMutationDebtTest extends TestCase
     }
 
     /**
-     * Kills :39 Ternary (isSeekable() ? tell() : null — swapped) and the :40
-     * arithmetic family (Minus, Ternary, NotIdentical on $size/$consumed,
-     * LogicalAnd variants; IncrementInteger on the max(0,..) floor).
+     * Audit #303 contract: emit() rewinds a seekable body BEFORE header
+     * reconciliation, so a stream left mid-way by inspecting middleware
+     * (ETag hashing) still emits the full representation and its exact
+     * Content-Length survives.
      *
-     * The max(0 -> -1) DecrementInteger is a DOCUMENTED EQUIVALENT: a real
-     * stream never has consumed > size, so max(-1, remaining) === max(0,
-     * remaining) for every reachable input.
+     * Kills the rewind-removal mutant (mid-way + exact full-size CL would
+     * drop instead of keep), the drained-stream echo guard (readLengths
+     * must be non-empty: the body is actually re-read from the start), the
+     * :39 Ternary swap (isSeekable() ? tell() : null — tell() throws on the
+     * non-seekable probe) and the unknown-size drop family
+     * (NotIdentical/LogicalAnd variants, including the declared-"0" case).
      */
     public function testEmitterContentLengthArithmeticUsesSizeMinusConsumed(): void
     {
         $this->armShadows();
 
         try {
-            // Seekable stream positioned mid-way: size 10, tell 4 -> remaining 6.
-            // Exact CL "6" kept (Minus->Plus gives 14; Ternary swap gives 10).
+            // Seekable stream positioned mid-way: size 10, tell 4. The emitter
+            // rewinds FIRST (audit #303), so remaining is the full 10 octets —
+            // an exact "10" survives. Without the rewind: 10 - 4 = 6 != 10,
+            // the header would be dropped (the old, pinned-wrong behaviour).
             $this->headerCalls = [];
             $mid = new ScriptedStream('0123456789');
             $mid->seek(4);
-            $this->emitForeign(200, ['Content-Length' => '6'], $mid);
-            self::assertSame(['Content-Length: 6'], $this->headerLines());
+            $this->emitForeign(200, ['Content-Length' => '10'], $mid);
+            self::assertSame(['Content-Length: 10'], $this->headerLines());
 
-            // Same stream, CL matching the full size (10) != remaining (6) -> dropped.
+            // Same mid-way stream, CL "6" (describes only the unconsumed tail
+            // of the old semantics): the emitter rewound, so remaining 10 != 6
+            // and the lying header is dropped.
             $this->headerCalls = [];
             $mid2 = new ScriptedStream('0123456789');
             $mid2->seek(4);
-            $this->emitForeign(200, ['Content-Length' => '10'], $mid2);
+            $this->emitForeign(200, ['Content-Length' => '6'], $mid2);
             self::assertSame([], $this->headerLines());
 
-            // Fully consumed stream: size 5, tell 5 -> remaining 0; CL "0" kept
-            // (kills IncrementInteger max(0 -> 1): mutant computes 1 != 0).
+            // Fully drained stream (size 5, tell 5): the rewind restores the
+            // full representation — exact "5" kept AND the body is actually
+            // re-read (audit #303: 0 echoed octets was the reported symptom).
             $this->headerCalls = [];
             $drained = new ScriptedStream('abcde');
             $drained->seek(5);
-            $this->emitForeign(200, ['Content-Length' => '0'], $drained);
-            self::assertSame(['Content-Length: 0'], $this->headerLines());
+            $this->emitForeign(200, ['Content-Length' => '5'], $drained);
+            self::assertSame(['Content-Length: 5'], $this->headerLines());
+            self::assertNotSame([], $drained->readLengths, 'The drained stream must be re-read from the start');
 
             // Non-seekable stream: tell() unavailable -> remaining = size.
             // CL "5" over a 5-octet non-seekable body is exact and kept

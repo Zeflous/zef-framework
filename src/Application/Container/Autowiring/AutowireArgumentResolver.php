@@ -49,7 +49,7 @@ final readonly class AutowireArgumentResolver
         array $classStack,
     ): void {
         if ($p->unsupportedTypeReason !== null) {
-            $this->assertSupportedType($ownerClass, $p);
+            $this->assertSupportedType($ownerClass, $p, $args);
         } elseif ($p->isVariadic) {
             $this->planVariadic($container, $ownerClass, $p, $deps, $args);
         } elseif ($p->injectId !== null) {
@@ -69,11 +69,22 @@ final readonly class AutowireArgumentResolver
         }
     }
 
-    /** Unsupported type: optional parameters fall back to the declared default. */
-    private function assertSupportedType(string $ownerClass, AutowireParameterSpec $p): void
+    /**
+     * Unsupported type: required parameters fail loudly; OPTIONAL parameters
+     * bake their declared default (or null) into the plan — audit #305: the
+     * generated factory is strictly positional, so an omitted entry would
+     * shift every later constructor argument into the wrong slot.
+     *
+     * @param list<array{0:'dep'|'literal',1:int|string}> $args
+     */
+    private function assertSupportedType(string $ownerClass, AutowireParameterSpec $p, array &$args): void
     {
         if ($p->isOptional) {
-            return; // rely on the declared default
+            $args[] = ['literal', $p->hasDefaultValue
+                ? $this->valueServices->renderDefault($ownerClass, $p)
+                : 'null'];
+
+            return;
         }
 
         $message = "Cannot autowire {$ownerClass}::\${$p->name}: {$p->unsupportedTypeReason}.";

@@ -95,7 +95,14 @@ final class ETagMiddleware implements MiddlewareInterface
         if (!in_array($method, ['GET', 'HEAD'], true) || $response->getStatusCode() !== 200) {
             return $response;
         }
-        $body = (string) $response->getBody();
+        $stream = $response->getBody();
+        $body = (string) $stream;
+        // Audit #303: (string) leaves a seekable stream's cursor at EOF. The
+        // same stream object flows on to the emitter on the cache-miss path,
+        // so restore the position other consumers expect (start of body).
+        if ($stream->isSeekable()) {
+            $stream->rewind();
+        }
         if ($body === '' && $response->getHeaderLine('Last-Modified') === '') {
             return $response;
         }

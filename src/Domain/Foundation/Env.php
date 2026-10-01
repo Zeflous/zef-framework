@@ -141,6 +141,35 @@ final class Env implements EnvInterface
         return filter_var($raw, FILTER_VALIDATE_BOOL);
     }
 
+    /**
+     * Audit #304: strict, fail-closed boolean parsing. filter_var without
+     * FILTER_NULL_ON_FAILURE maps ANY unrecognized value (including
+     * 'enabled'/'disabled' — spellings the framework's own security parser
+     * accepts) to false, so one config typo silently disabled a security
+     * control. Recognized words map plainly; anything else refuses to boot.
+     */
+    #[\Override]
+    public function readBoolStrict(string $name, bool $default = false): bool
+    {
+        $raw = getenv($name);
+        if ($raw === false || trim($raw) === '') {
+            return $default;
+        }
+        $value = strtolower(trim($raw));
+        if (in_array($value, ['1', 'true', 'yes', 'on', 'enabled'], true)) {
+            return true;
+        }
+        if (in_array($value, ['0', 'false', 'no', 'off', 'disabled'], true)) {
+            return false;
+        }
+
+        throw new \InvalidArgumentException(sprintf(
+            "%s='%s' is not a recognized boolean (allowed: 1/0, true/false, yes/no, on/off, enabled/disabled).",
+            $name,
+            $raw,
+        ));
+    }
+
     #[\Override]
     public function readString(string $name, string $default = ''): string
     {

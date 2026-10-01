@@ -52,6 +52,19 @@ interface EnvInterface
 
     public function readBool(string $name, bool $default = false): bool;
 
+    /**
+     * Read a boolean env var with STRICT, fail-closed parsing (audit #304):
+     * recognized words map plainly, any other non-empty value throws instead
+     * of silently mapping to false — one typo must never disable a security
+     * control or flip a secure default.
+     *
+     * Recognized: 1/0, true/false, yes/no, on/off, enabled/disabled
+     * (case-insensitive). Unset or blank falls back to $default.
+     *
+     * @throws \InvalidArgumentException when the value is set but unrecognized
+     */
+    public function readBoolStrict(string $name, bool $default = false): bool;
+
     public function readString(string $name, string $default = ''): string;
 
     /** @return list<string> */
