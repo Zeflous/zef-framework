@@ -86,6 +86,16 @@ final readonly class RedisStreamJobQueue implements JobQueueInterface
     private const int FIELD_COUNT = 9;
 
     /**
+     * Decimal digit alphabet of the order-preserving available_at encoding
+     * (Sonar php:S1192: the literal was duplicated four times before the
+     * constant existed).
+     */
+    private const string DIGITS = '0123456789';
+
+    /** The 9's complement digit alphabet — the negative-encoding mirror of {@see DIGITS}. */
+    private const string DIGITS_COMPLEMENT = '9876543210';
+
+    /**
      * Atomic enqueue: capacity guard → duplicate-id backstop → XADD.
      *
      * KEYS[1] stream, KEYS[2] live-id set
@@ -349,7 +359,7 @@ final readonly class RedisStreamJobQueue implements JobQueueInterface
         }
         $magnitude = str_pad(ltrim((string) $value, '-'), 19, '0', \STR_PAD_LEFT);
 
-        return '-' . strtr($magnitude, '0123456789', '9876543210');
+        return '-' . strtr($magnitude, self::DIGITS, self::DIGITS_COMPLEMENT);
     }
 
     /**
@@ -369,11 +379,11 @@ final readonly class RedisStreamJobQueue implements JobQueueInterface
      */
     private static function decodeNano(string $stored): string
     {
-        if (strlen($stored) === 20 && strspn($stored, '0123456789') === 20) {
+        if (strlen($stored) === 20 && strspn($stored, self::DIGITS) === 20) {
             return $stored;
         }
-        if (strlen($stored) === 20 && $stored[0] === '-' && strspn(substr($stored, 1), '0123456789') === 19) {
-            $magnitude = ltrim(strtr(substr($stored, 1), '9876543210', '0123456789'), '0');
+        if (strlen($stored) === 20 && $stored[0] === '-' && strspn(substr($stored, 1), self::DIGITS) === 19) {
+            $magnitude = ltrim(strtr(substr($stored, 1), self::DIGITS_COMPLEMENT, self::DIGITS), '0');
 
             return '-' . ($magnitude === '' ? '0' : $magnitude);
         }
