@@ -11,7 +11,10 @@ namespace Zef\Framework\OpenApi;
  *
  * Immutable recursive value object. When `ref` is set the instance is a
  * reference placeholder and toArray() emits only the $ref key (plus
- * nullable when requested); all sibling constraints are ignored.
+ * nullable when requested); all sibling constraints are ignored. When
+ * `type` is null the schema is composition-only (pure oneOf/anyOf/allOf,
+ * audit #302) and toArray() omits the type key — emitting a typeless
+ * composition is the only satisfiable shape for union-typed properties.
  *
  * ReDoS policy: pattern length is bounded (2048) mirroring the framework
  * validation engine.
@@ -29,7 +32,7 @@ final readonly class Schema
      * @param list<bool|float|int|string> $enum
      */
     public function __construct(
-        public SchemaType $type = SchemaType::Object,
+        public ?SchemaType $type = SchemaType::Object,
         public ?string $format = null,
         public ?string $description = null,
         public ?string $title = null,
@@ -119,7 +122,7 @@ final readonly class Schema
      *     '$ref': string,
      *     nullable?: true,
      * }|array{
-     *     type: string,
+     *     type?: string,
      *     format?: string,
      *     description?: string,
      *     title?: string,

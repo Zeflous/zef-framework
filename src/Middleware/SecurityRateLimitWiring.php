@@ -64,8 +64,10 @@ final class SecurityRateLimitWiring
         return new RateLimitMiddleware(
             new TieredRateLimiter($limiter),
             $rules,
-            failOpen: $env->readBool('ZEF_SECURITY_RATE_LIMIT_FAIL_OPEN'),
-            trustIdentityHeader: $env->readBool('ZEF_SECURITY_RATE_LIMIT_TRUST_IDENTITY_HEADER'),
+            // Audit #304: strict fail-closed parsing — a typo'd value must
+            // refuse to boot, not silently flip a security-relevant flag.
+            failOpen: $env->readBoolStrict('ZEF_SECURITY_RATE_LIMIT_FAIL_OPEN'),
+            trustIdentityHeader: $env->readBoolStrict('ZEF_SECURITY_RATE_LIMIT_TRUST_IDENTITY_HEADER'),
             logger: $logger,
         );
     }

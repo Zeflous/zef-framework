@@ -22,10 +22,22 @@ final class ResponseEmitter
         bool $closeBody = false,
         bool $suppressBody = false,
     ): void {
+        // Audit #303: middleware that inspects the body (e.g. ETagMiddleware
+        // hashing it for the ETag) leaves a seekable stream's cursor at EOF;
+        // rewind BEFORE header emission so both Content-Length reconciliation
+        // and the body echo start from the beginning of the representation.
+        $this->rewindIfSeekable($response->getBody());
         if (!headers_sent()) {
             $response = $this->emitHeaders($response);
         }
         $this->emitBody($response, $suppressBody, $closeBody);
+    }
+
+    private function rewindIfSeekable(StreamInterface $body): void
+    {
+        if ($body->isSeekable()) {
+            $body->rewind();
+        }
     }
 
     /**

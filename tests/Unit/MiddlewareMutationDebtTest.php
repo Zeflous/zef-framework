@@ -713,6 +713,24 @@ final class MiddlewareDebtEnv implements EnvInterface
     }
 
     #[\Override]
+    public function readBoolStrict(string $name, bool $default = false): bool
+    {
+        $raw = $this->values[$name] ?? null;
+        if ($raw === null || trim($raw) === '') {
+            return $default;
+        }
+        $value = strtolower(trim($raw));
+        if (in_array($value, ['1', 'true', 'yes', 'on', 'enabled'], true)) {
+            return true;
+        }
+        if (in_array($value, ['0', 'false', 'no', 'off', 'disabled'], true)) {
+            return false;
+        }
+
+        throw new \InvalidArgumentException($name . "='" . $raw . "' is not a recognized boolean.");
+    }
+
+    #[\Override]
     public function readString(string $name, string $default = ''): string
     {
         return $this->values[$name] ?? $default;

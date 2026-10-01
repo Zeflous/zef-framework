@@ -100,7 +100,7 @@ final readonly class SecurityPolicy
         }
 
         return new self(
-            rateLimitEnabled: $env->readBool('ZEF_SECURITY_RATE_LIMIT'),
+            rateLimitEnabled: self::envBool($env, 'ZEF_SECURITY_RATE_LIMIT', false, $logger),
             rateLimitMaxRequests: self::envPositiveInt('ZEF_SECURITY_RATE_LIMIT_MAX', 100, $env),
             rateLimitWindowSeconds: self::envPositiveInt('ZEF_SECURITY_RATE_LIMIT_WINDOW', 60, $env),
             rateLimitMaxKeys: self::envPositiveInt('ZEF_SECURITY_RATE_LIMIT_MAX_KEYS', 10000, $env),
@@ -108,14 +108,14 @@ final readonly class SecurityPolicy
             csrfSecret: $csrfSecret,
             csrfCookieName: trim($env->readString('ZEF_SECURITY_CSRF_COOKIE', 'ZEF-XSRF-TOKEN')),
             csrfHeaderName: trim($env->readString('ZEF_SECURITY_CSRF_HEADER', 'X-CSRF-Token')),
-            csrfSecureCookie: $env->readBool('ZEF_SECURITY_CSRF_SECURE', true),
-            csrfHttpOnlyCookie: $env->readBool('ZEF_SECURITY_CSRF_HTTP_ONLY', true),
+            csrfSecureCookie: self::envBool($env, 'ZEF_SECURITY_CSRF_SECURE', true, $logger),
+            csrfHttpOnlyCookie: self::envBool($env, 'ZEF_SECURITY_CSRF_HTTP_ONLY', true, $logger),
             csrfSameSite: trim($env->readString('ZEF_SECURITY_CSRF_SAMESITE', 'Strict')),
             allowedOrigins: $env->readCsv('ZEF_SECURITY_ALLOWED_ORIGINS'),
-            originEnabled: $env->readBool('ZEF_SECURITY_ORIGIN_POLICY'),
+            originEnabled: self::envBool($env, 'ZEF_SECURITY_ORIGIN_POLICY', false, $logger),
             csrfTokenBytes: max(16, self::envPositiveInt('ZEF_SECURITY_CSRF_TOKEN_BYTES', 32, $env)),
             csrfTokenTtlSeconds: self::envPositiveInt('ZEF_SECURITY_CSRF_TTL', 0, $env),
-            csrfSpaMode: $env->readBool('ZEF_SECURITY_CSRF_SPA', false),
+            csrfSpaMode: self::envBool($env, 'ZEF_SECURITY_CSRF_SPA', false, $logger),
         );
     }
 
@@ -207,6 +207,22 @@ final readonly class SecurityPolicy
         if ($originEnabled && $allowedOrigins === []) {
             throw new \InvalidArgumentException('Origin policy enabled without allowed origins.');
         }
+    }
+
+    /**
+     * Audit #304: every security boolean now flows through the strict,
+     * fail-closed parser (v2.31.0 audit C-11 semantics — previously only
+     * ZEF_SECURITY_CSRF did). The lenient readBool() mapped unrecognized
+     * values like 'enabled' to FALSE, silently disabling the control.
+     */
+    private static function envBool(EnvInterface $env, string $name, bool $default, ?LoggerInterface $logger): bool
+    {
+        $raw = $env->readString($name);
+        if (trim($raw) === '') {
+            return $default;
+        }
+
+        return self::envBoolStrict($name, $raw, $logger);
     }
 
     /**
