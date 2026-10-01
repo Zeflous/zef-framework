@@ -20,6 +20,12 @@ namespace Zef\Framework\Job;
  */
 final class JobRowCodec
 {
+    /** Decimal digit alphabet of the order-preserving available_at encoding. */
+    private const string DIGITS = '0123456789';
+
+    /** The 9's complement digit alphabet — the negative-encoding mirror of {@see DIGITS}. */
+    private const string DIGITS_COMPLEMENT = '9876543210';
+
     /** @param array<string, mixed> $row */
     public static function hydrate(array $row): JobEnvelope
     {
@@ -60,6 +66,60 @@ final class JobRowCodec
         }
 
         return '';
+    }
+
+    /**
+     * Encode a nano timestamp as a 20-character string whose lexicographic
+     * order equals numeric order over the entire signed 64-bit domain (the
+     * parity contract pinned in docs/JOB-QUEUE-PARITY.md, issue #272).
+     *
+     * Lua numbers are doubles, exact only up to 2^53 — one nanosecond
+     * timestamp (~1.7e18) already exceeds that, so two distinct deadlines
+     * can collapse to the same double and silently swap order. Non-negative
+     * deadlines are zero-padded to 20 digits — byte-identical to the
+     * v2.32-v2.34 storage, so existing entries and the Lua comparisons keep
+     * their exact bytes. Negative deadlines are '-' plus the 9's complement
+     * of the 19-digit zero-padded magnitude: the leading '-' (0x2D) sorts
+     * before every digit (0x30), so all negatives precede all positives, and
+     * the per-digit complement restores magnitude order inside the negatives.
+     */
+    public static function encodeNano(int $value): string
+    {
+        if ($value >= 0) {
+            return sprintf('%020d', $value);
+        }
+        $magnitude = str_pad(ltrim((string) $value, '-'), 19, '0', \STR_PAD_LEFT);
+
+        return '-' . strtr($magnitude, self::DIGITS, self::DIGITS_COMPLEMENT);
+    }
+
+    /**
+     * Decode the stored 20-character representation back to the plain
+     * numeric string {@see hydrate()} casts — mirroring the complement
+     * transform of {@see encodeNano()} ('-9223372036854775808' round-trips
+     * PHP_INT_MIN exactly, the magnitude never touching a float).
+     *
+     * Anything that is not one of the two well-formed shapes — 20 digits,
+     * or '-' plus 19 digits — is a corrupt field: an unpadded negative
+     * written by a pre-v2.34.1 release, or raw bytes that never came from
+     * {@see encodeNano()}. The claim has already destroyed the entry, so the
+     * hydrate failure surfaces exactly once and the queue keeps flowing —
+     * the documented corrupt-entry doctrine (docs/JOB-QUEUE-PARITY.md row
+     * 10); realistic queues (non-negative deadlines) are unaffected because
+     * their stored bytes are unchanged.
+     */
+    public static function decodeNano(string $stored): string
+    {
+        if (strlen($stored) === 20 && strspn($stored, self::DIGITS) === 20) {
+            return $stored;
+        }
+        if (strlen($stored) === 20 && $stored[0] === '-' && strspn(substr($stored, 1), self::DIGITS) === 19) {
+            $magnitude = ltrim(strtr(substr($stored, 1), self::DIGITS_COMPLEMENT, self::DIGITS), '0');
+
+            return '-' . ($magnitude === '' ? '0' : $magnitude);
+        }
+
+        throw new RedisJobQueueException('Job queue entry has a corrupt available_at field.');
     }
 
     private static function decodePayload(string $payload): mixed
