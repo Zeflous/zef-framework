@@ -14,6 +14,7 @@ namespace Zef\Framework\Tests\Unit;
 use PHPUnit\Framework\TestCase;
 use Zef\Framework\Security\AesGcmEncryptor;
 use Zef\Framework\Security\ApcuRateLimiter;
+use Zef\Framework\Security\RateLimitStoreException;
 use Zef\Framework\Security\RedisRateLimiter;
 use Zef\Framework\Security\RedisSharedRateLimitStore;
 use Zef\Framework\Security\RotatingKeyRing;
@@ -408,10 +409,13 @@ final class EdgeMatrixF8SecInfraTest extends TestCase
         $store->increment('k', 10, 1000);
     }
 
-    /** Elemen non-numerik → fallback: count 0, reset now+window; elemen numerik →
-     * (int) cast nyata. Matriks 4 kasus (kedua/0-saja/1-saja/kedua numerik) membunuh
-     * index-swap :47 & :48, Increment fallback 0→±1, Plus (now+window → now-window),
-     * Ternary swap, dan CastString/CastInt pada jalur cast. */
+    /**
+     * Audit #321: non-numeric script results now FAIL CLOSED — the old
+     * ternaries silently guessed a counter (count 0 / reset now+window),
+     * which the RateLimitStoreException contract explicitly forbids. The
+     * matrix now pins: any non-numeric member throws
+     * unexpectedIncrementResult(); fully-numeric results still cast int.
+     */
     public function testIncrementElementSanitizationMatrix(): void
     {
         if (!class_exists(\Redis::class)) {
@@ -419,12 +423,29 @@ final class EdgeMatrixF8SecInfraTest extends TestCase
         }
         $make = static fn (array $eval): RedisSharedRateLimitStore => new RedisSharedRateLimitStore(self::fakeRedis(evalResult: $eval));
 
-        // keduanya non-numerik → fallback penuh (count 0, reset = now + window)
-        self::assertSame(['count' => 0, 'reset' => 5030], $make(['bukan-angka', 'juga-bukan'])->increment('k', 30, 5000));
-        // hanya [0] numerik → count ter-cast (3.7 → 3), reset fallback — membunuh index-swap :47
-        self::assertSame(['count' => 3, 'reset' => 5030], $make(['3.7', 'juga-bukan'])->increment('k', 30, 5000));
-        // hanya [1] numerik → count fallback 0, reset ter-cast — membunuh index-swap :48
-        self::assertSame(['count' => 0, 'reset' => 1200], $make(['bukan-angka', '1200.9'])->increment('k', 30, 5000));
+        // keduanya non-numerik → fail closed, bukan tebakan count 0
+        try {
+            $make(['bukan-angka', 'juga-bukan'])->increment('k', 30, 5000);
+            self::fail('non-numeric members must throw unexpectedIncrementResult()');
+        } catch (RateLimitStoreException $e) {
+            self::assertStringContainsString('unexpected', $e->getMessage());
+        }
+
+        // hanya [0] numerik → tetap fail closed
+        try {
+            $make(['3.7', 'juga-bukan'])->increment('k', 30, 5000);
+            self::fail('a non-numeric reset must throw unexpectedIncrementResult()');
+        } catch (RateLimitStoreException $e) {
+            self::assertStringContainsString('unexpected', $e->getMessage());
+        }
+
+        // hanya [1] numerik → tetap fail closed
+        try {
+            $make(['bukan-angka', '1200.9'])->increment('k', 30, 5000);
+            self::fail('a non-numeric count must throw unexpectedIncrementResult()');
+        } catch (RateLimitStoreException $e) {
+            self::assertStringContainsString('unexpected', $e->getMessage());
+        }
         // keduanya numerik → cast int penuh pada kedua jalur
         self::assertSame(['count' => 3, 'reset' => 1200], $make(['3.7', '1200.9'])->increment('k', 30, 5000));
     }
@@ -445,11 +466,11 @@ final class EdgeMatrixF8SecInfraTest extends TestCase
         ];
         foreach (['skalar', 'tanpa-reset', 'tanpa-count', 'non-numerik'] as $case) {
             self::assertNull(
-                new RedisSharedRateLimitStore($fakes[$case])->peek('k', 1000),
+                new RedisSharedRateLimitStore($fakes[$case])->peek('k', 60, 1000),
                 "kasus {$case} wajib null",
             );
         }
-        self::assertSame(['count' => 5, 'reset' => 1234], new RedisSharedRateLimitStore($fakes['valid'])->peek('k', 1000));
+        self::assertSame(['count' => 5, 'reset' => 1234], new RedisSharedRateLimitStore($fakes['valid'])->peek('k', 60, 1000));
     }
 
     /** Membunuh max(0,..):35 dua arah + max(1,..):37 dua arah via reset relatif. */
@@ -547,7 +568,7 @@ final class F8FakeSharedStore implements SharedRateLimitStoreInterface
     }
 
     #[\Override]
-    public function peek(string $key, int $now): ?array
+    public function peek(string $key, int $windowSeconds, int $now): ?array
     {
         return $this->next;
     }

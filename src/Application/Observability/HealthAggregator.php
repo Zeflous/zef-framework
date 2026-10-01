@@ -128,7 +128,24 @@ final readonly class HealthAggregator
         $deadline = $overallTimeoutMs !== null ? $started + $overallTimeoutMs * 1_000_000 : null;
         $checks = [];
         $degraded = false;
-        foreach ($this->indicatorsForGroup($group) as $indicator) {
+        $indicators = $this->indicatorsForGroup($group);
+        if ($indicators === []) {
+            // Audit #332: zero probes for the requested group is a wiring
+            // failure (e.g. a mis-wired health.indicator tag collected
+            // nothing) — a green /health that never ran a single check is
+            // fail-open. Report degraded with an explicit marker check so
+            // both the JSON and the Prometheus output carry the signal.
+            return [
+                'status' => self::STATUS_DEGRADED,
+                'checks' => [[
+                    'name' => 'health.indicators',
+                    'status' => HealthCheckResult::DOWN,
+                    'message' => 'no health indicators registered for group \'' . $group . '\'',
+                ]],
+                'tookMs' => round((hrtime(true) - $started) / 1_000_000, 3),
+            ];
+        }
+        foreach ($indicators as $indicator) {
             $check = $this->probeCheck($indicator, $deadline);
             if ($check['status'] !== HealthCheckResult::UP) {
                 $degraded = true;

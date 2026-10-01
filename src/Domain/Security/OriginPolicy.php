@@ -71,7 +71,11 @@ final class OriginPolicy
     private static function parseOrigin(string $origin): array
     {
         $parts = parse_url($origin);
-        $hasCredentials = isset($parts['user'], $parts['pass']);
+        // Audit #330: user-info presence is ANY component — parse_url sets
+        // 'user' without 'pass' for 'https://user@host', and the old AND
+        // let that origin through, silently dropping the userinfo instead
+        // of rejecting it as malformed.
+        $hasCredentials = isset($parts['user']) || isset($parts['pass']);
         $hasExtraComponents = isset($parts['query'])
             || isset($parts['fragment'])
             || (isset($parts['path']) && $parts['path'] !== '');

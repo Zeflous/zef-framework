@@ -348,19 +348,43 @@ final class HttpTest extends TestCase
     {
         $middleware = new CorsMiddleware('https://app.example');
 
+        // Audit #328: a preflight is an OPTIONS that carries the
+        // Access-Control-Request-Method marker (fetch spec) — answered 204.
         $preflight = $middleware->process(
-            $this->request()->withMethod('OPTIONS')->withHeader('Origin', 'https://app.example'),
+            new ServerRequest('OPTIONS', new Uri('/'), headers: [
+                'Origin' => 'https://app.example',
+                'Access-Control-Request-Method' => 'POST',
+            ]),
             $this->handler(static fn (): Response => new Response(200)),
         );
         self::assertSame(204, $preflight->getStatusCode());
         self::assertSame('https://app.example', $preflight->getHeaderLine('Access-Control-Allow-Origin'));
 
+        // A plain OPTIONS without the marker is NOT a preflight: it must
+        // reach the handler (decorated with CORS headers for the origin).
+        $plainOptions = $middleware->process(
+            new ServerRequest('OPTIONS', new Uri('/'), headers: ['Origin' => 'https://app.example']),
+            $this->handler(static fn (): Response => new Response(200, [], 'options-body')),
+        );
+        self::assertSame(200, $plainOptions->getStatusCode(), 'plain OPTIONS falls through to the handler');
+        self::assertSame('options-body', (string) $plainOptions->getBody());
+        self::assertSame('https://app.example', $plainOptions->getHeaderLine('Access-Control-Allow-Origin'));
+
         $simple = $middleware->process(
-            $this->request()->withHeader('Origin', 'https://app.example'),
+            new ServerRequest('GET', new Uri('/'), headers: ['Origin' => 'https://app.example']),
             $this->handler(static fn (): Response => new Response(200, [], 'ok')),
         );
         self::assertSame(200, $simple->getStatusCode());
         self::assertSame('https://app.example', $simple->getHeaderLine('Access-Control-Allow-Origin'));
+
+        // allowAll must not echo '*' when the request carries no Origin at all.
+        $allowAll = new CorsMiddleware('*');
+        $noOrigin = $allowAll->process(
+            $this->request(),
+            $this->handler(static fn (): Response => new Response(200, [], 'ok')),
+        );
+        self::assertSame(200, $noOrigin->getStatusCode());
+        self::assertSame('', $noOrigin->getHeaderLine('Access-Control-Allow-Origin'), 'no Origin header means no CORS echo');
     }
 
     public function testGlobalErrorHandlerConvertsThrowablesIntoProblemResponses(): void

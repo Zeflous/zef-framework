@@ -297,7 +297,9 @@ final class EdgeMatrixF8CacheTest extends TestCase
     public function testKeyGrammarIsFullyAnchored(): void
     {
         $n = new DefaultCacheKeyNormalizer();
-        foreach (['!abc', 'abc!', 'a b', 'a#', ''] as $bad) {
+        // Audit #327: whitespace-padded variants join the rejected set —
+        // trim() used to alias ' user:42 ' onto 'user:42'.
+        foreach (['!abc', 'abc!', 'a b', 'a#', '', ' k ', " k \t", "\nk", 'k '] as $bad) {
             try {
                 $n->normalize($bad);
                 self::fail('key ' . var_export($bad, true) . ' must be rejected');
@@ -305,8 +307,19 @@ final class EdgeMatrixF8CacheTest extends TestCase
                 self::assertSame('Invalid cache key.', $e->getMessage());
             }
         }
-        self::assertSame('k', $n->normalize(" k \t"));
+        self::assertSame('k', $n->normalize('k'));
         self::assertSame('a.b:c/d-e_9', $n->normalize('a.b:c/d-e_9'));
+        // Audit #327: TaggableCache routing keys keep their NUL marker verbatim
+        // (a plain user key 'zef-tag:x' can never collide with the index).
+        self::assertSame("\0zef-tag:products", $n->normalize("\0zef-tag:products"));
+        self::assertSame("\0zef-keytags:k", $n->normalize("\0zef-keytags:k"));
+
+        try {
+            $n->normalize("\0other");
+            self::fail('an unreserved NUL-prefixed key must be rejected');
+        } catch (\InvalidArgumentException $e) {
+            self::assertSame('Invalid cache key.', $e->getMessage());
+        }
     }
 
     // ------------------------------------------------------------------

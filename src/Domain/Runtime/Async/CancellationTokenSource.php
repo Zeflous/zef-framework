@@ -61,8 +61,14 @@ final class CancellationTokenSource
 
     /**
      * Cancels the source and fires registered callbacks in registration
-     * order. Callbacks run synchronously on the caller's stack; exceptions
-     * they throw are not intercepted.
+     * order. Callbacks run synchronously on the caller's stack.
+     *
+     * Audit #323: a throwing callback no longer permanently drops the
+     * remaining callbacks — every registered callback runs (isolated), and
+     * the FIRST exception is rethrown after the batch completes. The
+     * callback list is snapshotted and cleared BEFORE firing, so the
+     * register-after-cancel "fires at once" path always observes an empty
+     * list, and cancel() stays idempotent.
      */
     public function cancel(): bool
     {
@@ -72,11 +78,20 @@ final class CancellationTokenSource
 
         $this->cancelled = true;
 
-        foreach ($this->callbacks as $callback) {
-            $callback();
-        }
-
+        $pending = $this->callbacks;
         $this->callbacks = [];
+
+        $firstError = null;
+        foreach ($pending as $callback) {
+            try {
+                $callback();
+            } catch (\Throwable $error) {
+                $firstError ??= $error;
+            }
+        }
+        if ($firstError !== null) {
+            throw $firstError;
+        }
 
         return true;
     }

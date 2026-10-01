@@ -80,6 +80,13 @@ final readonly class CorsMiddleware implements MiddlewareInterface
         if (!$this->isOptions($request) || $this->allowedOrigins === []) {
             return null;
         }
+        // Audit #328: only a request that carries Access-Control-Request-Method
+        // is a CORS preflight (fetch spec). A plain OPTIONS call — even from
+        // an allowed origin — must fall through to the handler instead of
+        // being short-circuited with a 204.
+        if (trim($request->getHeaderLine('Access-Control-Request-Method')) === '') {
+            return null;
+        }
         $echo = $this->negotiatedOrigin($request);
         if ($echo === null) {
             return $this->disallowedPreflightResponse($request);
@@ -115,10 +122,17 @@ final readonly class CorsMiddleware implements MiddlewareInterface
     private function negotiatedOrigin(ServerRequestInterface $request): ?string
     {
         $origin = trim($request->getHeaderLine('Origin'));
-        if ($this->allowAll && $this->allowedOrigins !== []) {
+        // Audit #328: no Origin header means there is nobody to allow — '*' is
+        // never echoed for a request that carries no Origin at all (the old
+        // allowAll branch answered '*', and its allowedOrigins guard was dead:
+        // the constructor guarantees a non-empty list whenever allowAll).
+        if ($origin === '') {
+            return null;
+        }
+        if ($this->allowAll) {
             return '*';
         }
-        if ($this->allowedOrigins === [] || $origin === '' || !$this->originIsAllowed($origin)) {
+        if ($this->allowedOrigins === [] || !$this->originIsAllowed($origin)) {
             return null;
         }
 

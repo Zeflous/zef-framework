@@ -38,22 +38,27 @@ final readonly class RedisSharedRateLimitStore implements SharedRateLimitStoreIn
     {
         $result = $this->redis->eval(
             self::LUA_INCREMENT,
-            [self::PREFIX . hash('sha256', $key), (string) $now, (string) $windowSeconds],
+            [self::bucketKey($key, $windowSeconds), (string) $now, (string) $windowSeconds],
             1,
         );
         if (!is_array($result) || count($result) !== 2) {
             throw RateLimitStoreException::unexpectedIncrementResult();
         }
-        $count = is_numeric($result[0] ?? null) ? (int) $result[0] : 0;
-        $reset = is_numeric($result[1] ?? null) ? (int) $result[1] : $now + $windowSeconds;
+        // Audit #321: fail closed when either member is non-numeric — the
+        // class contract (RateLimitStoreException::unexpectedIncrementResult)
+        // promises the caller fails loudly instead of guessing a counter
+        // value; the old ternaries silently guessed count=0 / reset=now+window.
+        if (!is_numeric($result[0]) || !is_numeric($result[1])) {
+            throw RateLimitStoreException::unexpectedIncrementResult();
+        }
 
-        return ['count' => $count, 'reset' => $reset];
+        return ['count' => (int) $result[0], 'reset' => (int) $result[1]];
     }
 
     #[\Override]
-    public function peek(string $key, int $now): ?array
+    public function peek(string $key, int $windowSeconds, int $now): ?array
     {
-        $bucket = $this->redis->hMGet(self::PREFIX . hash('sha256', $key), ['count', 'reset']);
+        $bucket = $this->redis->hMGet(self::bucketKey($key, $windowSeconds), ['count', 'reset']);
         if (
             !is_array($bucket)
             || !isset($bucket['count'], $bucket['reset'])
@@ -64,5 +69,17 @@ final readonly class RedisSharedRateLimitStore implements SharedRateLimitStoreIn
         }
 
         return ['count' => (int) $bucket['count'], 'reset' => (int) $bucket['reset']];
+    }
+
+    /**
+     * Audit #322: the bucket identity binds the window size. The storage key
+     * previously hashed only the logical key, so re-using one key with a
+     * different windowSeconds silently mixed buckets — exactly the
+     * corruption the in-process limiters throw for and TieredRateLimiter
+     * keys away from.
+     */
+    private static function bucketKey(string $key, int $windowSeconds): string
+    {
+        return self::PREFIX . hash('sha256', $key . '>' . $windowSeconds);
     }
 }

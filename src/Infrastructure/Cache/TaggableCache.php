@@ -81,7 +81,7 @@ final readonly class TaggableCache implements CacheInterface, TtlAwareCacheInter
             // when the key is already a member.
             $this->writeTagMembers($tag, $members);
         }
-        $this->writeKeyTags($key, $normalized);
+        $this->writeKeyTags($key, $normalized, $ttlSeconds);
     }
 
     /** Delete every key registered under the tag. @return int number of keys deleted */
@@ -97,7 +97,7 @@ final readonly class TaggableCache implements CacheInterface, TtlAwareCacheInter
                 $this->inner->delete($key);
                 ++$deleted;
             }
-            $this->writeKeyTags($key, []);
+            $this->writeKeyTags($key, [], null);
         }
         $this->inner->delete(self::RESERVED_PREFIX . $tag);
 
@@ -197,7 +197,7 @@ final readonly class TaggableCache implements CacheInterface, TtlAwareCacheInter
         );
     }
 
-    private function writeKeyTags(string $key, array $tags): void
+    private function writeKeyTags(string $key, array $tags, ?int $valueTtlSeconds): void
     {
         $reverseKey = self::REVERSE_PREFIX . $key;
         if ($tags === []) {
@@ -205,7 +205,15 @@ final readonly class TaggableCache implements CacheInterface, TtlAwareCacheInter
 
             return;
         }
-        $this->inner->set($reverseKey, json_encode(array_values($tags), JSON_THROW_ON_ERROR));
+        // Audit #326: the reverse index previously carried NO TTL — once the
+        // tagged value expired naturally (or the 24h forward-index lease aged
+        // out without a rewrite) the key->tags entry lingered forever. Bound
+        // it by the value's own TTL when one is known, and by the same 24h
+        // sliding lease as the forward index otherwise.
+        $ttl = $valueTtlSeconds !== null
+            ? min($valueTtlSeconds, self::TAG_INDEX_TTL_SECONDS)
+            : self::TAG_INDEX_TTL_SECONDS;
+        $this->inner->set($reverseKey, json_encode(array_values($tags), JSON_THROW_ON_ERROR), $ttl);
     }
 
     private function assertUserKey(string $key): string

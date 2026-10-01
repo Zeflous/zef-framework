@@ -99,6 +99,10 @@ final class RequestFactory
         $uploads = self::normalizeUploads($uploadedFiles ?? []);
         $bodyPolicy ??= new RequestBodyPolicy();
         $contentLengthHeader = (string) ($headers['content-length'][0] ?? '');
+        // Audit #329: header values may legally carry leading/trailing OWS
+        // (RFC 9110 field-value); the raw value failed ctype_digit and the
+        // early 413 was bypassed with ' 123'. trim() before the digit check.
+        $contentLengthHeader = trim($contentLengthHeader);
         if (
             $contentLengthHeader !== ''
             && ctype_digit($contentLengthHeader)
@@ -157,7 +161,7 @@ final class RequestFactory
             self::assertTrustedRequestHost($request, $trustedHosts, $trustedProxies);
         }
 
-        $length = $request->getHeaderLine('Content-Length');
+        $length = trim($request->getHeaderLine('Content-Length'));
         if ($length !== '' && ctype_digit($length) && (int) $length > $bodyPolicy->maxBytes) {
             throw new PayloadTooLargeException(self::BODY_TOO_LARGE);
         }

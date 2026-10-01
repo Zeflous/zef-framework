@@ -47,6 +47,16 @@ final class CurlS3HttpTransport implements S3HttpTransport
             // length for bodied requests itself.
             $headers['Content-Length'] = '0';
         }
+        if ($body !== '' && !$this->hasHeader($headers, 'Content-Type')) {
+            // Audit #334: libcurl defaults POSTFIELDS-backed transfers
+            // (including CURLOPT_CUSTOMREQUEST PUTs) to
+            // Content-Type: application/x-www-form-urlencoded, so every
+            // stored object carried a meaningless content-type. Send an
+            // explicit opaque default unless the caller provided one;
+            // content-type is unsigned in this SigV4 flow, so setting it
+            // here cannot break the signature.
+            $headers['Content-Type'] = 'application/octet-stream';
+        }
         $rawHeaders = [];
 
         $options = [
