@@ -32,7 +32,7 @@ Cakupan sumber: `src/`, `modules/`, `plugins/` (kecuali `src/Compat`, yang merup
 artefak byte-stabil hasil ekstraksi v2.7.0).
 
 ```
-Tests: 3539, Assertions: 140435, Skipped: 6
+Tests: 3636, Assertions: 140643, Skipped: 6
 ```
 
 Suite self-test internal (`bin/zef --self-test`) berdiri **terpisah** dan tidak
