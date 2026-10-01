@@ -17,18 +17,6 @@ use Zef\Framework\Validation\MessageCatalog;
  */
 final class MessageCatalogMutantKillTest extends TestCase
 {
-    /** @param array<string,mixed> $templates */
-    private function construct(array $templates): MessageCatalog
-    {
-        $ref = new \ReflectionClass(MessageCatalog::class);
-        $obj = $ref->newInstanceWithoutConstructor();
-        $ctor = $ref->getConstructor();
-        self::assertNotNull($ctor);
-        $ctor->invoke($obj, $templates);
-
-        return $obj;
-    }
-
     /** The constructor validates every locale (kills Foreach_:34, LogicalOr:35). */
     public function testConstructorRejectsInvalidLocale(): void
     {
@@ -95,7 +83,8 @@ final class MessageCatalogMutantKillTest extends TestCase
     {
         $catalog = MessageCatalog::defaultEnglish()
             ->with('id', ['required' => 'base'])
-            ->with('id_ID', ['required' => 'exact']);
+            ->with('id_ID', ['required' => 'exact'])
+        ;
 
         self::assertSame('exact', $catalog->templateFor('id_ID', 'required'));
         self::assertSame('base', $catalog->templateFor('id', 'required'));
@@ -108,5 +97,17 @@ final class MessageCatalogMutantKillTest extends TestCase
         self::assertSame(['id_id', 'id', '*'], MessageCatalog::localeChain('id_ID'));
         self::assertSame(['id', '*'], MessageCatalog::localeChain('id'));
         self::assertSame(['*'], MessageCatalog::localeChain('*'));
+    }
+
+    /** @param array<string,mixed> $templates */
+    private function construct(array $templates): MessageCatalog
+    {
+        $ref = new \ReflectionClass(MessageCatalog::class);
+        $obj = $ref->newInstanceWithoutConstructor();
+        $ctor = $ref->getConstructor();
+        self::assertNotNull($ctor);
+        $ctor->invoke($obj, $templates);
+
+        return $obj;
     }
 }

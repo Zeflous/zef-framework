@@ -23,14 +23,14 @@ final class RouteConstraintValidatorMutantKillTest extends TestCase
     {
         $this->expectException(InvalidConfigurationException::class);
         $this->expectExceptionMessage('nested quantified groups are not permitted by the ReDoS safety policy.');
-        (new RouteConstraintValidator())->addCustom('evil', '(a+)+');
+        new RouteConstraintValidator()->addCustom('evil', '(a+)+');
     }
 
     /** An invalid regex is converted to InvalidConfigurationException with code 0 (kills Increment/DecrementInteger:61/68). */
     public function testInvalidRegexIsWrappedWithCodeZero(): void
     {
         try {
-            (new RouteConstraintValidator())->addCustom('bad', '/(/');
+            new RouteConstraintValidator()->addCustom('bad', '/(/');
             self::fail('an invalid regex must be rejected');
         } catch (InvalidConfigurationException $e) {
             self::assertSame(0, $e->getCode(), 'the wrapping exception code must stay 0');
@@ -68,7 +68,7 @@ final class RouteConstraintValidatorMutantKillTest extends TestCase
     {
         $this->expectException(InvalidConfigurationException::class);
         $this->expectExceptionMessage("Unknown route constraint type 'nope'.");
-        (new RouteConstraintValidator())->assertKnown('nope');
+        new RouteConstraintValidator()->assertKnown('nope');
     }
 
     /** A custom constraint is compiled once and reused (kills AssignCoalesce:86). */

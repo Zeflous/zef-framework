@@ -37,23 +37,16 @@ final class RouteCacheMutantKill2Test extends TestCase
             new \RecursiveDirectoryIterator($this->dir, \FilesystemIterator::SKIP_DOTS),
             \RecursiveIteratorIterator::CHILD_FIRST,
         );
+
+        /** @var \SplFileInfo $item */
         foreach ($iterator as $item) {
             if ($item->isDir()) {
-                chmod($item->getPathname(), 0o777);
                 rmdir($item->getPathname());
             } else {
                 unlink($item->getPathname()); // nosemgrep: php.lang.security.unlink-use
             }
         }
         rmdir($this->dir);
-    }
-
-    private function router(): Router
-    {
-        $router = new Router();
-        $router->add('GET', '/a/{id:int}', 'h.a', name: 'a');
-
-        return $router;
     }
 
     /** The temp file is "<path>.<12 hex>.tmp" (kills Concat/ConcatOperandRemoval/Increment/DecrementInteger:59). */
@@ -71,7 +64,7 @@ final class RouteCacheMutantKill2Test extends TestCase
             self::fail('an over-long temp file name must fail the write');
         } catch (RouteCacheException $e) {
             self::assertMatchesRegularExpression(
-                "#^Cannot write route cache '.*\.php\.[0-9a-f]{12}\.tmp'\.$#",
+                "#^Cannot write route cache '.*\\.php\\.[0-9a-f]{12}\\.tmp'\\.$#",
                 $e->getMessage(),
             );
         } finally {
@@ -115,7 +108,7 @@ final class RouteCacheMutantKill2Test extends TestCase
         RouteCache::write($this->router(), $path);
 
         // Tamper only the version stamp, keeping the (valid) fingerprint.
-        $data = include $path;
+        $data = (array) include $path;
         $data['version'] = '0.0.0-not-this-release';
         file_put_contents($path, "<?php\n\nreturn " . var_export($data, true) . ";\n");
 
@@ -133,5 +126,13 @@ final class RouteCacheMutantKill2Test extends TestCase
         ], true) . ";\n");
 
         self::assertNull(RouteCache::loadIfFresh($path, $this->router()));
+    }
+
+    private function router(): Router
+    {
+        $router = new Router();
+        $router->add('GET', '/a/{id:int}', 'h.a', name: 'a');
+
+        return $router;
     }
 }

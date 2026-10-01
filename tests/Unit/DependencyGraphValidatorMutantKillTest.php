@@ -20,11 +20,6 @@ use Zef\Framework\Validation\DependencyGraphValidator;
  */
 final class DependencyGraphValidatorMutantKillTest extends TestCase
 {
-    private function validator(): DependencyGraphValidator
-    {
-        return new DependencyGraphValidator();
-    }
-
     /** Cross-module budget message is pinned verbatim (kills Concat:118/119). */
     public function testCrossModuleBudgetMessageIsPinned(): void
     {
@@ -55,7 +50,7 @@ final class DependencyGraphValidatorMutantKillTest extends TestCase
             $lifetimes,
             1,
         );
-        self::assertTrue(true, 'one cross-module ref at the limit must pass');
+        self::addToAssertionCount(1);
 
         // Two distinct targets at limit 1 -> throw.
         $this->expectException(ModuleDependencyViolationException::class);
@@ -80,7 +75,7 @@ final class DependencyGraphValidatorMutantKillTest extends TestCase
             ['A' => ServiceLifetime::TRANSIENT, 'B' => ServiceLifetime::TRANSIENT],
             1,
         );
-        self::assertTrue(true, 'N refs to one target count once per target');
+        self::addToAssertionCount(1);
     }
 
     /** Same-module refs never count against the budget (kills LogicalOr:115). */
@@ -94,7 +89,7 @@ final class DependencyGraphValidatorMutantKillTest extends TestCase
             ['A' => ServiceLifetime::TRANSIENT, 'B' => ServiceLifetime::TRANSIENT, 'C' => ServiceLifetime::TRANSIENT],
             1,
         );
-        self::assertTrue(true, 'intra-module refs are exempt from the cross-module budget');
+        self::addToAssertionCount(1);
     }
 
     /** Null-module refs never count against the budget (kills LogicalOr:115). */
@@ -108,7 +103,7 @@ final class DependencyGraphValidatorMutantKillTest extends TestCase
             ['A' => ServiceLifetime::TRANSIENT, 'B' => ServiceLifetime::TRANSIENT, 'C' => ServiceLifetime::TRANSIENT],
             1,
         );
-        self::assertTrue(true, 'a null module on either side is exempt');
+        self::addToAssertionCount(1);
     }
 
     /** Cycle payload starts at the cycle entry, not the DFS root (kills UnwrapArraySlice:170). */
@@ -143,5 +138,10 @@ final class DependencyGraphValidatorMutantKillTest extends TestCase
         } catch (ServiceCircularDependencyException $e) {
             self::assertSame(['A', 'A'], $e->getChain());
         }
+    }
+
+    private function validator(): DependencyGraphValidator
+    {
+        return new DependencyGraphValidator();
     }
 }

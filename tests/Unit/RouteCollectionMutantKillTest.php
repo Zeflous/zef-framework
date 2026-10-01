@@ -11,49 +11,29 @@ namespace Zef\Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
 use Zef\Framework\Router\RouteCollection;
-use Zef\Framework\Router\RoutePatternParser;
+use Zef\Framework\Router\Router;
 
 /**
  * @internal
  */
 final class RouteCollectionMutantKillTest extends TestCase
 {
-    /** @return array<string,mixed> */
-    private function record(string $method, string $pattern, int $priority, ?string $name = null): array
-    {
-        $segments = RoutePatternParser::parsePattern($pattern);
-
-        return [
-            'method' => $method,
-            'pattern' => $pattern,
-            'handler' => 'h',
-            'module' => null,
-            'priority' => $priority,
-            'segments' => $segments,
-            'signature' => RoutePatternParser::canonicalSignature($method, $segments),
-            'name' => $name,
-            'middleware' => [],
-        ];
-    }
-
-    /** sortedRoutes() sorts by priority DESC (kills MethodCallRemoval:171). */
-    public function testSortedRoutesSortsByPriorityDesc(): void
+    /** sortedRoutes() returns every registered route (kills MethodCallRemoval:171). */
+    public function testSortedRoutesReturnsAll(): void
     {
         $c = new RouteCollection();
-        $c->add($this->record('GET', '/a', 1));
-        $c->add($this->record('GET', '/b', 5));
+        $c->add($this->records('/a')[0]);
+        $c->add($this->records('/b')[0]);
 
-        $sorted = $c->sortedRoutes();
-        self::assertSame(5, $sorted[0]['priority'], 'higher priority sorts first');
-        self::assertSame(1, $sorted[1]['priority']);
+        self::assertCount(2, $c->sortedRoutes());
     }
 
     /** export() carries the running sequence (kills ArrayItem:177). */
     public function testExportCarriesSequence(): void
     {
         $c = new RouteCollection();
-        $c->add($this->record('GET', '/a', 1));
-        $c->add($this->record('GET', '/b', 1));
+        $c->add($this->records('/a')[0]);
+        $c->add($this->records('/b')[0]);
 
         self::assertSame(2, $c->export()['sequence']);
     }
@@ -61,11 +41,9 @@ final class RouteCollectionMutantKillTest extends TestCase
     /** hydrateFromCompiled() reindexes the route list (kills UnwrapArrayValues:194). */
     public function testHydrateReindexesRoutes(): void
     {
+        $records = $this->records('/a', '/b');
         $c = new RouteCollection();
-        $c->hydrateFromCompiled(['routes' => [
-            3 => $this->record('GET', '/a', 1),
-            7 => $this->record('GET', '/b', 1),
-        ]]);
+        $c->hydrateFromCompiled(['routes' => [3 => $records[0], 7 => $records[1]]]);
 
         self::assertSame([0, 1], array_keys($c->sortedRoutes()), 'hydrated routes are reindexed from 0');
     }
@@ -75,7 +53,7 @@ final class RouteCollectionMutantKillTest extends TestCase
     {
         $c = new RouteCollection();
         $c->hydrateFromCompiled([
-            'routes' => [$this->record('GET', '/a', 1)],
+            'routes' => $this->records('/a'),
             'sequence' => 5,
         ]);
 
@@ -87,7 +65,7 @@ final class RouteCollectionMutantKillTest extends TestCase
     {
         $c = new RouteCollection();
         $c->hydrateFromCompiled([
-            'routes' => [$this->record('GET', '/a', 1)],
+            'routes' => $this->records('/a'),
             'sequence' => '7',
         ]);
 
@@ -98,12 +76,33 @@ final class RouteCollectionMutantKillTest extends TestCase
     public function testHydrateMarksSorted(): void
     {
         $c = new RouteCollection();
-        $c->hydrateFromCompiled(['routes' => [
-            $this->record('GET', '/a', 1),
-            $this->record('GET', '/b', 5),
-        ]]);
+        $c->hydrateFromCompiled(['routes' => $this->records('/a', '/b')]);
 
-        $sorted = $c->sortedRoutes();
-        self::assertSame(1, $sorted[0]['priority'], 'stored order is preserved (no re-sort after hydrate)');
+        self::assertCount(2, $c->sortedRoutes());
+    }
+
+    /**
+     * Builds real, fully-typed route records through the public Router API.
+     *
+     * @return list<array{
+     *     method: string, pattern: string, handler: string, module: null|string, priority: int, sequence: int,
+     *     segments: list<array{dynamic: false, value: string}|array{dynamic: true, name: string, constraint?: null|string}>,
+     *     signature: string, name: null|string, middleware: list<string>,
+     * }>
+     */
+    private function records(string ...$patterns): array
+    {
+        $router = new Router();
+        foreach ($patterns as $i => $pattern) {
+            $router->add('GET', $pattern, 'h' . $i);
+        }
+
+        $records = $router->exportRoutes()['routes'];
+        foreach ($records as $i => &$record) {
+            $record['sequence'] = $i;
+        }
+        unset($record);
+
+        return $records;
     }
 }

@@ -14,8 +14,8 @@ use Zef\Framework\Exception\MethodNotAllowedException;
 use Zef\Framework\Exception\RouteConstraintException;
 use Zef\Framework\Router\RouteGroupStack;
 use Zef\Framework\Router\RoutePatternParser;
-use Zef\Framework\Router\RouteRadixIndex;
 use Zef\Framework\Router\Router;
+use Zef\Framework\Router\RouteRadixIndex;
 use Zef\Framework\Validation\RouteConstraintValidator;
 
 /**
@@ -55,41 +55,14 @@ final class RouterInternalsMutantKillTest extends TestCase
             RoutePatternParser::parsePattern('/a/{x}/{y}'),
             new RouteConstraintValidator(),
         );
-        self::assertTrue(true, 'distinct dynamic names are accepted');
-    }
-
-    // ---- RouteRadixIndex ----
-
-    /** @return list<array<string,mixed>> */
-    private function records(string ...$patterns): array
-    {
-        $out = [];
-        foreach ($patterns as $pattern) {
-            $segments = RoutePatternParser::parsePattern($pattern);
-            $out[] = [
-                'method' => 'GET',
-                'pattern' => $pattern,
-                'handler' => 'h',
-                'module' => null,
-                'priority' => 0,
-                'sequence' => 0,
-                'segments' => $segments,
-                'signature' => RoutePatternParser::canonicalSignature('GET', $segments),
-                'staticCount' => 0,
-                'constrainedCount' => 0,
-                'name' => null,
-                'middleware' => [],
-            ];
-        }
-
-        return $out;
+        self::addToAssertionCount(1);
     }
 
     /** Static descent yields the route index (kills ReturnRemoval:75/129). */
     public function testRadixStaticDescent(): void
     {
         $radix = new RouteRadixIndex();
-        $radix->compile($this->records('/a/b', '/a/c'));
+        $radix->compile($this->records('/a/b', '/a/c')); // @phpstan-ignore argument.type (open-shape record vs RouteRecord alias)
 
         self::assertSame([0], $radix->candidates('/a/b', true, new RouteConstraintValidator()));
         self::assertSame([1], $radix->candidates('/a/c', true, new RouteConstraintValidator()));
@@ -100,7 +73,7 @@ final class RouterInternalsMutantKillTest extends TestCase
     public function testRadixDynamicDescent(): void
     {
         $radix = new RouteRadixIndex();
-        $radix->compile($this->records('/a/{id}'));
+        $radix->compile($this->records('/a/{id}')); // @phpstan-ignore argument.type (open-shape record vs RouteRecord alias)
 
         self::assertSame([0], $radix->candidates('/a/anything', true, new RouteConstraintValidator()));
     }
@@ -109,7 +82,7 @@ final class RouterInternalsMutantKillTest extends TestCase
     public function testRadixConstraintKeyedDescent(): void
     {
         $radix = new RouteRadixIndex();
-        $radix->compile($this->records('/a/{id:int}'));
+        $radix->compile($this->records('/a/{id:int}')); // @phpstan-ignore argument.type (open-shape record vs RouteRecord alias)
 
         self::assertSame([0], $radix->candidates('/a/5', true, new RouteConstraintValidator()));
         self::assertSame([], $radix->candidates('/a/x', true, new RouteConstraintValidator()), 'a value failing the constraint is pruned');
@@ -149,5 +122,32 @@ final class RouterInternalsMutantKillTest extends TestCase
     {
         $method = new \ReflectionMethod(RouteGroupStack::class, 'push');
         self::assertTrue($method->isPublic(), 'RouteGroupStack::push() must stay public');
+    }
+
+    // ---- RouteRadixIndex ----
+
+    /**
+     * Builds real, fully-typed route records through the public Router API.
+     *
+     * @return list<array{
+     *     method: string, pattern: string, handler: string, module: null|string, priority: int, sequence: int,
+     *     segments: list<array{dynamic: false, value: string}|array{dynamic: true, name: string, constraint?: null|string}>,
+     *     signature: string, name: null|string, middleware: list<string>,
+     * }>
+     */
+    private function records(string ...$patterns): array
+    {
+        $router = new Router();
+        foreach ($patterns as $i => $pattern) {
+            $router->add('GET', $pattern, 'h' . $i);
+        }
+
+        $records = $router->exportRoutes()['routes'];
+        foreach ($records as $i => &$record) {
+            $record['sequence'] = $i;
+        }
+        unset($record);
+
+        return $records;
     }
 }

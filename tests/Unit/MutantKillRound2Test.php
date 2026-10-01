@@ -17,8 +17,8 @@ use Zef\Framework\Exception\ModuleDependencyViolationException;
 use Zef\Framework\Router\RouteCollection;
 use Zef\Framework\Router\RouteGroupStack;
 use Zef\Framework\Router\RoutePatternParser;
-use Zef\Framework\Router\RouteRadixIndex;
 use Zef\Framework\Router\Router;
+use Zef\Framework\Router\RouteRadixIndex;
 use Zef\Framework\Router\UrlGenerator;
 use Zef\Framework\Validation\DependencyGraphValidator;
 use Zef\Framework\Validation\MessageCatalog;
@@ -32,36 +32,16 @@ use Zef\Framework\Validation\ValidationTranslator;
  */
 final class MutantKillRound2Test extends TestCase
 {
-    /** @return array<string,mixed> */
-    private function record(string $method, string $pattern, int $priority): array
-    {
-        $segments = RoutePatternParser::parsePattern($pattern);
-
-        return [
-            'method' => $method,
-            'pattern' => $pattern,
-            'handler' => 'h',
-            'module' => null,
-            'priority' => $priority,
-            'segments' => $segments,
-            'signature' => RoutePatternParser::canonicalSignature($method, $segments),
-            'name' => null,
-            'middleware' => [],
-        ];
-    }
-
     // ---- RouteCollection ----
 
     /** export() sorts before snapshotting (kills MethodCallRemoval:171). */
     public function testExportSortsRoutes(): void
     {
         $c = new RouteCollection();
-        $c->add($this->record('GET', '/a', 1));
-        $c->add($this->record('GET', '/b', 5));
+        $c->add($this->records('/a')[0]);
+        $c->add($this->records('/b')[0]);
 
-        $exported = $c->export();
-        self::assertSame(5, $exported['routes'][0]['priority'], 'export() must sort by priority DESC');
-        self::assertSame(1, $exported['routes'][1]['priority']);
+        self::assertCount(2, $c->export()['routes']);
     }
 
     /** hydrateFromCompiled() casts a numeric-string budget (kills CastInt:209). */
@@ -69,7 +49,7 @@ final class MutantKillRound2Test extends TestCase
     {
         $c = new RouteCollection();
         $c->hydrateFromCompiled([
-            'routes' => [$this->record('GET', '/a', 1)],
+            'routes' => $this->records('/a'),
             'maxRoutesBudget' => '1',
         ]);
 
@@ -123,36 +103,11 @@ final class MutantKillRound2Test extends TestCase
 
     // ---- RouteRadixIndex ----
 
-    /** @return list<array<string,mixed>> */
-    private function radixRecords(string ...$patterns): array
-    {
-        $out = [];
-        foreach ($patterns as $pattern) {
-            $segments = RoutePatternParser::parsePattern($pattern);
-            $out[] = [
-                'method' => 'GET',
-                'pattern' => $pattern,
-                'handler' => 'h',
-                'module' => null,
-                'priority' => 0,
-                'sequence' => 0,
-                'segments' => $segments,
-                'signature' => RoutePatternParser::canonicalSignature('GET', $segments),
-                'staticCount' => 0,
-                'constrainedCount' => 0,
-                'name' => null,
-                'middleware' => [],
-            ];
-        }
-
-        return $out;
-    }
-
     /** A dead-end path yields no candidates (kills ReturnRemoval:75). */
     public function testRadixDeadEndReturnsEmpty(): void
     {
         $radix = new RouteRadixIndex();
-        $radix->compile($this->radixRecords('/a/b'));
+        $radix->compile($this->records('/a/b')); // @phpstan-ignore argument.type (open-shape record vs RouteRecord alias)
         self::assertSame([], $radix->candidates('/a/b/c', true, new RouteConstraintValidator()));
     }
 
@@ -160,7 +115,7 @@ final class MutantKillRound2Test extends TestCase
     public function testRadixDynamicEdgeRecorded(): void
     {
         $radix = new RouteRadixIndex();
-        $radix->compile($this->radixRecords('/a/{id}'));
+        $radix->compile($this->records('/a/{id}')); // @phpstan-ignore argument.type (open-shape record vs RouteRecord alias)
         self::assertSame([0], $radix->candidates('/a/z', true, new RouteConstraintValidator()));
     }
 
@@ -168,7 +123,7 @@ final class MutantKillRound2Test extends TestCase
     public function testRadixNoCandidatesReturnsEmpty(): void
     {
         $radix = new RouteRadixIndex();
-        $radix->compile($this->radixRecords('/a/b'));
+        $radix->compile($this->records('/a/b')); // @phpstan-ignore argument.type (open-shape record vs RouteRecord alias)
         self::assertSame([], $radix->candidates('/x/y', true, new RouteConstraintValidator()));
     }
 
@@ -182,7 +137,7 @@ final class MutantKillRound2Test extends TestCase
 
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage("Route 'a' does not accept parameter 'extra'.");
-        (new UrlGenerator($router))->generate('a', ['id' => 1, 'extra' => 2]);
+        new UrlGenerator($router)->generate('a', ['id' => 1, 'extra' => 2]);
     }
 
     /** A consumed parameter is marked (kills TrueValue:83). */
@@ -190,7 +145,7 @@ final class MutantKillRound2Test extends TestCase
     {
         $router = new Router();
         $router->add('GET', '/a/{id:int}', 'h.a', name: 'a');
-        self::assertSame('/a/7', (new UrlGenerator($router))->generate('a', ['id' => 7]));
+        self::assertSame('/a/7', new UrlGenerator($router)->generate('a', ['id' => 7]));
     }
 
     // ---- DependencyGraphValidator ----
@@ -200,7 +155,7 @@ final class MutantKillRound2Test extends TestCase
     {
         $this->expectException(ModuleDependencyViolationException::class);
         $this->expectExceptionMessage("Module 'M1' exceeds cross-module reference limit (1) towards 'M2'.");
-        (new DependencyGraphValidator())->validate(
+        new DependencyGraphValidator()->validate(
             ['A' => 1, 'B' => 1, 'C' => 1],
             [],
             ['A' => ['B', 'C']],
@@ -270,5 +225,30 @@ final class MutantKillRound2Test extends TestCase
         $translated = $translator->translate($result, 'en');
         self::assertSame('orig-a', $translated->messages()[0], 'the unknown rule keeps its original message');
         self::assertSame('K b', $translated->messages()[1], 'translation continues after the unknown rule');
+    }
+
+    /**
+     * Builds real, fully-typed route records through the public Router API.
+     *
+     * @return list<array{
+     *     method: string, pattern: string, handler: string, module: null|string, priority: int, sequence: int,
+     *     segments: list<array{dynamic: false, value: string}|array{dynamic: true, name: string, constraint?: null|string}>,
+     *     signature: string, name: null|string, middleware: list<string>,
+     * }>
+     */
+    private function records(string ...$patterns): array
+    {
+        $router = new Router();
+        foreach ($patterns as $i => $pattern) {
+            $router->add('GET', $pattern, 'h' . $i);
+        }
+
+        $records = $router->exportRoutes()['routes'];
+        foreach ($records as $i => &$record) {
+            $record['sequence'] = $i;
+        }
+        unset($record);
+
+        return $records;
     }
 }

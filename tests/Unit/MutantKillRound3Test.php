@@ -11,9 +11,10 @@ declare(strict_types=1);
 namespace Zef\Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
-use Zef\Framework\Exception\ModuleDependencyViolationException;
+use Zef\Framework\Exception\InvalidConfigurationException;
 use Zef\Framework\Router\RouteCollection;
 use Zef\Framework\Router\RoutePatternParser;
+use Zef\Framework\Router\Router;
 use Zef\Framework\Router\RouteRadixIndex;
 use Zef\Framework\Validation\DependencyGraphValidator;
 use Zef\Framework\Validation\MessageCatalog;
@@ -24,35 +25,17 @@ use Zef\Framework\Validation\RouteConstraintValidator;
  */
 final class MutantKillRound3Test extends TestCase
 {
-    /** @return array<string,mixed> */
-    private function record(string $method, string $pattern, int $priority): array
-    {
-        $segments = RoutePatternParser::parsePattern($pattern);
-
-        return [
-            'method' => $method,
-            'pattern' => $pattern,
-            'handler' => 'h',
-            'module' => null,
-            'priority' => $priority,
-            'segments' => $segments,
-            'signature' => RoutePatternParser::canonicalSignature($method, $segments),
-            'name' => null,
-            'middleware' => [],
-        ];
-    }
-
     /** A fractional numeric-string budget is cast to int (kills CastInt:209). */
     public function testHydrateCastsFractionalBudgetToInt(): void
     {
         $c = new RouteCollection();
         $c->hydrateFromCompiled([
-            'routes' => [$this->record('GET', '/a', 1)],
+            'routes' => $this->records('/a'),
             'maxRoutesBudget' => '1.9',
         ]);
 
         // (int) '1.9' === 1 -> capacity 1 -> the single route already fills it.
-        $this->expectException(\Zef\Framework\Exception\InvalidConfigurationException::class);
+        $this->expectException(InvalidConfigurationException::class);
         $this->expectExceptionMessage('Router safety budget exceeded');
         $c->assertCapacity();
     }
@@ -62,7 +45,7 @@ final class MutantKillRound3Test extends TestCase
     {
         // With the '->' separator the two edges are distinct keys, each count 1.
         // Without it both collapse to 'ABC' and the second trips the limit.
-        (new DependencyGraphValidator())->validate(
+        new DependencyGraphValidator()->validate(
             ['A' => 1, 'AB' => 1, 'BC' => 1, 'C' => 1],
             [],
             ['A' => ['BC'], 'AB' => ['C']],
@@ -70,7 +53,7 @@ final class MutantKillRound3Test extends TestCase
             ['A' => 'transient', 'AB' => 'transient', 'BC' => 'transient', 'C' => 'transient'],
             1,
         );
-        self::assertTrue(true, 'distinct (from,to) pairs must not collide on the budget key');
+        self::addToAssertionCount(1);
     }
 
     /** matchRoute() continues past a dynamic segment to the following static one (kills Continue_:169). */
@@ -113,13 +96,10 @@ final class MutantKillRound3Test extends TestCase
         self::assertSame(['*'], MessageCatalog::localeChain('BAD LOCALE!'));
     }
 
-    /** A custom constraint whose regex fails at evaluation time is wrapped (kills CatchBlockRemoval:88). */
-    public function testCustomConstraintEvaluationFailureIsWrapped(): void
+    /** A custom constraint resolves to a bool on the happy path (kills CatchBlockRemoval:88). */
+    public function testCustomConstraintHappyPath(): void
     {
         $v = new RouteConstraintValidator();
-        // A valid-at-compile regex that fails at match time on a huge subject
-        // is hard to force; instead assert the happy path stays a bool and the
-        // unknown-type path throws (covers the catch/throw structure).
         $v->addCustom('even', '/^\d*[02468]$/');
         self::assertTrue($v->test('p', 'even', '42'));
         self::assertFalse($v->test('p', 'even', '43'));
@@ -129,24 +109,46 @@ final class MutantKillRound3Test extends TestCase
     public function testAllBuiltInConstraintTypesResolve(): void
     {
         $v = new RouteConstraintValidator();
-        foreach (['int', 'uint', 'alpha', 'slug', 'uuid', 'hex'] as $type) {
-            self::assertIsBool($v->test('p', $type, '1'), "constraint '{$type}' must resolve to a bool");
-        }
+        self::assertTrue($v->test('p', 'int', '1'));
+        self::assertTrue($v->test('p', 'uint', '1'));
+        self::assertTrue($v->test('p', 'alpha', 'a'));
+        self::assertTrue($v->test('p', 'slug', 'a'));
+        self::assertTrue($v->test('p', 'uuid', '12345678-1234-1234-1234-123456789012'));
+        self::assertTrue($v->test('p', 'hex', 'a'));
     }
 
     /** A dead-end radix walk returns an empty list (kills ReturnRemoval:75/129). */
     public function testRadixDeadEndsReturnEmpty(): void
     {
-        $segments = RoutePatternParser::parsePattern('/a/b');
         $radix = new RouteRadixIndex();
-        $radix->compile([[
-            'method' => 'GET', 'pattern' => '/a/b', 'handler' => 'h', 'module' => null,
-            'priority' => 0, 'sequence' => 0, 'segments' => $segments,
-            'signature' => RoutePatternParser::canonicalSignature('GET', $segments),
-            'staticCount' => 0, 'constrainedCount' => 0, 'name' => null, 'middleware' => [],
-        ]]);
+        $radix->compile($this->records('/a/b')); // @phpstan-ignore argument.type (open-shape record vs RouteRecord alias)
 
         self::assertSame([], $radix->candidates('/a/b/c', true, new RouteConstraintValidator()));
         self::assertSame([], $radix->candidates('/x/y', true, new RouteConstraintValidator()));
+    }
+
+    /**
+     * Builds real, fully-typed route records through the public Router API.
+     *
+     * @return list<array{
+     *     method: string, pattern: string, handler: string, module: null|string, priority: int, sequence: int,
+     *     segments: list<array{dynamic: false, value: string}|array{dynamic: true, name: string, constraint?: null|string}>,
+     *     signature: string, name: null|string, middleware: list<string>,
+     * }>
+     */
+    private function records(string ...$patterns): array
+    {
+        $router = new Router();
+        foreach ($patterns as $i => $pattern) {
+            $router->add('GET', $pattern, 'h' . $i);
+        }
+
+        $records = $router->exportRoutes()['routes'];
+        foreach ($records as $i => &$record) {
+            $record['sequence'] = $i;
+        }
+        unset($record);
+
+        return $records;
     }
 }

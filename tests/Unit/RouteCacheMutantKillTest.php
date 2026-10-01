@@ -40,19 +40,16 @@ final class RouteCacheMutantKillTest extends TestCase
             new \RecursiveDirectoryIterator($this->dir, \FilesystemIterator::SKIP_DOTS),
             \RecursiveIteratorIterator::CHILD_FIRST,
         );
+
+        /** @var \SplFileInfo $item */
         foreach ($iterator as $item) {
-            $item->isDir() ? rmdir($item->getPathname()) : unlink($item->getPathname()); // nosemgrep: php.lang.security.unlink-use
+            if ($item->isDir()) {
+                rmdir($item->getPathname());
+            } else {
+                unlink($item->getPathname()); // nosemgrep: php.lang.security.unlink-use
+            }
         }
         rmdir($this->dir);
-    }
-
-    private function router(): Router
-    {
-        $router = new Router();
-        $router->add('GET', '/a/{id:int}', 'h.a', name: 'a');
-        $router->add('GET', '/b', 'h.b', name: 'b');
-
-        return $router;
     }
 
     /** RouteCache::export() must be public static (kills PublicVisibility:37). */
@@ -92,7 +89,7 @@ final class RouteCacheMutantKillTest extends TestCase
         self::assertStringContainsString("'version' =>", $raw);
         self::assertStringContainsString("'fingerprint' =>", $raw);
         self::assertStringContainsString("'routes' =>", $raw);
-        self::assertSame([], glob($this->dir . '/*.tmp') ?: [], 'no temp residue after a successful write');
+        self::assertSame([], glob($this->dir . '/*.tmp'), 'no temp residue after a successful write');
     }
 
     /** The temp file lives next to the target and is cleaned up (kills Concat*:59). */
@@ -101,7 +98,7 @@ final class RouteCacheMutantKillTest extends TestCase
         $path = $this->dir . '/routes.php';
         RouteCache::write($this->router(), $path);
 
-        $entries = array_values(array_diff(scandir($this->dir) ?: [], ['.', '..']));
+        $entries = array_values(array_diff(scandir($this->dir), ['.', '..']));
         self::assertSame(['routes.php'], $entries, 'only the final artifact remains in the directory');
     }
 
@@ -162,5 +159,14 @@ final class RouteCacheMutantKillTest extends TestCase
             'routes' => $this->router()->exportRoutes(),
         ], true) . ";\n");
         self::assertNull(RouteCache::loadIfFresh($path, $this->router()));
+    }
+
+    private function router(): Router
+    {
+        $router = new Router();
+        $router->add('GET', '/a/{id:int}', 'h.a', name: 'a');
+        $router->add('GET', '/b', 'h.b', name: 'b');
+
+        return $router;
     }
 }
