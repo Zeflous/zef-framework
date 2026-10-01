@@ -59,7 +59,7 @@ final class Audit303EtagStreamRewindTest extends TestCase
     public function testEmitterRestoresDrainedStreamBeforeHeaders(): void
     {
         $body = Stream::fromString('hello');
-        \assert($body->tell() === 0);
+        self::assertSame(0, $body->tell(), 'precondition: a fresh stream starts at 0');
         $consumed = (string) $body; // simulate an inspecting middleware
         self::assertSame('hello', $consumed);
         self::assertTrue($body->eof(), 'precondition: (string) left the cursor at EOF');
