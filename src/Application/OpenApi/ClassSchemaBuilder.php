@@ -179,6 +179,12 @@ final readonly class ClassSchemaBuilder
             default: $meta->default ?? $schema->default,
             example: $meta->example ?? $schema->example,
             enum: $meta->enum ?? $schema->enum,
+            // Composition members must survive the meta merge, otherwise an
+            // attribute-annotated union/intersection property silently
+            // degrades to a bare `type: object` schema (issue #314).
+            oneOf: $schema->oneOf,
+            anyOf: $schema->anyOf,
+            allOf: $schema->allOf,
         );
     }
 
