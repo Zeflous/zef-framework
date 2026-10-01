@@ -89,7 +89,7 @@ final class CancellationTokenSource
                 $firstError ??= $error;
             }
         }
-        if ($firstError !== null) {
+        if ($firstError instanceof \Throwable) {
             throw $firstError;
         }
 

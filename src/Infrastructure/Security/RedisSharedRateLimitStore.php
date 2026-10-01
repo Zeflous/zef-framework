@@ -38,7 +38,7 @@ final readonly class RedisSharedRateLimitStore implements SharedRateLimitStoreIn
     {
         $result = $this->redis->eval(
             self::LUA_INCREMENT,
-            [self::bucketKey($key, $windowSeconds), (string) $now, (string) $windowSeconds],
+            [$this->bucketKey($key, $windowSeconds), (string) $now, (string) $windowSeconds],
             1,
         );
         if (!is_array($result) || count($result) !== 2) {
@@ -58,7 +58,7 @@ final readonly class RedisSharedRateLimitStore implements SharedRateLimitStoreIn
     #[\Override]
     public function peek(string $key, int $windowSeconds, int $now): ?array
     {
-        $bucket = $this->redis->hMGet(self::bucketKey($key, $windowSeconds), ['count', 'reset']);
+        $bucket = $this->redis->hMGet($this->bucketKey($key, $windowSeconds), ['count', 'reset']);
         if (
             !is_array($bucket)
             || !isset($bucket['count'], $bucket['reset'])
@@ -78,7 +78,7 @@ final readonly class RedisSharedRateLimitStore implements SharedRateLimitStoreIn
      * corruption the in-process limiters throw for and TieredRateLimiter
      * keys away from.
      */
-    private static function bucketKey(string $key, int $windowSeconds): string
+    private function bucketKey(string $key, int $windowSeconds): string
     {
         return self::PREFIX . hash('sha256', $key . '>' . $windowSeconds);
     }
