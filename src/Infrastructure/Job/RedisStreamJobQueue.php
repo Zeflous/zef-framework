@@ -86,16 +86,6 @@ final readonly class RedisStreamJobQueue implements JobQueueInterface
     private const int FIELD_COUNT = 9;
 
     /**
-     * Decimal digit alphabet of the order-preserving available_at encoding
-     * (Sonar php:S1192: the literal was duplicated four times before the
-     * constant existed).
-     */
-    private const string DIGITS = '0123456789';
-
-    /** The 9's complement digit alphabet — the negative-encoding mirror of {@see DIGITS}. */
-    private const string DIGITS_COMPLEMENT = '9876543210';
-
-    /**
      * Atomic enqueue: capacity guard → duplicate-id backstop → XADD.
      *
      * KEYS[1] stream, KEYS[2] live-id set
@@ -122,7 +112,7 @@ final readonly class RedisStreamJobQueue implements JobQueueInterface
      * it, return its flat field list. Returns nil when no entry is due yet.
      *
      * KEYS[1] stream, KEYS[2] live-id set, ARGV[1] now (order-preserving
-     * 20 chars — see {@see padNano()})
+     * 20 chars — see {@see JobRowCodec::encodeNano()})
      */
     private const string LUA_DEQUEUE = <<<'LUA'
         local entries = redis.call('XRANGE', KEYS[1], '-', '+')
@@ -130,7 +120,21 @@ final readonly class RedisStreamJobQueue implements JobQueueInterface
         local bestId = false
         for i = 1, #entries do
             local fields = entries[i][2]
-            if fields[8] <= ARGV[1] then
+            local avail = fields[8]
+            -- Well-formed shape: 20 digits, or '-' plus 19 digits. Anything
+            -- else is corrupt and MUST stay claimable: a short positive value
+            -- (e.g. '20') sorts above every 20-char 'now' string, so without
+            -- this guard the entry is never selected, never XDEL'd and never
+            -- reported, wedging the stream forever (issue #280).
+            local wellFormed = false
+            if type(avail) == 'string' and string.len(avail) == 20 then
+                if string.match(avail, '^%d+$') then
+                    wellFormed = true
+                elseif string.sub(avail, 1, 1) == '-' and string.match(string.sub(avail, 2), '^%d+$') then
+                    wellFormed = true
+                end
+            end
+            if (not wellFormed) or avail <= ARGV[1] then
                 if best == false then
                     best = fields
                     bestId = entries[i][1]
@@ -202,7 +206,7 @@ final readonly class RedisStreamJobQueue implements JobQueueInterface
                 $job->jobId,
                 $job->jobType,
                 JobRowCodec::encodePayload($job->payload),
-                $this->padNano($job->availableAtUnixNano),
+                JobRowCodec::encodeNano($job->availableAtUnixNano),
                 (string) $job->priority,
                 (string) $job->attempt,
                 $job->correlationId ?? '',
@@ -230,7 +234,7 @@ final readonly class RedisStreamJobQueue implements JobQueueInterface
         $now = $nowUnixNano ?? ($this->clock)();
         $fields = $this->redis->eval(
             self::LUA_DEQUEUE,
-            [$this->streamKey, $this->idsKey, $this->padNano($now)],
+            [$this->streamKey, $this->idsKey, JobRowCodec::encodeNano($now)],
             2,
         );
         if ($fields === false || $fields === null) {
@@ -290,7 +294,7 @@ final readonly class RedisStreamJobQueue implements JobQueueInterface
                 'job_id' => $fields['job_id'] ?? null,
                 'job_type' => $fields['job_type'] ?? null,
                 'payload' => $fields['payload'] ?? null,
-                'available_at' => $this->decodeNano(JobRowCodec::str($fields['available_at'] ?? null)),
+                'available_at' => JobRowCodec::decodeNano(JobRowCodec::str($fields['available_at'] ?? null)),
                 'priority' => $fields['priority'] ?? null,
                 'attempt' => $fields['attempt'] ?? null,
                 'correlation_id' => $correlation === '' ? null : $correlation,
@@ -325,70 +329,13 @@ final readonly class RedisStreamJobQueue implements JobQueueInterface
             'job_id' => JobRowCodec::str($fields[1] ?? null),
             'job_type' => JobRowCodec::str($fields[3] ?? null),
             'payload' => JobRowCodec::str($fields[5] ?? null),
-            'available_at' => $this->decodeNano(JobRowCodec::str($fields[7] ?? null)),
+            'available_at' => JobRowCodec::decodeNano(JobRowCodec::str($fields[7] ?? null)),
             'priority' => JobRowCodec::str($fields[9] ?? null),
             'attempt' => JobRowCodec::str($fields[11] ?? null),
             'correlation_id' => $correlation !== '' ? $correlation : null,
             'trace_parent' => $traceParent !== '' ? $traceParent : null,
             'headers' => JobRowCodec::str($fields[17] ?? null),
         ];
-    }
-
-    /**
-     * Encode a nano timestamp as a 20-character string whose lexicographic
-     * order equals numeric order over the entire signed 64-bit domain (see
-     * the class docblock's Lua-double note and the parity contract pinned
-     * in docs/JOB-QUEUE-PARITY.md, issue #272).
-     *
-     * Non-negative deadlines are zero-padded to 20 digits — byte-identical
-     * to the v2.32-v2.34 storage, so existing entries and the Lua
-     * comparisons keep their exact bytes. Negative deadlines are '-' plus
-     * the 9's complement of the 19-digit zero-padded magnitude: the leading
-     * '-' (0x2D) sorts before every digit (0x30), so all negatives precede
-     * all positives, and the per-digit complement restores magnitude order
-     * inside the negatives. The pre-v2.34.1 encoding stored negatives
-     * unpadded, which inverted both the ordering and the availability
-     * verdict against the numeric contract of InMemoryJobQueue and
-     * PdoJobQueue — v2.32's "still comparable among themselves" note was
-     * wrong for exactly the same-magnitude case it called out.
-     */
-    private function padNano(int $value): string
-    {
-        if ($value >= 0) {
-            return sprintf('%020d', $value);
-        }
-        $magnitude = str_pad(ltrim((string) $value, '-'), 19, '0', \STR_PAD_LEFT);
-
-        return '-' . strtr($magnitude, self::DIGITS, self::DIGITS_COMPLEMENT);
-    }
-
-    /**
-     * Decode the stored 20-character representation back to the plain
-     * numeric string {@see JobRowCodec} casts — mirroring the complement
-     * transform of {@see padNano()} ('-9223372036854775808' round-trips
-     * PHP_INT_MIN exactly, the magnitude never touching a float).
-     *
-     * Anything that is not one of the two well-formed shapes — 20 digits,
-     * or '-' plus 19 digits — is a corrupt field: an unpadded negative
-     * written by a pre-v2.34.1 release, or raw bytes that never came from
-     * {@see padNano()}. The claim has already destroyed the entry, so the
-     * hydrate failure surfaces exactly once and the queue keeps flowing —
-     * the documented corrupt-entry doctrine (docs/JOB-QUEUE-PARITY.md row
-     * 10); realistic queues (non-negative deadlines) are unaffected
-     * because their stored bytes are unchanged.
-     */
-    private function decodeNano(string $stored): string
-    {
-        if (strlen($stored) === 20 && strspn($stored, self::DIGITS) === 20) {
-            return $stored;
-        }
-        if (strlen($stored) === 20 && $stored[0] === '-' && strspn(substr($stored, 1), self::DIGITS) === 19) {
-            $magnitude = ltrim(strtr(substr($stored, 1), self::DIGITS_COMPLEMENT, self::DIGITS), '0');
-
-            return '-' . ($magnitude === '' ? '0' : $magnitude);
-        }
-
-        throw new RedisJobQueueException('Job queue entry has a corrupt available_at field.');
     }
 
     /**

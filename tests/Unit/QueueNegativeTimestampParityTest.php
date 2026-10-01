@@ -21,11 +21,11 @@ declare(strict_types=1);
  * - pdo / in-memory: always-on sections pinning the numeric baseline the
  *   reference adapters must keep (a regression that silently narrows
  *   their acceptance domain would fail here, not just in the Redis zone);
- * - encoding: reflection over padNano()/decodeNano() — the pure
- *   order-preservation invariant, byte-compat with legacy v2.32-v2.34
- *   storage, round-trip of PHP_INT_MIN, and malformed-field rejection;
- *   needs no ext-redis and no server, so it runs on every platform
- *   profile;
+ * - encoding: the pure order-preservation invariant over
+ *   JobRowCodec::encodeNano()/decodeNano() — byte-compat with legacy
+ *   v2.32-v2.34 storage, round-trip of PHP_INT_MIN, and malformed-field
+ *   rejection; needs no ext-redis and no server, so it runs on every
+ *   platform profile;
  * - fuzz: bounded random signed pairs asserting lexicographic order
  *   equals numeric order across the domain.
  */
@@ -39,6 +39,7 @@ use Zef\Framework\Database\PdoConnection;
 use Zef\Framework\Job\InMemoryJobQueue;
 use Zef\Framework\Job\JobEnvelope;
 use Zef\Framework\Job\JobQueueInterface;
+use Zef\Framework\Job\JobRowCodec;
 use Zef\Framework\Job\PdoJobQueue;
 use Zef\Framework\Job\RedisJobQueueException;
 use Zef\Framework\Job\RedisStreamJobQueue;
@@ -55,8 +56,6 @@ final class QueueNegativeTimestampParityTest extends TestCase
     private const string PASS = 'zef-test-secret';
 
     private ?\Redis $redis = null;
-
-    private ?RedisStreamJobQueue $nanoQueue = null;
 
     protected function setUp(): void
     {
@@ -508,28 +507,18 @@ final class QueueNegativeTimestampParityTest extends TestCase
     }
 
     /**
-     * padNano()/decodeNano() are pure instance methods that never touch
-     * $this — an uninitialized shell instance reaches them without
-     * standing up a Redis connection.
+     * The order-preserving encoding lives in {@see JobRowCodec} (the pure
+     * static row codec); these helpers keep the encoding-invariant tests
+     * reading the same way they did when the methods were private on the
+     * queue.
      */
-    private function nanoQueue(): RedisStreamJobQueue
-    {
-        return $this->nanoQueue ??= new \ReflectionClass(RedisStreamJobQueue::class)->newInstanceWithoutConstructor();
-    }
-
     private function encodedNano(int $value): string
     {
-        $encoded = new \ReflectionMethod(RedisStreamJobQueue::class, 'padNano')->invoke($this->nanoQueue(), $value);
-        assert(is_string($encoded));
-
-        return $encoded;
+        return JobRowCodec::encodeNano($value);
     }
 
     private function decodedNano(string $stored): string
     {
-        $decoded = new \ReflectionMethod(RedisStreamJobQueue::class, 'decodeNano')->invoke($this->nanoQueue(), $stored);
-        assert(is_string($decoded));
-
-        return $decoded;
+        return JobRowCodec::decodeNano($stored);
     }
 }
