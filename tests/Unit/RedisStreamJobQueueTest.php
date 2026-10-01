@@ -351,15 +351,23 @@ final class RedisStreamJobQueueTest extends TestCase
         self::assertSame('2', $fake->evalArgs[8] ?? null, 'attempt travels as string');
     }
 
-    /** Negative deadlines stay unpadded (padNano's documented branch). */
-    public function testNegativeDeadlineTravelsUnpadded(): void
+    /**
+     * Negative deadlines travel as the order-preserving complement
+     * encoding — '-' plus the 9's complement of the 19-digit zero-padded
+     * magnitude — restoring the signed-domain parity with InMemoryJobQueue
+     * and PdoJobQueue (issue #272, docs/JOB-QUEUE-PARITY.md, v2.34.1). The
+     * pre-fix unpadded '-5' inverted the Lua's lexicographic ordering and
+     * availability verdicts for exactly the same-magnitude case v2.32
+     * claimed was safe.
+     */
+    public function testNegativeDeadlineTravelsOrderPreserving(): void
     {
         $fake = new QueueFakeRedis();
         $fake->evalResult = 1;
         $queue = new RedisStreamJobQueue($fake, 'neg');
         $queue->enqueue($this->job('job-neg-0001', -5));
 
-        self::assertSame('-5', $fake->evalArgs[6] ?? null, 'negative nano deadline is stored as-is');
+        self::assertSame('-9999999999999999994', $fake->evalArgs[6] ?? null, 'negative nano deadline is complement-encoded (order-preserving, width 20)');
     }
 
     /** peek() without a budget passes the documented default of 100 down. */
