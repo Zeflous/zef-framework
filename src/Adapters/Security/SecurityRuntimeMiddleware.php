@@ -19,8 +19,6 @@ use Psr\Log\LoggerInterface;
 
 final class SecurityRuntimeMiddleware implements MiddlewareInterface
 {
-    private const array SAFE_METHODS = ['GET', 'HEAD', 'OPTIONS', 'TRACE'];
-
     /**
      * Server-request attribute carrying the per-principal CSRF binding
      * context (typically the session id). When a middleware running EARLIER
@@ -29,6 +27,7 @@ final class SecurityRuntimeMiddleware implements MiddlewareInterface
      * longer validates. Unset attribute keeps the global-secret behaviour.
      */
     public const string CSRF_BINDING_ATTRIBUTE = 'zef.csrf.binding';
+    private const array SAFE_METHODS = ['GET', 'HEAD', 'OPTIONS', 'TRACE'];
 
     /**
      * Lazily created on the first CSRF-enforcing request (php:S2830): the
@@ -206,8 +205,13 @@ final class SecurityRuntimeMiddleware implements MiddlewareInterface
             return [null, null];
         }
         // Per-principal binding (#317): resolved per request, so tokens are
-        // only valid for the principal their binding context names.
-        $binding = $this->csrfBindingContext($request);
+        // only valid for the principal their binding context names. The
+        // context is the string carried by the CSRF_BINDING_ATTRIBUTE request
+        // attribute (typically the session id set by a session middleware
+        // earlier in the stack); missing/empty attribute -> '' -> the legacy
+        // unbound behaviour (full BC for deployments without sessions).
+        $attribute = $request->getAttribute(self::CSRF_BINDING_ATTRIBUTE);
+        $binding = is_string($attribute) && $attribute !== '' ? $attribute : '';
         $cookieToken = $this->cookieValue($request->getHeaderLine('Cookie'), $this->policy->csrfCookieName);
         if (!in_array($method, self::SAFE_METHODS, true)) {
             return [null, $this->unsafeMethodCsrfResponse($tokenManager, $request, $cookieToken, $requestId, $binding)];
@@ -219,19 +223,6 @@ final class SecurityRuntimeMiddleware implements MiddlewareInterface
         $needsReissue = $cookieToken === null || !$tokenManager->isValid($cookieToken, $binding);
 
         return [$needsReissue ? $tokenManager->issue($binding) : null, null];
-    }
-
-    /**
-     * The token is bound to the string carried by the CSRF_BINDING_ATTRIBUTE
-     * request attribute (typically the session id set by a session
-     * middleware earlier in the stack). Missing/empty attribute -> '' -> the
-     * legacy unbound behaviour (full BC for deployments without sessions).
-     */
-    private function csrfBindingContext(ServerRequestInterface $request): string
-    {
-        $binding = $request->getAttribute(self::CSRF_BINDING_ATTRIBUTE);
-
-        return is_string($binding) && $binding !== '' ? $binding : '';
     }
 
     private function unsafeMethodCsrfResponse(

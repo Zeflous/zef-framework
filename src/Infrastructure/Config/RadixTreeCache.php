@@ -224,7 +224,7 @@ final readonly class RadixTreeCache
             throw new InvalidConfigurationException("Failed to write radix cache temp file '{$tmp}'.");
         }
         if (DIRECTORY_SEPARATOR === '/') {
-            chmod($tmp, 0600);
+            chmod($tmp, 0o600);
         }
         $written = fwrite($handle, $entry);
         $closed = fclose($handle);

@@ -77,7 +77,7 @@ final readonly class ConfigCompiler
             throw new InvalidConfigurationException("Failed to write compiled config temp file '{$tmp}'.");
         }
         if (DIRECTORY_SEPARATOR === '/') {
-            chmod($tmp, 0600);
+            chmod($tmp, 0o600);
         }
         $written = fwrite($handle, $code);
         $closed = fclose($handle);

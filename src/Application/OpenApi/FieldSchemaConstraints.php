@@ -22,9 +22,9 @@ final class FieldSchemaConstraints
 
     private ?int $maxLength = null;
 
-    private int|float|null $minimum = null;
+    private float|int|null $minimum = null;
 
-    private int|float|null $maximum = null;
+    private float|int|null $maximum = null;
 
     private ?string $pattern = null;
 
@@ -144,7 +144,7 @@ final class FieldSchemaConstraints
      * `minimum`/`maximum` are valid for both integers and numbers — dropping
      * non-integral bounds silently produced unconstrained schemas (issue #315).
      */
-    private function asNumeric(mixed $value): int|float|null
+    private function asNumeric(mixed $value): float|int|null
     {
         if (is_int($value) || is_float($value)) {
             return $value;

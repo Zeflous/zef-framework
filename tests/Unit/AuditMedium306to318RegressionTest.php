@@ -11,36 +11,42 @@ declare(strict_types=1);
 namespace Zef\Test\Unit;
 
 use PHPUnit\Framework\TestCase;
-use Psr\Http\Message\ResponseInterface;
-use Psr\Http\Message\ServerRequestInterface;
 use Zef\Framework\Config\CompiledConfigSource;
+use Zef\Framework\Config\Config;
+use Zef\Framework\Config\ConfigCompiler;
 use Zef\Framework\Config\ConfigKey;
 use Zef\Framework\Config\ConfigLoader;
 use Zef\Framework\Config\ConfigSchema;
+use Zef\Framework\Config\ConfigValidationException;
 use Zef\Framework\Config\ConfigValueType;
 use Zef\Framework\Config\FileSecretsProvider;
 use Zef\Framework\Config\PhpFileConfigSource;
 use Zef\Framework\Container\Container;
 use Zef\Framework\Container\DeferrableProviderInterface;
-use Zef\Framework\Container\ServiceRegistrarInterface;
 use Zef\Framework\Container\ServiceProviderInterface;
+use Zef\Framework\Container\ServiceRegistrarInterface;
 use Zef\Framework\Exception\InvalidConfigurationException;
 use Zef\Framework\Foundation\EnvInterface;
 use Zef\Framework\Job\JobEnvelope;
 use Zef\Framework\Job\JobQueueInterface;
+use Zef\Framework\Job\RedisStreamJobQueue;
 use Zef\Framework\Job\ScheduleInterface;
 use Zef\Framework\Job\Scheduler;
 use Zef\Framework\OpenApi\Attribute\Property as PropertyAttr;
+use Zef\Framework\OpenApi\Attribute\Schema;
 use Zef\Framework\OpenApi\ClassSchemaBuilder;
 use Zef\Framework\OpenApi\FieldRulesSchemaMapper;
+use Zef\Framework\OpenApi\OpenApiScalarConstraints;
 use Zef\Framework\OpenApi\SchemaGenerator;
 use Zef\Framework\Security\CsrfTokenManager;
 use Zef\Framework\Validation\FieldRules;
 use Zef\Framework\Validation\Validator;
-use Zef\Framework\OpenApi\OpenApiScalarConstraints;
 use Zef\Middleware\ConfigProvider;
 use Zef\Middleware\ErrorResponseFactory;
 
+/**
+ * @internal
+ */
 final class AuditMedium306to318RegressionTest extends TestCase
 {
     private string $workspace;
@@ -48,7 +54,7 @@ final class AuditMedium306to318RegressionTest extends TestCase
     protected function setUp(): void
     {
         $this->workspace = sys_get_temp_dir() . '/zef-audit-m-' . bin2hex(random_bytes(5));
-        mkdir($this->workspace . '/secrets', 0777, true);
+        mkdir($this->workspace . '/secrets', 0o777, true);
     }
 
     protected function tearDown(): void
@@ -69,7 +75,7 @@ final class AuditMedium306to318RegressionTest extends TestCase
 
     public function testCorsRunsOutsideTheSecurityMiddlewares(): void
     {
-        $config = (new ConfigProvider(false, new AuditMediumEnvStub([])))->getConfig();
+        $config = new ConfigProvider(false, new AuditMediumEnvStub([]))->getConfig();
         $stack = $config['stack'];
         self::assertIsArray($stack);
         assert(array_is_list($stack) && $stack !== []);
@@ -138,7 +144,7 @@ final class AuditMedium306to318RegressionTest extends TestCase
         try {
             $loader->load();
             self::fail('A string secret on an int key must fail the load.');
-        } catch (\Zef\Framework\Config\ConfigValidationException $e) {
+        } catch (ConfigValidationException $e) {
             $message = $e->violations()[0]->message;
             self::assertStringContainsString("string('******')", $message, 'Violation must carry the mask, not the value.');
             self::assertStringNotContainsString('sk-live-do-not-print-987654', $message);
@@ -184,16 +190,16 @@ final class AuditMedium306to318RegressionTest extends TestCase
     public function testCompiledConfigPublishesAtMode0600WithoutTempLeftovers(): void
     {
         $target = $this->workspace . '/var/config.compiled.php';
-        mkdir(dirname($target), 0777, true);
-        (new \Zef\Framework\Config\ConfigCompiler(0o600))->export(
-            new \Zef\Framework\Config\Config(['db' => ['dsn' => 'sqlite::memory:']]),
+        mkdir(dirname($target), 0o777, true);
+        new ConfigCompiler(0o600)->export(
+            new Config(['db' => ['dsn' => 'sqlite::memory:']]),
             $target,
         );
         self::assertFileExists($target);
         // Windows cannot represent POSIX modes (chmod only toggles the read-only
         // flag, reported as 0666); the 0600 guarantee is verified on POSIX.
         if (\PHP_OS_FAMILY !== 'Windows') {
-            self::assertSame(0600, fileperms($target) & 0777);
+            self::assertSame(0o600, fileperms($target) & 0o777);
         }
         self::assertSame([], glob($this->workspace . '/var/.*.tmp'), 'No temp file may survive the publish.');
     }
@@ -270,6 +276,7 @@ final class AuditMedium306to318RegressionTest extends TestCase
         $queue->failOnNth = 2; // fire 10 succeeds, fire 20 fails this tick
         $scheduler = new Scheduler($queue);
         $scheduler->register('job', [], $schedule);
+
         try {
             $scheduler->tick(100);
             self::fail('The simulated enqueue failure must surface.');
@@ -293,7 +300,7 @@ final class AuditMedium306to318RegressionTest extends TestCase
 
     public function testDequeueScriptHasNoLexicographicIdTieBreak(): void
     {
-        $ref = new \ReflectionClass(\Zef\Framework\Job\RedisStreamJobQueue::class);
+        $ref = new \ReflectionClass(RedisStreamJobQueue::class);
         $script = $ref->getConstant('LUA_DEQUEUE');
         self::assertIsString($script);
         self::assertStringNotContainsString('entries[i][1] < bestId', $script, 'Byte-wise id comparison must be gone (issue #313).');
@@ -305,7 +312,7 @@ final class AuditMedium306to318RegressionTest extends TestCase
 
     public function testAnnotatedUnionPropertyKeepsOneOf(): void
     {
-        $schema = (new ClassSchemaBuilder(new SchemaGenerator()))->build(AuditMediumUnionDto::class);
+        $schema = new ClassSchemaBuilder(new SchemaGenerator())->build(AuditMediumUnionDto::class);
         $mixed = $schema->properties['mixed'] ?? null;
         self::assertNotNull($mixed);
         self::assertNotNull($mixed->oneOf, 'applyPropertyMeta() must forward oneOf (issue #314).');
@@ -318,8 +325,8 @@ final class AuditMedium306to318RegressionTest extends TestCase
 
     public function testFloatBoundsSurviveSchemaGeneration(): void
     {
-        $rules = (new FieldRules('rate'))->typeNumeric()->min(0.5)->max(99.5);
-        $schema = (new FieldRulesSchemaMapper())->mapField($rules);
+        $rules = new FieldRules('rate')->typeNumeric()->min(0.5)->max(99.5);
+        $schema = new FieldRulesSchemaMapper()->mapField($rules);
         self::assertSame(0.5, $schema->minimum, 'min(0.5) must not be dropped (issue #315).');
         self::assertSame(99.5, $schema->maximum);
 
@@ -338,7 +345,7 @@ final class AuditMedium306to318RegressionTest extends TestCase
         $validator = new Validator();
         $validator->field('note')->required()->nullable();
         $validator->field('id')->required();
-        $schema = (new FieldRulesSchemaMapper())->mapValidator($validator);
+        $schema = new FieldRulesSchemaMapper()->mapValidator($validator);
         self::assertContains('id', $schema->required);
         self::assertNotContains('note', $schema->required, 'The validator accepts absence of a nullable-required field, so the schema must not list it (issue #316).');
     }
@@ -379,7 +386,7 @@ final class AuditMedium306to318RegressionTest extends TestCase
         $validator->field('name')->required();
         $result = $validator->validate(['status' => '', 'name' => 'ann']);
         self::assertTrue($result->ok());
-        self::assertArrayNotHasKey('status', $result->data, "An empty value no rule accepted must not reach handlers (issue #318).");
+        self::assertArrayNotHasKey('status', $result->data, 'An empty value no rule accepted must not reach handlers (issue #318).');
         self::assertSame('ann', $result->data['name']);
     }
 
@@ -475,9 +482,9 @@ final class AuditMediumDeferredB implements ServiceProviderInterface, Deferrable
     }
 }
 
-#[\Zef\Framework\OpenApi\Attribute\Schema(name: 'AuditMediumUnionDto')]
+#[Schema(name: 'AuditMediumUnionDto')]
 final class AuditMediumUnionDto
 {
     #[PropertyAttr(description: 'mixed identifier')]
-    public string|int $mixed = '';
+    public int|string $mixed = '';
 }

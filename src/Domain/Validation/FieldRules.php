@@ -148,10 +148,8 @@ final class FieldRules
     /** @param list<int|string> $allowed */
     public function in(array $allowed, string $message = 'is not one of the allowed values.'): self
     {
-        foreach ($allowed as $value) {
-            if (!is_string($value) && !is_int($value)) {
-                throw new \InvalidArgumentException('in() accepts only string/int values.');
-            }
+        if (array_any($allowed, static fn (mixed $value): bool => !is_string($value) && !is_int($value))) {
+            throw new \InvalidArgumentException('in() accepts only string/int values.');
         }
 
         return $this->add(
@@ -222,16 +220,13 @@ final class FieldRules
      */
     public function skipsEmpty(): bool
     {
-        if ($this->rules === []) {
-            return false;
-        }
         foreach ($this->rules as $rule) {
             if (!$rule['skipEmpty']) {
                 return false;
             }
         }
 
-        return true;
+        return $this->rules !== [];
     }
 
     /** @return list<ValidationError> failures for the given raw value */
@@ -239,10 +234,8 @@ final class FieldRules
     {
         $errors = [];
         foreach ($this->rules as $rule) {
-            if ($rule['skipNull'] && $value === null) {
-                continue;
-            }
-            if ($rule['skipEmpty'] && ($value === '' || $value === [])) {
+            if (($rule['skipNull'] && $value === null)
+                || ($rule['skipEmpty'] && ($value === '' || $value === []))) {
                 continue;
             }
             $passed = ($rule['check'])($value);

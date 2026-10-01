@@ -57,8 +57,7 @@ final readonly class Config
         private array $values,
         ?ConfigRadixTree $cachedIndex = null,
         private array $secretPaths = [],
-    )
-    {
+    ) {
         // php:S2830: the eager fallback goes through the named factory so the
         // constructor only picks between injected and derived state.
         $this->index = $cachedIndex ?? $this->buildIndex($values);

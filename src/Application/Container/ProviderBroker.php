@@ -139,18 +139,19 @@ final class ProviderBroker
             $referenced = [];
             foreach ($registry->definitions() as $definition) {
                 foreach ($definition->dependencies as $dep) {
-                    // @infection-ignore-all TrueValue — ekuivalen: array_keys() hanya membaca kunci; nilai tidak relevan
+                    // @infection-ignore-all TrueValue — array_keys() hanya membaca kunci, nilai tidak relevan
                     $referenced[$dep] = true;
                 }
             }
             foreach ($registry->aliases() as $target) {
-                // @infection-ignore-all TrueValue — ekuivalen: array_keys() hanya membaca kunci; nilai tidak relevan
+                // @infection-ignore-all TrueValue — array_keys() hanya membaca kunci, nilai tidak relevan
                 $referenced[$target] = true;
             }
             foreach (array_keys($referenced) as $id) {
                 $this->triggerFor((string) $id);
             }
             $registeredAfter = count($this->registeredProviders);
-        } while ($registeredAfter > $registeredBefore && --$passes > 0);
+            --$passes;
+        } while ($registeredAfter > $registeredBefore && $passes > 0);
     }
 }
