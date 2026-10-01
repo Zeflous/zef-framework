@@ -208,7 +208,7 @@ php bin/zef openapi:generate --base-url=https://api.example.test
 
 | Opsi | Efek |
 |------|------|
-| `--format=json\|yaml` | format keluaran (default `json`) |
+| `--format=json` / `--format=yaml` | format keluaran (default `json`) |
 | `--output=<path>` | path berkas hasil (default `openapi.<format>`) |
 | `--pretty` / `--no-pretty` | pretty-print JSON/YAML |
 | `--postman=<path>` | export tambahan Postman v2.1 dari spesifikasi |
