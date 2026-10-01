@@ -47,8 +47,9 @@ final class Audit303EtagStreamRewindTest extends TestCase
         $response = $this->runThroughMiddleware($middleware, 'hello', 'GET', 200);
 
         \ob_start();
+
         try {
-            (new ResponseEmitter())->emit($this->asForeign($response));
+            new ResponseEmitter()->emit($this->asForeign($response));
         } finally {
             $echoed = \ob_get_clean();
         }
@@ -65,8 +66,9 @@ final class Audit303EtagStreamRewindTest extends TestCase
         self::assertTrue($body->eof(), 'precondition: (string) left the cursor at EOF');
 
         \ob_start();
+
         try {
-            (new ResponseEmitter())->emit(new Response(200, ['Content-Length' => '5'], $body));
+            new ResponseEmitter()->emit(new Response(200, ['Content-Length' => '5'], $body));
         } finally {
             $echoed = \ob_get_clean();
         }
@@ -99,9 +101,11 @@ final class Audit303EtagStreamRewindTest extends TestCase
     ): ResponseInterface {
         $request = new ServerRequest($method, new Uri('/etag'));
         if ($ifNoneMatch !== null) {
-            $request = $request->withHeader('If-None-Match', $ifNoneMatch);
+            $withHeader = $request->withHeader('If-None-Match', $ifNoneMatch);
+            self::assertInstanceOf(ServerRequestInterface::class, $withHeader);
+            $request = $withHeader;
         }
-        $handler = new class ($body, $status) implements RequestHandlerInterface {
+        $handler = new class($body, $status) implements RequestHandlerInterface {
             public function __construct(
                 private readonly string $body,
                 private readonly int $status,

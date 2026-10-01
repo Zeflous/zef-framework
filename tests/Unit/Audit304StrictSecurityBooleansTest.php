@@ -18,12 +18,18 @@ use Zef\Framework\Foundation\Env;
 use Zef\Framework\Foundation\EnvInterface;
 use Zef\Framework\Security\SecurityPolicy;
 use Zef\Framework\Security\SecurityPolicyException;
+use Zef\Middleware\ConfigProvider;
+use Zef\Middleware\SecurityHeadersMiddleware;
 
 /**
  * @internal
  */
 final class Audit304StrictSecurityBooleansTest extends TestCase
 {
+    protected function tearDown(): void
+    {
+        putenv('ZEF_AUDIT304_PROBE');
+    }
     // ------------------------------------------------------------------
     // Env::readBoolStrict — the shared port-level primitive
     // ------------------------------------------------------------------
@@ -116,21 +122,21 @@ final class Audit304StrictSecurityBooleansTest extends TestCase
 
     public function testLiveConfigProviderHstsCspAreStrict(): void
     {
-        $provider = new \Zef\Middleware\ConfigProvider(false, new Audit304Env([
+        $provider = new ConfigProvider(false, new Audit304Env([
             'ZEF_SECURITY_HSTS' => 'enabled',
             'ZEF_SECURITY_CSP' => 'on',
         ]));
-        $factory = $provider->getConfig()['services']['middleware.security']['factory'];
+        $factory = $this->securityHeadersFactory($provider);
 
-        self::assertInstanceOf(\Zef\Middleware\SecurityHeadersMiddleware::class, $factory());
+        self::assertInstanceOf(SecurityHeadersMiddleware::class, $factory());
     }
 
     public function testLiveConfigProviderHstsTypoRefusesToBoot(): void
     {
-        $provider = new \Zef\Middleware\ConfigProvider(false, new Audit304Env([
+        $provider = new ConfigProvider(false, new Audit304Env([
             'ZEF_SECURITY_HSTS' => 'enabledx', // one-character typo
         ]));
-        $factory = $provider->getConfig()['services']['middleware.security']['factory'];
+        $factory = $this->securityHeadersFactory($provider);
 
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('ZEF_SECURITY_HSTS');
@@ -138,9 +144,24 @@ final class Audit304StrictSecurityBooleansTest extends TestCase
         $factory();
     }
 
-    protected function tearDown(): void
+    /** @return callable(): SecurityHeadersMiddleware */
+    private function securityHeadersFactory(ConfigProvider $provider): callable
     {
-        putenv('ZEF_AUDIT304_PROBE');
+        $config = $provider->getConfig();
+        $services = $config['services'] ?? null;
+        if (!is_array($services)) {
+            self::fail('getConfig() must carry a services map');
+        }
+        $security = $services['middleware.security'] ?? null;
+        if (!is_array($security)) {
+            self::fail('services must carry middleware.security');
+        }
+        $factory = $security['factory'] ?? null;
+        if (!is_callable($factory)) {
+            self::fail('middleware.security must expose a callable factory');
+        }
+
+        return $factory;
     }
 }
 

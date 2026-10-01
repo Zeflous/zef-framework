@@ -41,7 +41,7 @@ final class Audit302OpenApiUnionSchemaTest extends TestCase
                 ['type' => 'string'],
                 ['type' => 'integer'],
             ],
-            $array['oneOf'],
+            $array['oneOf'] ?? null,
         );
     }
 
@@ -60,16 +60,16 @@ final class Audit302OpenApiUnionSchemaTest extends TestCase
 
     public function testTypedSchemasStillEmitType(): void
     {
-        $array = (new Schema(type: SchemaType::String, minLength: 1))->toArray();
+        $array = new Schema(type: SchemaType::String, minLength: 1)->toArray();
 
-        self::assertSame('string', $array['type'], 'ordinary typed schemas are unchanged');
-        self::assertSame(1, $array['minLength']);
+        self::assertSame('string', $array['type'] ?? null, 'ordinary typed schemas are unchanged');
+        self::assertSame(1, $array['minLength'] ?? null);
     }
 
     public function testRuntimeGateAcceptsValidUnionPayloads(): void
     {
         $checker = new OpenApiSchemaChecker([]);
-        $schema = (new SchemaGenerator())
+        $schema = new SchemaGenerator()
             ->generateFromClass(Audit302UnionDto::class)
             ->properties['flexible']
             ->toArray()
@@ -82,7 +82,7 @@ final class Audit302OpenApiUnionSchemaTest extends TestCase
     public function testRuntimeGateStillRejectsNonMembers(): void
     {
         $checker = new OpenApiSchemaChecker([]);
-        $schema = (new SchemaGenerator())
+        $schema = new SchemaGenerator()
             ->generateFromClass(Audit302UnionDto::class)
             ->properties['flexible']
             ->toArray()
@@ -98,7 +98,7 @@ final class Audit302OpenApiUnionSchemaTest extends TestCase
  */
 final class Audit302UnionDto
 {
-    public string|int $flexible;
+    public int|string $flexible;
 
-    public string|int|null $maybe = null;
+    public int|string|null $maybe = null;
 }

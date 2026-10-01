@@ -163,10 +163,11 @@ final class Env implements EnvInterface
             return false;
         }
 
-        throw new \InvalidArgumentException(
-            $name . "='" . $raw . "' is not a recognized boolean "
-            . '(allowed: 1/0, true/false, yes/no, on/off, enabled/disabled).',
-        );
+        throw new \InvalidArgumentException(sprintf(
+            "%s='%s' is not a recognized boolean (allowed: 1/0, true/false, yes/no, on/off, enabled/disabled).",
+            $name,
+            $raw,
+        ));
     }
 
     #[\Override]

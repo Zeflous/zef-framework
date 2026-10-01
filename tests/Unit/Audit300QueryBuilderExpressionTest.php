@@ -93,6 +93,14 @@ final class Audit300QueryBuilderExpressionTest extends TestCase
         // (SELECT 7) evaluates to 7 -> rows 7..10. The old bug bound the
         // object as the string '(SELECT 7)', SQLite compared n >= 0 and
         // returned all six rows.
-        self::assertSame([7, 8, 9, 10], array_map('intval', $rows));
+        $ints = [];
+        self::assertIsArray($rows);
+        foreach ($rows as $row) {
+            if (!is_numeric($row)) {
+                self::fail('a PDO column fetch must return numeric values');
+            }
+            $ints[] = (int) $row;
+        }
+        self::assertSame([7, 8, 9, 10], $ints);
     }
 }

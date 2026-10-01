@@ -26,7 +26,7 @@ final class Audit301UpcasterPayloadOnlyTest extends TestCase
     public function testPayloadOnlyUpcasterRunsOnceAndReshapesPayload(): void
     {
         $calls = 0;
-        $registry = new EventUpcaster(new class ($calls) implements UpcasterInterface {
+        $registry = new EventUpcaster(new class($calls) implements UpcasterInterface {
             public function __construct(private int &$calls) {}
 
             #[\Override]
@@ -113,7 +113,7 @@ final class Audit301UpcasterPayloadOnlyTest extends TestCase
     public function testRenameToSameTypeTerminatesInsteadOfLooping(): void
     {
         $calls = 0;
-        $registry = new EventUpcaster(new class ($calls) implements UpcasterInterface {
+        $registry = new EventUpcaster(new class($calls) implements UpcasterInterface {
             public function __construct(private int &$calls) {}
 
             #[\Override]

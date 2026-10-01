@@ -16,6 +16,7 @@ namespace Zef\Test\Unit;
 use PHPUnit\Framework\TestCase;
 use Zef\Framework\Container\Autowiring\AutowireCompilerPass;
 use Zef\Framework\Container\Container;
+use Zef\Framework\Exception\InvalidConfigurationException;
 
 /**
  * @internal
@@ -29,6 +30,9 @@ final class Audit305AutowireUnionPositionalTest extends TestCase
         $c->validateAndFreeze();
 
         $user = $c->get(Audit305MidUnionUser::class);
+        if (!$user instanceof Audit305MidUnionUser) {
+            self::fail('the container must resolve an Audit305MidUnionUser');
+        }
 
         self::assertInstanceOf(\stdClass::class, $user->probe, 'the class dependency lands in its own slot');
         self::assertSame('fallback', $user->mode, 'the optional union keeps its declared default');
@@ -42,6 +46,9 @@ final class Audit305AutowireUnionPositionalTest extends TestCase
         $c->validateAndFreeze();
 
         $user = $c->get(Audit305StringShiftUser::class);
+        if (!$user instanceof Audit305StringShiftUser) {
+            self::fail('the container must resolve an Audit305StringShiftUser');
+        }
 
         // Old plan: ['A', 'C'] -> new User('A', 'C') put 'A' (a string!)
         // into the string|int union slot and 'C' into label: silent garbage.
@@ -54,7 +61,7 @@ final class Audit305AutowireUnionPositionalTest extends TestCase
     {
         $c = new Container();
 
-        $this->expectException(\Zef\Framework\Exception\InvalidConfigurationException::class);
+        $this->expectException(InvalidConfigurationException::class);
         $this->expectExceptionMessage('is not autowireable');
 
         new AutowireCompilerPass()->process($c, [Audit305RequiredUnionUser::class]);
@@ -92,6 +99,6 @@ final class Audit305RequiredUnionUser
 {
     public function __construct(
         public readonly \stdClass $probe,
-        public readonly int|float $ratio,
+        public readonly float|int $ratio,
     ) {}
 }
