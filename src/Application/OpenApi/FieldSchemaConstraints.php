@@ -22,9 +22,9 @@ final class FieldSchemaConstraints
 
     private ?int $maxLength = null;
 
-    private ?int $minimum = null;
+    private int|float|null $minimum = null;
 
-    private ?int $maximum = null;
+    private int|float|null $maximum = null;
 
     private ?string $pattern = null;
 
@@ -70,12 +70,12 @@ final class FieldSchemaConstraints
                 break;
 
             case 'min':
-                $this->minimum = $this->asIntLike($params['bound'] ?? null) ?? $this->minimum;
+                $this->minimum = $this->asNumeric($params['bound'] ?? null) ?? $this->minimum;
 
                 break;
 
             case 'max':
-                $this->maximum = $this->asIntLike($params['bound'] ?? null) ?? $this->maximum;
+                $this->maximum = $this->asNumeric($params['bound'] ?? null) ?? $this->maximum;
 
                 break;
 
@@ -139,14 +139,15 @@ final class FieldSchemaConstraints
         $this->enum = $filtered !== [] ? array_values($filtered) : null;
     }
 
-    private function asIntLike(mixed $value): ?int
+    /**
+     * Numeric rule bounds accept floats (`min(0.5)`), and OpenAPI
+     * `minimum`/`maximum` are valid for both integers and numbers — dropping
+     * non-integral bounds silently produced unconstrained schemas (issue #315).
+     */
+    private function asNumeric(mixed $value): int|float|null
     {
-        if (is_int($value)) {
+        if (is_int($value) || is_float($value)) {
             return $value;
-        }
-
-        if (is_float($value) && floor($value) === $value) {
-            return (int) $value;
         }
 
         return null;
