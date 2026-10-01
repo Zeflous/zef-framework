@@ -67,7 +67,21 @@ final readonly class ConfigCompiler
             . var_export($values, true)
             . ";\n";
         $tmp = $directory . '/.' . $basename . '.' . bin2hex(random_bytes(6)) . '.tmp';
-        if (file_put_contents($tmp, $code) === false) {
+        // Create the temp file at 0600 BEFORE any secret-bearing bytes are
+        // written (issue #310): file_put_contents() would create it with the
+        // process umask (typically 0644) and leave a world-readable window
+        // until the mode application below. 'x' mode keeps the
+        // exclusive-create semantics of the random name.
+        $handle = fopen($tmp, 'x');
+        if ($handle === false) {
+            throw new InvalidConfigurationException("Failed to write compiled config temp file '{$tmp}'.");
+        }
+        if (DIRECTORY_SEPARATOR === '/') {
+            chmod($tmp, 0600);
+        }
+        $written = fwrite($handle, $code);
+        $closed = fclose($handle);
+        if ($written === false || $closed === false) {
             throw new InvalidConfigurationException("Failed to write compiled config temp file '{$tmp}'.");
         }
         // The Unix mode contract is POSIX-only: PHP's Windows emulation
