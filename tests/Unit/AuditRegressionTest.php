@@ -86,6 +86,9 @@ final class AuditRegressionTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage("Route 'generic' parameter 'v' must be scalar or Stringable, got null.");
 
+        // Deliberately violates the documented array<string,scalar|\Stringable>
+        // contract to prove the runtime rejects null.
+        // @phpstan-ignore argument.type
         $gen->generate('generic', ['v' => null]);
     }
 
