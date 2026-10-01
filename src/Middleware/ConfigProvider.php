@@ -116,15 +116,20 @@ final readonly class ConfigProvider implements ConfigProviderInterface
      */
     private function buildStack(): array
     {
+        // CORS runs immediately after the error handler so that EVERY outbound
+        // response carries CORS headers — including 429/403 short-circuits from
+        // the security middlewares and 500s from the error handler. Placed
+        // innermost, those statuses reach browsers as opaque CORS failures
+        // instead of their real status codes.
         $stack = [
             'middleware.error',
+            'middleware.cors',
             'middleware.security.runtime',
             'middleware.security',
             'middleware.timing',
-            'middleware.cors',
         ];
         if (trim($this->env->readString('ZEF_SECURITY_RATE_LIMIT_TIERS')) !== '') {
-            array_splice($stack, 2, 0, ['middleware.security.rate_limit']);
+            array_splice($stack, 3, 0, ['middleware.security.rate_limit']);
         }
 
         return $stack;
