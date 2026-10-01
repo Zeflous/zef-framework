@@ -5,32 +5,112 @@ GitHub API and the workflow files — not as intended. Where an enforcement rule
 its configuration disagree, the disagreement is written down here rather than
 smoothed over.
 
-Measured against the protection API on `main` @ `87e2ba94e21b4f22b911ab5e359dad4f03c39416`
-(re-verified 2026-09-24).
+Measured against the protection API on `main` @ `e33bf155732a52401f8290255dfa1329f19177d8`
+(re-verified 2026-10-01, after the v2.34.1 merge).
 
 ## 1. Branch protection on `main`
 
 | Setting | Value | Consequence |
 |---|---|---|
-| Required status contexts | **7**: `PHP lint, audit, static analysis and style` · `PHP SAST (Semgrep)` · `CodeQL` · `dependency-review` · `gitleaks` · `PHPBench` · `Build API documentation` | All seven must report green before merge. Corrected from the previous six: `Analyze (actions)` never published on a pull-request head and was replaced by `CodeQL` (the context that does publish), and `PHP SAST (Semgrep)` — the gate that analyses the PHP production source and previously could fail *without* blocking a merge — was added. |
+| Ruleset `main` required contexts | **6** (id `23878357`, `enforcement: active`) | Stale since its creation (2026-09-23): still lists `Analyze (actions)`, which the classic list replaced two days later (see N2). Additive only — it gates nothing the classic list does not already gate. |
+| Classic BP required contexts | **12** | The grown, current list — the number the v2.34.0 changelog counts ("required checks 11 → 12"). |
+| **Effective required (union)** | **13** | What a pull request must actually satisfy before merge. The canonical per-context table is §1.1; the drift history is N3. |
 | `strict` | `true` | The branch must be **up to date with `main`** — a PR that falls behind must update its branch. A `behind` PR is therefore expected behaviour, not a broken PR |
 | `enforce_admins` | `true` | No bypass, including for the owner |
 | `dismiss_stale_reviews` | `true` | Pushing after review re-requires review |
-| `require_code_owner_reviews` | `true` | Requires a review from a matching `.github/CODEOWNERS` owner |
+| `require_code_owner_reviews` | `false` (measured 2026-10-01) | Off in both mechanisms — the contradictory setting N1 recorded on 2026-09-24 was turned down since, without a note here until now. See N1. |
 | `required_approving_review_count` | **`0`** | ⚠️ See N1 below |
 | `required_linear_history` | `false` | Merge commits are permitted |
 | `allow_force_pushes` / `allow_deletions` | `false` | History on `main` is append-only through the API |
+| `required_conversation_resolution` | `true` | All review threads must be resolved before merge (present in both mechanisms) |
 
-### N1 — contradictory code-owner rule (open finding)
+### 1.1 The canonical gate table
 
-`require_code_owner_reviews: true` together with `required_approving_review_count: 0`
-is a contradictory configuration: GitHub only applies the code-owner requirement when
-at least one approving review is required, so today the rule cannot be satisfied *or*
-blocked. Until this run the repository also had **no `.github/CODEOWNERS` file at all**,
-so the setting referenced an artifact that did not exist.
+Thirteen contexts gate every merge — the union of the classic list (12) and
+the ruleset list (6, of which 5 overlap and 1 is the stale `Analyze
+(actions)`). "Enforced by" records which mechanism requires the context;
+"Reports on" records the events where the context actually publishes, as
+measured on PR #274 and on the `main` push after it.
 
-`.github/CODEOWNERS` now exists. Raising `required_approving_review_count` to `>= 1`
-is an **owner decision**: it changes the merge flow for every pull request.
+| # | Context | Enforced by | Gate domain | Reports on |
+|---|---|---|---|---|
+| 1 | `PHP lint, audit, static analysis and style` | both | lint · self-test 501/501 · PHPUnit 3532 · PHPStan (max + strict-rules) · deptrac · cs-fixer · phpcs · coverage ≥ 90% · rector dry-run · zone mutation ratchet · release docs/cadence ratchets | PR + push |
+| 2 | `dependency-review` | both | supply-chain diff of the lockfile | PR only |
+| 3 | `gitleaks` | both | whole-diff secret scan | PR + push |
+| 4 | `PHPBench` | both | performance budget against the committed baseline | PR + push |
+| 5 | `Build API documentation` | both | Doctum API-docs build | PR only |
+| 6 | `Analyze (actions)` | ruleset only | CodeQL `actions`-language analysis | PR + push |
+| 7 | `CodeQL` | classic only | the GHAS context proving the `actions`-language scan ran on the PR head (not a PHP content gate — CodeQL has no PHP support) | PR only |
+| 8 | `PHP SAST (Semgrep)` | classic only | blocking `ERROR`-severity Semgrep over `src/**` (+ tests/tooling lanes) | PR + push |
+| 9 | `SonarCloud Scan` | classic only | bugs/quality gate on the main SonarCloud project | PR + push |
+| 10 | `snyk` | classic only | Snyk dependency & license security | PR + push |
+| 11 | `code/snyk (Zeflous)` | classic only | Snyk code analysis through the Zeflous app | PR only |
+| 12 | `Platform smoke (windows-latest)` | classic only | Windows platform parity (graceful Redis-skip profile, no `ext-redis`) | PR + push |
+| 13 | `Stub pre-scan (tests fixtures)` | classic only | quarantined SonarCloud scan of `tests/**` + fail-closed fixture-count ratchet (191 files) | PR + push |
+
+Four contexts — `dependency-review`, `Build API documentation`, `CodeQL`,
+`code/snyk (Zeflous)` — report **only on pull requests**. A direct push to
+`main` (which `strict` + `enforce_admins` already forbids in practice) can
+never satisfy them; the merged pull request carries the evidence. This is
+why the check-run list on a fresh `main` HEAD appears to be "missing" four
+required names: they are PR-scoped by design, not skipped.
+
+The ruleset additionally enforces rule types the classic list has no
+equivalent for, all measured active on `main`:
+
+| Ruleset rule | Parameters (measured) | Measured effect |
+|---|---|---|
+| `code_scanning` | CodeQL + Semgrep OSS, all alert severities | would block a PR whose code-scanning results carry alerts; on green PRs its effect is indistinguishable from a backstop |
+| `code_quality` | all severities | same posture — backstop behind #9 |
+| `code_coverage` | minimum 90%, max drop 5% | requires a coverage report posted to the Checks API to take effect; no dedicated coverage check-run exists today, so the 90% floor is enforced by the `assert-coverage.php` step inside context #1 and this rule stays dormant |
+
+### N3 — the two protection mechanisms drifted apart (open finding)
+
+The ruleset `main` was created 2026-09-23 by copying that era's six classic
+contexts, `Analyze (actions)` included. Every correction and promotion since
+then landed in the **classic** list only: `Analyze (actions)` → `CodeQL`
+plus `PHP SAST (Semgrep)` (N2, 2026-09-24), later `SonarCloud Scan`, `snyk`,
+`code/snyk (Zeflous)`, `Platform smoke (windows-latest)`, and finally
+`Stub pre-scan (tests fixtures)` with v2.34.0 — while the ruleset's context
+list was never touched. The measured consequences:
+
+- The union is **13**, not 12 (the changelog's count of the classic list) and
+  not 7 (the number this file carried before this correction — it was last
+  re-verified 2026-09-24, before the zero-debt gates grew the classic list).
+- The stale ruleset copy is **additive only**: its one non-overlapping item,
+  `Analyze (actions)`, publishes green on PR heads today, so it costs one
+  extra green check and blocks nothing.
+- Every future promotion must add its context to **both** mechanisms — or
+  explicitly record the asymmetry in §1.1 — otherwise the drift regrows.
+
+Closing options (**owner decision** — deliberately not executed by this
+documentation change):
+
+- **A. Re-sync the ruleset** to the classic twelve (`Analyze (actions)` out,
+  the seven classic-only contexts in): dual enforcement stays, the union
+  drops to 12, and both APIs agree again.
+- **B. Consolidate on the ruleset** (turn classic protection off): one
+  mechanism, the modern API — conversation resolution and thread resolution
+  are already ruleset parameters (`required_review_thread_resolution`), but
+  the classic UI's required-context list disappears and the migration must
+  be verified gate-by-gate against §1.1 first.
+
+Until one is chosen, §1.1 is the single authoritative gate table, and both
+mechanisms stay untouched.
+
+### N1 — code-owner rule turned down by a config change (updated 2026-10-01)
+
+The 2026-09-24 measurement recorded `require_code_owner_reviews: true`
+together with `required_approving_review_count: 0` — a contradictory
+configuration: GitHub only applies the code-owner requirement when at least
+one approving review is required, so the rule could not be satisfied *or*
+blocked, and at that time the repository also had **no `.github/CODEOWNERS`
+file at all**. As measured now, both mechanisms carry
+`require_code_owner_reviews: false`, so nothing is contradictory anymore —
+the setting was turned down at some point after 2026-09-24 without a note
+here until this correction. `.github/CODEOWNERS` exists. Raising
+`required_approving_review_count` to `>= 1` remains an **owner decision**:
+it changes the merge flow for every pull request.
 
 ### N2 — the PHP SAST gate is now a required context (closed 2026-09-24)
 
@@ -45,6 +125,14 @@ CodeQL is still **not** a content gate for PHP here, because CodeQL does not sup
 at all; requiring it adds no PHP coverage. It is required as the context that proves the
 `actions`-language analysis ran (see §1), which is why `Analyze (actions)` was replaced by
 `CodeQL` rather than simply deleted.
+
+Correction note (2026-10-01): that replacement was applied to the **classic**
+context list only — the ruleset copy still carries `Analyze (actions)` today
+(see N3). Also, as of this re-verification `Analyze (actions)` *does* publish
+on pull-request heads (it is green on PR #273 and PR #274), so the "never
+publishes" rationale that motivated the swap no longer describes the
+platform behaviour; the context is kept because it is harmless and required
+by the stale ruleset copy.
 
 ## 2. Quality ratchets
 
@@ -164,12 +252,16 @@ reference in README/SECURITY keyed off it drifted three to nine minors behind
 `Platform smoke (windows-latest)` and `Platform smoke (PHP 8.5)`. They are
 deliberately **static-named jobs, not a matrix strategy**: GitHub Actions
 suffixes matrix values onto job names, which breaks the exact match against
-the required status-check context. The cells are also deliberately **not in
-the branch-protection required contexts yet** — an advisory cell must prove
-itself stable on main (two consecutive green runs on pushes, no flakes)
-before promotion, at which point the context names are added to the ruleset
-and the "advisory" label removed here. A gate that blocks merges while it is
-itself unproven trades one flake class for another.
+the required status-check context. The windows-latest cell has since been **promoted to a required context —
+via the classic protection list** (measured 2026-10-01: it gates PR #273 and
+PR #274). That promotion never reached this paragraph, and never reached the
+ruleset's context list either — the exact drift class N3 documents. The
+PHP 8.5 cell remains deliberately **not required** — an advisory cell must
+prove itself stable on main (two consecutive green runs on pushes, no
+flakes) before promotion, at which point the context name should be added to
+**both** mechanisms (the lesson of N3) and the "advisory" label removed
+here. A gate that blocks merges while it is itself unproven trades one
+flake class for another.
 
 The per-platform Redis profile is part of the design: Windows runners have no
 service containers, and loading `ext-redis` there without a server turns the
