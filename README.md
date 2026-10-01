@@ -33,10 +33,13 @@
   <a href="https://github.com/Zeflous/zef-framework/actions/workflows/dependency-review.yml"><img src="https://github.com/Zeflous/zef-framework/actions/workflows/dependency-review.yml/badge.svg" alt="Dependency Review"></a>  <br>
   <a href="https://github.com/Zeflous/zef-framework/actions/workflows/docs-check.yml"><img src="https://github.com/Zeflous/zef-framework/actions/workflows/docs-check.yml/badge.svg" alt="API Documentation"></a>
   <a href="https://github.com/Zeflous/zef-framework/actions/workflows/phpbench.yml"><img src="https://github.com/Zeflous/zef-framework/actions/workflows/phpbench.yml/badge.svg" alt="PHPBench"></a>
-  <a href="https://github.com/Zeflous/zef-framework/actions/workflows/mutation.yml"><img src="https://github.com/Zeflous/zef-framework/actions/workflows/mutation.yml/badge.svg" alt="Mutation"></a>
+  <!-- Mutation & Release dipicu tag rilis, bukan push ke main. Tanpa ?branch=, badge Mutation
+       resolve ke run terakhir di main (2026-09-17, era trigger lama) yang gagal — tampak merah.
+       Param ?branch= dipasang ke run rilis terakhir (v2.34.1); perbarui saat sinkronisasi README tiap rilis. -->
+  <a href="https://github.com/Zeflous/zef-framework/actions/workflows/mutation.yml"><img src="https://github.com/Zeflous/zef-framework/actions/workflows/mutation.yml/badge.svg?branch=v2.34.1" alt="Mutation (v2.34.1)"></a>
   <a href="https://github.com/Zeflous/zef-framework/actions/workflows/sbom.yml"><img src="https://github.com/Zeflous/zef-framework/actions/workflows/sbom.yml/badge.svg" alt="SBOM"></a>
   <a href="https://github.com/Zeflous/zef-framework/actions/workflows/pages.yml"><img src="https://github.com/Zeflous/zef-framework/actions/workflows/pages.yml/badge.svg" alt="Docs &amp; Pages"></a>
-  <a href="https://github.com/Zeflous/zef-framework/actions/workflows/release.yml"><img src="https://github.com/Zeflous/zef-framework/actions/workflows/release.yml/badge.svg" alt="Release"></a>
+  <a href="https://github.com/Zeflous/zef-framework/actions/workflows/release.yml"><img src="https://github.com/Zeflous/zef-framework/actions/workflows/release.yml/badge.svg?branch=v2.34.1" alt="Release (v2.34.1)"></a>
   <a href="https://github.com/Zeflous/zef-framework/actions/workflows/release-drafter.yml"><img src="https://github.com/Zeflous/zef-framework/actions/workflows/release-drafter.yml/badge.svg" alt="Release Drafter"></a>
   <a href="https://github.com/Zeflous/zef-framework/actions/workflows/auto-fix.yml"><img src="https://github.com/Zeflous/zef-framework/actions/workflows/auto-fix.yml/badge.svg" alt="Auto Fix"></a>
   <a href="https://github.com/Zeflous/zef-framework/actions/workflows/composer-lock.yml"><img src="https://github.com/Zeflous/zef-framework/actions/workflows/composer-lock.yml/badge.svg" alt="Composer Lock"></a>
