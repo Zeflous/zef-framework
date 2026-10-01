@@ -66,9 +66,12 @@ final readonly class ConfigProvider implements ConfigProviderInterface
                     // ZEF-DX-07 (issue #247): CSP and HSTS are secure-by-default
                     // here too — ZEF_SECURITY_CSP=0 / ZEF_SECURITY_HSTS=0 is the
                     // explicit opt-out for deployments that cannot take them.
+                    // Audit #304: strict fail-closed parsing — the lenient
+                    // readBool() mapped an unrecognized spelling (e.g.
+                    // 'enabled') to FALSE, silently dropping both headers.
                     'factory' => static fn (): SecurityHeadersMiddleware => new SecurityHeadersMiddleware([
-                        'hsts' => $env->readBool('ZEF_SECURITY_HSTS', true),
-                        'csp' => $env->readBool('ZEF_SECURITY_CSP', true),
+                        'hsts' => $env->readBoolStrict('ZEF_SECURITY_HSTS', true),
+                        'csp' => $env->readBoolStrict('ZEF_SECURITY_CSP', true),
                     ]),
                     'deps' => [],
                 ],

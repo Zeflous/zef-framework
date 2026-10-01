@@ -109,6 +109,35 @@ final class Audit304StrictSecurityBooleansTest extends TestCase
         ]));
     }
 
+    // ------------------------------------------------------------------
+    // Live middleware wiring — src/Middleware/ConfigProvider (the app/
+    // copy is dead: classmap + PSR-4 both resolve Zef\Middleware\* to src/)
+    // ------------------------------------------------------------------
+
+    public function testLiveConfigProviderHstsCspAreStrict(): void
+    {
+        $provider = new \Zef\Middleware\ConfigProvider(false, new Audit304Env([
+            'ZEF_SECURITY_HSTS' => 'enabled',
+            'ZEF_SECURITY_CSP' => 'on',
+        ]));
+        $factory = $provider->getConfig()['services']['middleware.security']['factory'];
+
+        self::assertInstanceOf(\Zef\Middleware\SecurityHeadersMiddleware::class, $factory());
+    }
+
+    public function testLiveConfigProviderHstsTypoRefusesToBoot(): void
+    {
+        $provider = new \Zef\Middleware\ConfigProvider(false, new Audit304Env([
+            'ZEF_SECURITY_HSTS' => 'enabledx', // one-character typo
+        ]));
+        $factory = $provider->getConfig()['services']['middleware.security']['factory'];
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('ZEF_SECURITY_HSTS');
+
+        $factory();
+    }
+
     protected function tearDown(): void
     {
         putenv('ZEF_AUDIT304_PROBE');
