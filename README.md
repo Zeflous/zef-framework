@@ -484,7 +484,7 @@ Kampanye mutasi dijalankan per **zona kanonik** (`scripts/f16_zones.tsv`, 27 zon
 
 ## CI/CD
 
-14 workflow pada `.github/workflows/`. `main` dilindungi: 12 check wajib, PR wajib, dan aturan berlaku juga untuk admin.
+20 workflow pada `.github/workflows/`. `main` dilindungi: 13 check wajib efektif — union proteksi classic BP (12 konteks) + ruleset `main` (6 konteks, 5 tumpang tindih; tabel kanonik di [`docs/GOVERNANCE.md`](docs/GOVERNANCE.md) §1.1) — PR wajib, dan aturan berlaku juga untuk admin.
 
 | Workflow | Peran |
 |:---------|:------|
@@ -497,6 +497,10 @@ Kampanye mutasi dijalankan per **zona kanonik** (`scripts/f16_zones.tsv`, 27 zon
 | `sbom.yml` · `release.yml` · `release-drafter.yml` | SBOM, penerbitan rilis, draf catatan rilis |
 | `phpbench.yml` | Benchmark performa container |
 | `auto-fix.yml` · `composer-lock.yml` | Perbaikan gaya otomatis & bootstrap lockfile (manual) |
+| `sonarcloud.yml` · `snyk-security.yml` | Analisis mutu SonarCloud (bugs/quality) & keamanan Snyk |
+| `code-scanning-issues.yml` | Sinkronisasi alert code-scanning ke isu pelacak (terjadwal) |
+| `auto-update-prs.yaml` | Antrean PR zero-click — update & merge FIFO saat gerbang hijau |
+| `wiki.yml` · `sbom-generate.yml` | Indeks API wiki (manual) & generator SBOM reusable |
 
 <br>
 
