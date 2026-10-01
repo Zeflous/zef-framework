@@ -205,12 +205,10 @@ final class FieldRules
      */
     public function definitions(): array
     {
-        $out = [];
-        foreach ($this->rules as $rule) {
-            $out[] = ['rule' => $rule['rule'], 'params' => $rule['params'], 'nullable' => $this->nullableChain];
-        }
-
-        return $out;
+        return array_map(
+            fn (array $r): array => ['rule' => $r['rule'], 'params' => $r['params'], 'nullable' => $this->nullableChain],
+            $this->rules,
+        );
     }
 
     /**
@@ -220,13 +218,8 @@ final class FieldRules
      */
     public function skipsEmpty(): bool
     {
-        foreach ($this->rules as $rule) {
-            if (!$rule['skipEmpty']) {
-                return false;
-            }
-        }
-
-        return $this->rules !== [];
+        return $this->rules !== []
+            && array_all($this->rules, static fn (array $rule): bool => $rule['skipEmpty']);
     }
 
     /** @return list<ValidationError> failures for the given raw value */
@@ -234,8 +227,10 @@ final class FieldRules
     {
         $errors = [];
         foreach ($this->rules as $rule) {
-            if (($rule['skipNull'] && $value === null)
-                || ($rule['skipEmpty'] && ($value === '' || $value === []))) {
+            if ($rule['skipNull'] && $value === null) {
+                continue;
+            }
+            if ($rule['skipEmpty'] && ($value === '' || $value === [])) {
                 continue;
             }
             $passed = ($rule['check'])($value);
