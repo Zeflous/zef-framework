@@ -215,6 +215,25 @@ final class FieldRules
         return $out;
     }
 
+    /**
+     * Whether an empty ('' or []) value would skip every registered rule:
+     * true when the chain is non-empty and all of its rules declare
+     * skipEmpty. `required()` (skipEmpty=false) makes this false.
+     */
+    public function skipsEmpty(): bool
+    {
+        if ($this->rules === []) {
+            return false;
+        }
+        foreach ($this->rules as $rule) {
+            if (!$rule['skipEmpty']) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     /** @return list<ValidationError> failures for the given raw value */
     public function validate(mixed $value): array
     {
