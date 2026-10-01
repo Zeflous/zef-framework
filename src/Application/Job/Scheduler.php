@@ -170,6 +170,14 @@ final class Scheduler
                 ++$produced;
                 ++$enqueued;
                 $next = $state['schedule']->nextRunAfter($next);
+                // Commit the successor cursor incrementally (#312): the cursor
+                // semantics are "next scheduled fire", so after every
+                // successful enqueue the successor is recorded. If a LATER
+                // enqueue throws (queue capacity, storage failure), the fires
+                // that already succeeded are accounted for and the next tick
+                // resumes at the first un-enqueued fire instead of replaying
+                // the committed ones.
+                $this->registrations[$jobType]['nextRunUnixNano'] = $next;
             }
             $this->registrations[$jobType]['nextRunUnixNano'] = $next;
         }

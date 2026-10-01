@@ -10,6 +10,11 @@ declare(strict_types=1);
  * issuance timestamp and expire after a configurable window (0 = no expiry,
  * the legacy unbounded behaviour). A leaked token is then only replayable
  * within the TTL window instead of forever.
+ * v2.34.2 — optional per-principal binding (issue #317): issue()/isValid()
+ * accept a binding context (typically the session id). When supplied, the
+ * MAC covers it, so a token fixated into another principal's browser (e.g.
+ * via subdomain cookie tossing) fails validation under the victim's binding
+ * instead of validating globally against the shared secret.
  */
 
 namespace Zef\Framework\Security;
@@ -44,8 +49,12 @@ final readonly class CsrfTokenManager
      * Issue a CSRF token. With TTL enabled the wire format gains an
      * HMAC-bound issuance timestamp: `<issuedAt>.<token>.<mac>`; without TTL
      * the legacy `<token>.<mac>` format is preserved.
+     *
+     * $bindingContext (issue #317): when non-empty (typically the session
+     * id) the MAC covers it, tying the token to that principal. An empty
+     * context keeps the global-secret behaviour.
      */
-    public function issue(): string
+    public function issue(string $bindingContext = ''): string
     {
         // Constructor already validates tokenBytes >= 16; no re-clamp needed.
         $token = rtrim(strtr(base64_encode(random_bytes($this->tokenBytes)), '+/', '-_'), '=');
@@ -55,7 +64,7 @@ final readonly class CsrfTokenManager
         }
         // BC: the legacy (no-TTL) MAC input stays exactly `$token`, so tokens
         // issued before v2.31.0 keep validating until re-issued.
-        $mac = hash_hmac('sha256', $issuedAt === '' ? $token : $issuedAt . '|' . $token, $this->secret);
+        $mac = hash_hmac('sha256', $this->macInput($bindingContext, $issuedAt, $token), $this->secret);
 
         return ($issuedAt !== '' ? $issuedAt . '.' : '') . $token . '.' . $mac;
     }
@@ -64,15 +73,26 @@ final readonly class CsrfTokenManager
      * Validate a token. TTL-enabled verification requires the 3-part format
      * (and rejects expired or future-dated stamps); the legacy 2-part format
      * is accepted exactly as before when no TTL is configured.
+     *
+     * $bindingContext must equal the context the token was issued with
+     * (issue #317) — a token minted for another principal fails here.
      */
-    public function isValid(string $token): bool
+    public function isValid(string $token, string $bindingContext = ''): bool
     {
         return $this->ttlSeconds > 0
-            ? $this->isValidWithinTtlWindow($token)
-            : $this->isValidLegacy($token);
+            ? $this->isValidWithinTtlWindow($token, $bindingContext)
+            : $this->isValidLegacy($token, $bindingContext);
     }
 
-    private function isValidWithinTtlWindow(string $token): bool
+    /** MAC domain: `[binding|][issuedAt|]token` — empty parts are omitted. */
+    private function macInput(string $bindingContext, string $issuedAt, string $token): string
+    {
+        $input = $issuedAt === '' ? $token : $issuedAt . '|' . $token;
+
+        return $bindingContext === '' ? $input : $bindingContext . '|' . $input;
+    }
+
+    private function isValidWithinTtlWindow(string $token, string $bindingContext): bool
     {
         $parts = explode('.', $token);
         if (count($parts) !== 3) {
@@ -87,12 +107,12 @@ final readonly class CsrfTokenManager
         $now = ($this->clock)();
         $issuedAt = (int) $issuedAtRaw;
         $inWindow = $issuedAt <= $now && $now - $issuedAt <= $this->ttlSeconds;
-        $expected = hash_hmac('sha256', $issuedAtRaw . '|' . $value, $this->secret);
+        $expected = hash_hmac('sha256', $this->macInput($bindingContext, $issuedAtRaw, $value), $this->secret);
 
         return $inWindow && hash_equals($expected, $signature);
     }
 
-    private function isValidLegacy(string $token): bool
+    private function isValidLegacy(string $token, string $bindingContext): bool
     {
         $parts = explode('.', $token);
         if (count($parts) !== 2) {
@@ -102,7 +122,7 @@ final readonly class CsrfTokenManager
         if (!$this->hasWellFormedBody($value, $signature)) {
             return false;
         }
-        $expected = hash_hmac('sha256', $value, $this->secret);
+        $expected = hash_hmac('sha256', $this->macInput($bindingContext, '', $value), $this->secret);
 
         return hash_equals($expected, $signature);
     }

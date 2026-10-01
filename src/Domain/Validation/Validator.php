@@ -70,6 +70,15 @@ final class Validator
             foreach ($fieldErrors as $fieldError) {
                 $errors[] = $fieldError;
             }
+            // Issue #318: the skipEmpty default lets ''/[] bypass every
+            // non-required rule, so such a value used to reach handlers as
+            // "validated" data although no rule ever accepted it (and the
+            // generated OpenAPI schema would reject it). Present the value
+            // as absent instead — required() chains (skipEmpty=false) are
+            // unaffected and keep failing loudly.
+            if (($value === '' || $value === []) && $rules->skipsEmpty()) {
+                unset($data[$name]);
+            }
         }
 
         return new ValidationResult($errors, $data);

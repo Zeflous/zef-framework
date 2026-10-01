@@ -65,11 +65,13 @@ final class OpenApiScalarConstraints
         }
         $issues = [];
         $minimum = $schema['minimum'] ?? null;
-        if (is_int($minimum) && $value < $minimum) {
+        // Bounds may be floats — hand-written "minimum": 0.5 must be enforced
+        // just like integer bounds (issue #315).
+        if ((is_int($minimum) || is_float($minimum)) && $value < $minimum) {
             $issues[] = ['pointer' => $pointer, 'message' => "value is below the minimum {$minimum}"];
         }
         $maximum = $schema['maximum'] ?? null;
-        if (is_int($maximum) && $value > $maximum) {
+        if ((is_int($maximum) || is_float($maximum)) && $value > $maximum) {
             $issues[] = ['pointer' => $pointer, 'message' => "value is above the maximum {$maximum}"];
         }
 

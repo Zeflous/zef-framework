@@ -36,6 +36,14 @@ final readonly class ErrorResponseFactory
     private const string REDACTION_CANDIDATE_RE
         = '/\b([a-z][a-z0-9_-]{2,})\b(\s*[=:]\s*|\s+)(["\']?)[a-z0-9._\/-]{4,}\3/i';
 
+    /**
+     * Auth scheme keywords: when the first value token of a credential key
+     * is one of these ("Authorization: Bearer abc123xyz"), the credential
+     * material continues past the whitespace ending the candidate match, so
+     * the whole remaining region is consumed (issue #307).
+     */
+    private const array AUTH_SCHEME_KEYWORDS = ['bearer', 'basic', 'digest'];
+
     public function __construct(private bool $devMode = false) {}
 
     public function isDebug(): bool
@@ -72,6 +80,14 @@ final readonly class ErrorResponseFactory
      * non-credential match advances one character only so a credential key
      * inside its value region stays scannable (a consuming replace would
      * miss it). Edits are applied right-to-left and never overlap.
+     *
+     * Once a credential key matches and its first value token is an auth
+     * scheme keyword ("Authorization: Bearer abc123xyz"), the WHOLE
+     * remaining region on that line is consumed (issue #307): the candidate
+     * value class stops at whitespace, so every token after the keyword
+     * used to leak. Single-token values keep the historical behaviour of
+     * preserving trailing prose ("password=hunter2 gone" ->
+     * "password=[REDACTED] gone") so diagnostics stay readable.
      */
     private function redactSecrets(string $message): string
     {
@@ -85,8 +101,30 @@ final readonly class ErrorResponseFactory
             }
             [$key, $sep, $quote] = [$m[1][0], $m[2][0], $m[3][0]];
             if (in_array(strtolower($key), self::CREDENTIAL_KEYS, true)) {
-                $edits[] = [$m[0][1], strlen($m[0][0]), $key . $sep . $quote . '[REDACTED]' . $quote];
-                $offset = $m[0][1] + strlen($m[0][0]);
+                $end = $m[0][1] + strlen($m[0][0]);
+                // Issue #307: a scheme keyword as the first value token
+                // ("Authorization: Bearer abc123xyz") means the credential
+                // value continues past the whitespace that ended the match —
+                // consume the rest of the region (to the closing quote or
+                // end of line), otherwise every token after the keyword
+                // leaks. Prose after single-token values ("password=hunter2
+                // gone") is deliberately preserved: only the value is
+                // masked, keeping diagnostics readable.
+                $valueToken = strtolower(substr(
+                    $m[0][0],
+                    strlen($m[1][0]) + strlen($m[2][0]) + strlen($m[3][0]),
+                ));
+                if ($m[3][0] !== '' && str_ends_with($valueToken, $m[3][0])) {
+                    $valueToken = substr($valueToken, 0, -strlen($m[3][0]));
+                }
+                // Only unquoted scheme-keyword values extend: quoted regions
+                // already end at their closing quote, and single-token
+                // values keep the historical prose-preserving behaviour.
+                if ($quote === '' && in_array($valueToken, self::AUTH_SCHEME_KEYWORDS, true)) {
+                    $end += strcspn($message, "\r\n", $end);
+                }
+                $edits[] = [$m[0][1], $end - $m[0][1], $key . $sep . $quote . '[REDACTED]' . $quote];
+                $offset = $end;
 
                 continue;
             }

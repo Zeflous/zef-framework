@@ -119,14 +119,15 @@ final readonly class ConfigLoader
         $values = $this->mergeSources();
         $values = $this->migrateValues($values);
         $violations = [];
+        $secretPaths = [];
         if ($this->secrets instanceof SecretsProviderInterface) {
-            $resolved = $this->resolveSecrets($values, '', $violations);
+            $resolved = $this->resolveSecrets($values, '', $violations, $secretPaths);
 
             $values = $resolved;
         }
         if ($this->schema instanceof ConfigSchema) {
             $validator = new ConfigSchemaValidator();
-            $violations = [...$violations, ...$validator->validate($values, $this->schema)];
+            $violations = [...$violations, ...$validator->validate($values, $this->schema, $secretPaths)];
             if ($violations === []) {
                 $values = $validator->applyDefaults($values, $this->schema);
             }
@@ -135,7 +136,7 @@ final readonly class ConfigLoader
             throw new ConfigValidationException($violations);
         }
 
-        return new Config($values);
+        return new Config($values, null, $secretPaths);
     }
 
     /**
@@ -238,10 +239,12 @@ final readonly class ConfigLoader
      *
      * @param array<array-key,mixed> $node
      * @param list<ConfigViolation> $violations
+     * @param list<string> $secretPaths out: dotted paths of successfully
+     *                                   resolved secret leaves (issue #308)
      *
      * @return array<array-key,mixed>
      */
-    private function resolveSecrets(array $node, string $prefix, array &$violations): array
+    private function resolveSecrets(array $node, string $prefix, array &$violations, array &$secretPaths): array
     {
         $out = [];
         $keys = array_keys($node);
@@ -250,7 +253,7 @@ final readonly class ConfigLoader
             $value = $node[$key];
             $path = $prefix === '' ? (string) $key : $prefix . '.' . $key;
             if (is_array($value)) {
-                $out[$key] = $this->resolveSecrets($value, $path, $violations);
+                $out[$key] = $this->resolveSecrets($value, $path, $violations, $secretPaths);
 
                 continue;
             }
@@ -261,6 +264,7 @@ final readonly class ConfigLoader
                     $out[$key] = $value;
                 } else {
                     $out[$key] = $resolved;
+                    $secretPaths[] = $path;
                 }
 
                 continue;
