@@ -576,7 +576,7 @@ final class QueryBuilder
         // Audit #300: inline the escape hatch in value position — binding the
         // object makes PDO compare against the literal 'NOW()' string.
         if ($value instanceof SqlExpression) {
-            return $left . ' ' . $op . ' ' . (string) $value;
+            return $left . ' ' . $op . ' ' . $value;
         }
         $this->params[] = $value;
 

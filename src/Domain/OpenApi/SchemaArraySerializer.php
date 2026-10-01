@@ -61,7 +61,7 @@ final class SchemaArraySerializer
         // Audit #302: type is omitted for composition-only schemas (null
         // type) — "type: object" + oneOf of scalars is unsatisfiable and the
         // runtime gate short-circuits on the type check before composition.
-        $out = $schema->type !== null ? ['type' => $schema->type->value] : [];
+        $out = $schema->type instanceof SchemaType ? ['type' => $schema->type->value] : [];
         self::appendMetadata($schema, $out);
         self::appendBounds($schema, $out);
         self::appendMembers($schema, $out);

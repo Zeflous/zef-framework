@@ -105,10 +105,10 @@ final class Audit303EtagStreamRewindTest extends TestCase
             self::assertInstanceOf(ServerRequestInterface::class, $withHeader);
             $request = $withHeader;
         }
-        $handler = new class($body, $status) implements RequestHandlerInterface {
+        $handler = new readonly class($body, $status) implements RequestHandlerInterface {
             public function __construct(
-                private readonly string $body,
-                private readonly int $status,
+                private string $body,
+                private int $status,
             ) {}
 
             #[\Override]
