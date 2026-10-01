@@ -60,9 +60,15 @@ final class ConfigProvider implements ConfigProviderInterface
                 ],
                 'middleware.security' => [
                     'factory' => static function (): SecurityHeadersMiddleware {
+                        // Audit #304: strict fail-closed parsing for the HSTS /
+                        // CSP toggles — a typo must refuse to boot, not silently
+                        // drop the security headers. Instance surface (the
+                        // static facade is deprecated, v2.28.0 issue #55).
+                        $env = new Env();
+
                         return new SecurityHeadersMiddleware([
-                            'hsts' => Env::bool('ZEF_SECURITY_HSTS'),
-                            'csp' => Env::bool('ZEF_SECURITY_CSP'),
+                            'hsts' => $env->readBoolStrict('ZEF_SECURITY_HSTS'),
+                            'csp' => $env->readBoolStrict('ZEF_SECURITY_CSP'),
                         ]);
                     },
                     'deps' => [],

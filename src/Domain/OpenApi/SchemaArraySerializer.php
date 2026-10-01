@@ -21,7 +21,7 @@ final class SchemaArraySerializer
      *     '$ref': string,
      *     nullable?: true,
      * }|array{
-     *     type: string,
+     *     type?: string,
      *     format?: string,
      *     description?: string,
      *     title?: string,
@@ -58,7 +58,10 @@ final class SchemaArraySerializer
             return self::refArray($schema, $schema->ref);
         }
 
-        $out = ['type' => $schema->type->value];
+        // Audit #302: type is omitted for composition-only schemas (null
+        // type) — "type: object" + oneOf of scalars is unsatisfiable and the
+        // runtime gate short-circuits on the type check before composition.
+        $out = $schema->type !== null ? ['type' => $schema->type->value] : [];
         self::appendMetadata($schema, $out);
         self::appendBounds($schema, $out);
         self::appendMembers($schema, $out);
@@ -81,7 +84,7 @@ final class SchemaArraySerializer
 
     /**
      * @param array{
-     *     type: string,
+     *     type?: string,
      *     format?: string,
      *     description?: string,
      *     title?: string,
@@ -118,7 +121,7 @@ final class SchemaArraySerializer
 
     /**
      * @param array{
-     *     type: string,
+     *     type?: string,
      *     format?: string,
      *     description?: string,
      *     title?: string,
@@ -174,7 +177,7 @@ final class SchemaArraySerializer
 
     /**
      * @param array{
-     *     type: string,
+     *     type?: string,
      *     format?: string,
      *     description?: string,
      *     title?: string,

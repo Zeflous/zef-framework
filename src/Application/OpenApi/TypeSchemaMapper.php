@@ -60,7 +60,10 @@ final readonly class TypeSchemaMapper
             return $this->singleMemberSchema($schemas[0], $nullable);
         }
 
-        return new Schema(nullable: $nullable ? true : null, oneOf: $schemas);
+        // Audit #302: composition-only — a type here (the constructor default
+        // is object) makes the emitted schema unsatisfiable for scalar unions
+        // and the runtime gate short-circuits on the type check.
+        return new Schema(type: null, nullable: $nullable ? true : null, oneOf: $schemas);
     }
 
     /**

@@ -236,10 +236,19 @@ final class QueryBuilder
     {
         $this->assertScalar($low, 'whereBetween() low');
         $this->assertScalar($high, 'whereBetween() high');
-        $this->params[] = $low;
-        $this->params[] = $high;
+        // Audit #300: a SqlExpression bound as a parameter is cast by PDO to
+        // its literal string ("BETWEEN 'NOW()' AND ..."), silently matching
+        // wrong rows. Inline expressions exactly like buildInsert()/buildUpdate().
+        $lowSql = $low instanceof SqlExpression ? (string) $low : '?';
+        $highSql = $high instanceof SqlExpression ? (string) $high : '?';
+        if (!$low instanceof SqlExpression) {
+            $this->params[] = $low;
+        }
+        if (!$high instanceof SqlExpression) {
+            $this->params[] = $high;
+        }
 
-        return $this->addWhere($this->quoteColumnPath($column) . ' BETWEEN ? AND ?', 'AND');
+        return $this->addWhere($this->quoteColumnPath($column) . " BETWEEN {$lowSql} AND {$highSql}", 'AND');
     }
 
     /**
@@ -563,9 +572,13 @@ final class QueryBuilder
             );
         }
         $this->assertScalar($value, "condition value for '{$column}'");
-        $this->params[] = $value;
-
         $left = $column instanceof SqlExpression ? (string) $column : $this->quoteColumnPath($column);
+        // Audit #300: inline the escape hatch in value position — binding the
+        // object makes PDO compare against the literal 'NOW()' string.
+        if ($value instanceof SqlExpression) {
+            return $left . ' ' . $op . ' ' . (string) $value;
+        }
+        $this->params[] = $value;
 
         return $left . ' ' . $op . ' ?';
     }
@@ -588,8 +601,14 @@ final class QueryBuilder
         $placeholders = [];
         foreach ($values as $value) {
             $this->assertScalar($value, 'whereIn() value');
-            $this->params[] = $value;
-            $placeholders[] = '?';
+            if ($value instanceof SqlExpression) {
+                // Audit #300 (same pattern as renderCondition): inline the
+                // expression instead of binding the object as a string.
+                $placeholders[] = (string) $value;
+            } else {
+                $this->params[] = $value;
+                $placeholders[] = '?';
+            }
         }
 
         return $this->quoteColumnPath($column) . ' ' . $not . 'IN (' . implode(', ', $placeholders) . ')';

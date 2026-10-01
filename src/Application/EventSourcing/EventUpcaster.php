@@ -73,8 +73,16 @@ final readonly class EventUpcaster
                     'Upcaster chain exceeded ' . self::MAX_HOPS . " hops at '{$event->eventType}' (rename cycle?).",
                 );
             }
+            $typeBeforeBatch = $event->eventType;
             foreach ($this->byType[$event->eventType] as $upcaster) {
                 $event = $this->apply($upcaster, $event);
+            }
+            // Audit #301: a batch that does NOT rename the event type is done
+            // (payload/metadata-only upcasters are contract-legal — see
+            // UpcasterInterface). Re-running the same batch would count up to
+            // MAX_HOPS and then throw a false "rename cycle?" on replay.
+            if ($event->eventType === $typeBeforeBatch) {
+                break;
             }
         }
 
