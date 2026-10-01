@@ -152,6 +152,7 @@ final class RouteCache
     {
         $data = self::includeEnvelope($path);
         if ($data === null) {
+            // @infection-ignore-all ReturnRemoval — ekuivalen: tanpa early return, $data null membuat $routes/$stored null dan guard berikutnya tetap mengembalikan null
             return null;
         }
         $routes = $data['routes'] ?? null;

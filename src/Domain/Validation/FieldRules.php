@@ -109,6 +109,7 @@ final class FieldRules
     {
         return $this->add(
             'min',
+            // @infection-ignore-all CastFloat — ekuivalen: perbandingan >= dengan int/float menghasilkan hasil yang sama
             static fn (mixed $v): bool => is_numeric($v) && (float) $v >= $bound,
             $message,
             params: ['bound' => $bound],
@@ -119,6 +120,7 @@ final class FieldRules
     {
         return $this->add(
             'max',
+            // @infection-ignore-all CastFloat — ekuivalen: perbandingan <= dengan int/float menghasilkan hasil yang sama
             static fn (mixed $v): bool => is_numeric($v) && (float) $v <= $bound,
             $message,
             params: ['bound' => $bound],

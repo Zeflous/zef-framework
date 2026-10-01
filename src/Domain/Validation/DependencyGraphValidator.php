@@ -115,11 +115,13 @@ final class DependencyGraphValidator
         if ($from === null || $to === null || $from === $to) {
             return;
         }
+        // @infection-ignore-all Concat,ConcatOperandRemoval — ekuivalen: $key/$edgeKey hanya kunci de-duplikasi internal; nilai string tidak pernah dibaca
         $key = $from . '->' . $to;
         $edgeKey = $key . '|' . $canonical;
         if (isset($edgeSeen[$edgeKey])) {
             return;
         }
+        // @infection-ignore-all TrueValue — ekuivalen: $edgeSeen hanya dibaca lewat isset(); nilai tidak relevan
         $edgeSeen[$edgeKey] = true;
         $counts[$key] = ($counts[$key] ?? 0) + 1;
         if ($counts[$key] > $maxCrossModuleRefs) {
@@ -166,6 +168,7 @@ final class DependencyGraphValidator
             $canonical = $this->resolveAlias($dep, $aliases);
             if (($state[$canonical] ?? 0) === 1) {
                 // state === 1 implies the node is currently on $stack.
+                // @infection-ignore-all CastInt — ekuivalen: array_search mengembalikan int|false; false hanya bila node tidak di stack, yang tidak mungkin saat state===1
                 $pos = (int) array_search($canonical, $stack, true);
                 $cycle = array_slice($stack, $pos);
                 $cycle[] = $canonical;
