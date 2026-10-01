@@ -202,7 +202,7 @@ final readonly class RedisStreamJobQueue implements JobQueueInterface
                 $job->jobId,
                 $job->jobType,
                 JobRowCodec::encodePayload($job->payload),
-                self::padNano($job->availableAtUnixNano),
+                $this->padNano($job->availableAtUnixNano),
                 (string) $job->priority,
                 (string) $job->attempt,
                 $job->correlationId ?? '',
@@ -230,7 +230,7 @@ final readonly class RedisStreamJobQueue implements JobQueueInterface
         $now = $nowUnixNano ?? ($this->clock)();
         $fields = $this->redis->eval(
             self::LUA_DEQUEUE,
-            [$this->streamKey, $this->idsKey, self::padNano($now)],
+            [$this->streamKey, $this->idsKey, $this->padNano($now)],
             2,
         );
         if ($fields === false || $fields === null) {
@@ -290,7 +290,7 @@ final readonly class RedisStreamJobQueue implements JobQueueInterface
                 'job_id' => $fields['job_id'] ?? null,
                 'job_type' => $fields['job_type'] ?? null,
                 'payload' => $fields['payload'] ?? null,
-                'available_at' => self::decodeNano(JobRowCodec::str($fields['available_at'] ?? null)),
+                'available_at' => $this->decodeNano(JobRowCodec::str($fields['available_at'] ?? null)),
                 'priority' => $fields['priority'] ?? null,
                 'attempt' => $fields['attempt'] ?? null,
                 'correlation_id' => $correlation === '' ? null : $correlation,
@@ -325,7 +325,7 @@ final readonly class RedisStreamJobQueue implements JobQueueInterface
             'job_id' => JobRowCodec::str($fields[1] ?? null),
             'job_type' => JobRowCodec::str($fields[3] ?? null),
             'payload' => JobRowCodec::str($fields[5] ?? null),
-            'available_at' => self::decodeNano(JobRowCodec::str($fields[7] ?? null)),
+            'available_at' => $this->decodeNano(JobRowCodec::str($fields[7] ?? null)),
             'priority' => JobRowCodec::str($fields[9] ?? null),
             'attempt' => JobRowCodec::str($fields[11] ?? null),
             'correlation_id' => $correlation !== '' ? $correlation : null,
@@ -352,7 +352,7 @@ final readonly class RedisStreamJobQueue implements JobQueueInterface
      * PdoJobQueue — v2.32's "still comparable among themselves" note was
      * wrong for exactly the same-magnitude case it called out.
      */
-    private static function padNano(int $value): string
+    private function padNano(int $value): string
     {
         if ($value >= 0) {
             return sprintf('%020d', $value);
@@ -377,7 +377,7 @@ final readonly class RedisStreamJobQueue implements JobQueueInterface
      * 10); realistic queues (non-negative deadlines) are unaffected
      * because their stored bytes are unchanged.
      */
-    private static function decodeNano(string $stored): string
+    private function decodeNano(string $stored): string
     {
         if (strlen($stored) === 20 && strspn($stored, self::DIGITS) === 20) {
             return $stored;

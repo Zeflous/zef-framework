@@ -56,6 +56,8 @@ final class QueueNegativeTimestampParityTest extends TestCase
 
     private ?\Redis $redis = null;
 
+    private ?RedisStreamJobQueue $nanoQueue = null;
+
     protected function setUp(): void
     {
         if (!class_exists(\Redis::class)) {
@@ -231,7 +233,7 @@ final class QueueNegativeTimestampParityTest extends TestCase
         foreach ([0, 1, 42, 1_000_000, 1_700_000_000_123_456_789, 9_000_000_000_000_000_000, \PHP_INT_MAX] as $value) {
             self::assertSame(
                 sprintf('%020d', $value),
-                self::encodedNano($value),
+                $this->encodedNano($value),
                 "v={$value}: legacy byte-compat is the migration guarantee",
             );
         }
@@ -244,12 +246,12 @@ final class QueueNegativeTimestampParityTest extends TestCase
      */
     public function testNegativeEncodingIsMinusPlusNineteenComplementDigits(): void
     {
-        self::assertSame('-9999999999999999979', self::encodedNano(-20));
-        self::assertSame('-9999999999999999989', self::encodedNano(-10));
-        self::assertSame('-9999999999999999998', self::encodedNano(-1));
+        self::assertSame('-9999999999999999979', $this->encodedNano(-20));
+        self::assertSame('-9999999999999999989', $this->encodedNano(-10));
+        self::assertSame('-9999999999999999998', $this->encodedNano(-1));
 
         foreach ([-1, -2, -10, -20, -1_000_000_000, -9_000_000_000_000_000_000, \PHP_INT_MIN] as $value) {
-            $encoded = self::encodedNano($value);
+            $encoded = $this->encodedNano($value);
             self::assertSame(20, strlen($encoded), "v={$value}: total width is 20 characters");
             self::assertSame('-', $encoded[0], "v={$value}: negatives carry the leading minus");
             self::assertSame(19, strspn(substr($encoded, 1), '0123456789'), "v={$value}: 19 complement digits follow the minus");
@@ -259,7 +261,7 @@ final class QueueNegativeTimestampParityTest extends TestCase
     #[DataProvider('roundTripProvider')]
     public function testEncodeDecodeRoundTripsTheExactSignedValue(int $value): void
     {
-        self::assertSame($value, (int) self::decodedNano(self::encodedNano($value)), "v={$value} survives the storage round-trip");
+        self::assertSame($value, (int) $this->decodedNano($this->encodedNano($value)), "v={$value} survives the storage round-trip");
     }
 
     /** @return array<string, array{0: int}> */
@@ -287,7 +289,7 @@ final class QueueNegativeTimestampParityTest extends TestCase
     {
         $this->expectException(RedisJobQueueException::class);
         $this->expectExceptionMessage('corrupt available_at');
-        self::decodedNano($stored);
+        $this->decodedNano($stored);
     }
 
     /**
@@ -324,7 +326,7 @@ final class QueueNegativeTimestampParityTest extends TestCase
         }
         $encoded = [];
         foreach ($values as $v) {
-            $encoded[$v] = self::encodedNano($v);
+            $encoded[$v] = $this->encodedNano($v);
         }
         foreach ($values as $a) {
             foreach ($values as $b) {
@@ -505,17 +507,27 @@ final class QueueNegativeTimestampParityTest extends TestCase
         return new JobEnvelope($id, 't.' . $id, $payload, $availableAt, $priority, $attempt, $correlationId, $traceParent, $headers);
     }
 
-    private static function encodedNano(int $value): string
+    /**
+     * padNano()/decodeNano() are pure instance methods that never touch
+     * $this — an uninitialized shell instance reaches them without
+     * standing up a Redis connection.
+     */
+    private function nanoQueue(): RedisStreamJobQueue
     {
-        $encoded = new \ReflectionMethod(RedisStreamJobQueue::class, 'padNano')->invoke(null, $value);
+        return $this->nanoQueue ??= new \ReflectionClass(RedisStreamJobQueue::class)->newInstanceWithoutConstructor();
+    }
+
+    private function encodedNano(int $value): string
+    {
+        $encoded = new \ReflectionMethod(RedisStreamJobQueue::class, 'padNano')->invoke($this->nanoQueue(), $value);
         assert(is_string($encoded));
 
         return $encoded;
     }
 
-    private static function decodedNano(string $stored): string
+    private function decodedNano(string $stored): string
     {
-        $decoded = new \ReflectionMethod(RedisStreamJobQueue::class, 'decodeNano')->invoke(null, $stored);
+        $decoded = new \ReflectionMethod(RedisStreamJobQueue::class, 'decodeNano')->invoke($this->nanoQueue(), $stored);
         assert(is_string($decoded));
 
         return $decoded;
