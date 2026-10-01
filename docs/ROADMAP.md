@@ -13,7 +13,7 @@
 - [x] PSR interfaces sebagai ports → `src/Compat/Psr` + `src/Domain/**`
 - [x] HTTP, CLI, RoadRunner sebagai inbound adapters → `src/Adapters/{Http,Kernel,Runtime}` + `bin/`
 - [x] Async runtime fiber-native (v2.26.0: `FiberScheduler` pump FIFO + timer monotonic via `MonotonicClockInterface`/`SleeperInterface` (deterministik di test), `await/awaitAll/suspend/sleep/timeout`, `FiberChannel` bounded FIFO (invarian park satu sisi, splice cancellation), `Semaphore` + `WaitGroup` fail-fast, `CoroutineLocal` WeakMap, `CancellationTokenSource`/token view, deteksi deadlock + surfacing `UnobservedTaskException` — zona mutasi `app-runtime-async` MSI 96.64%)
-- [x] Database, Cache, Queue sebagai outbound adapters → `src/Infrastructure/{Cache,Security}` + `src/Application/{CQRS,Job,Message}`
+- [x] Database, Cache, Queue sebagai outbound adapters → `src/Infrastructure/{Cache,Database,EventSourcing,Job,Message,Security,Storage,OpenApi}` + `src/Application/{CQRS,Job,Message}`
 - [x] Dependency injection melalui Container PSR-11 → `src/Application/Container`
 - [x] Request/Response handling melalui PSR-7 → `src/Adapters/Http`
 
@@ -94,8 +94,13 @@
 - [x] Client IP resolution (rightmost-untrusted XFF) → `ClientAddressResolver`
 
 #### Authentication / Authorization / Firewall / Encryption / Audit (Target Enterprise)
-- [ ] MFA/2FA (TOTP, SMS, Email) · WebAuthn · OAuth 2.0 server · SAML 2.0 SSO
-- [x] JWT-ready token plumbing · Session Redis (parsial via `SharedRateLimitStoreInterface`)
+- [x] MFA/2FA TOTP (v2.8.0: `Totp` RFC 6238 + `Base32` RFC 4648, vektor resmi lolos)
+- [ ] MFA via SMS/Email
+- [ ] WebAuthn
+- [ ] OAuth 2.0 server
+- [ ] SAML 2.0 SSO
+- [x] JWT-ready token plumbing
+- [ ] Session Redis (parsial via `SharedRateLimitStoreInterface`)
 - [x] RBAC scope-based penuh
 - [ ] ABAC penuh
 - [x] Policy-based authorization (gates/policies)
@@ -106,7 +111,6 @@
 - [x] AES-256-GCM service (v2.8.0: `AesGcmEncryptor`, port `EncryptionInterface`, format `zefenc1.*` versi-bawa-kunci)
 - [x] Key rotation (v2.10.0: `RotatingKeyRing`, decrypt probe semua kunci)
 - [ ] Encrypted columns/file storage
-- [x] MFA TOTP (v2.8.0: `Totp` RFC 6238 + `Base32` RFC 4648, vektor resmi lolos) · [ ] WebAuthn · [ ] OAuth 2.0 server · [ ] SAML 2.0 SSO
 - [x] Secure hashing (Argon2id/bcrypt via PHP core)
 - [x] CSPRNG (random_bytes)
 - [ ] GDPR toolkit · Data retention · RTBF · Data portability · Cookie consent · Compliance reporting
@@ -130,7 +134,8 @@
   - [ ] Event versioning & migration tools
   - [ ] Saga Orchestration/Choreography · Compensating actions · Timeout/circuit breaker
   - [ ] RabbitMQ · Amazon SQS · Apache Kafka adapters · Protobuf serialization — dasar siap: transport `MessageTransportInterface` + `InMemoryMessageTransport` (v2.30.0), `JsonMessageSerializer`, queue engine durabel multi-driver (v2.32.0: Redis Streams + PDO + CLI worker `queue:work/failed/retry/flush`); sisa pekerjaan = adapter broker eksternal (pola suggest + skip-guard)
-  - [ ] DLQ (parsial: job worker ✔) · Retry policies (parsial: `RetryPolicy`, `RetryBackoffPolicy` ✔)
+  - [ ] DLQ (parsial: job worker ✔)
+  - [ ] Retry policies (parsial: `RetryPolicy`, `RetryBackoffPolicy` ✔)
   - [ ] Message ordering guarantees · Exactly-once semantics
   - [x] v2.8.0: `DeduplicatingMiddleware` (at-least-once → efektif once per messageId via idempotency store)
 
@@ -152,7 +157,9 @@
   - [x] Prometheus export (v2.8.0: `PrometheusRenderer` + endpoint `/metrics` text format 0.0.4)
   - [ ] Grafana templates
   - [x] Health check endpoints (`/health/live`, `/health/ready`) → `modules/Health`
-  - [x] Custom health indicators (v2.8.0: port `HealthIndicatorInterface`, `HealthAggregator`, endpoint agregat `/health` 503-saat-degraded) · [ ] Alert rule engine · Incident integration
+  - [x] Custom health indicators (v2.8.0: port `HealthIndicatorInterface`, `HealthAggregator`, endpoint agregat `/health` 503-saat-degraded)
+  - [ ] Alert rule engine
+  - [ ] Incident integration
   - [ ] ELK · Graylog · Splunk · CloudWatch · GCL · Log shipping/filtering/sampling
   - [ ] Jaeger · Zipkin · Service mesh · Trace sampling/baggage · Cross-service correlation
   - [ ] Business KPIs · Revenue tracking · Funnel · A/B metrics · Real-time dashboards
@@ -167,12 +174,27 @@
 - [x] Cache tags (v2.8.0: `TaggableCache`, indeks tag + reverse index, `invalidateTag()`)
 - [x] Multi-tier L1/L2 (v2.8.0: `TieredCache` write-through + promosi read)
 - [x] Lock primitive (v2.8.0: port `LockStoreInterface` + `InMemoryLockStore` berbasis lease TTL — fondasi stampede prevention & distributed lock Redis)
-- [ ] Redis cluster · Memcached · Stampede prevention penuh (fondasi lock ✔) · [x] Distributed lock Redis (v2.24.0 issue #68: adapter `RedisLockStore` — SET NX PX + owner token di dalam satu Lua atomik, release/refresh compare-and-act Lua, TTL dipaksakan server Redis; `LeaderElector` leader election time-bounded; scheduler cluster-safe via lease sticky `zef:scheduler:*`; `LockingJobIdempotencyStore` claim exactly-once per window TTL)
+- [ ] Redis cluster
+- [ ] Memcached
+- [ ] Stampede prevention penuh (fondasi lock ✔)
+- [x] Distributed lock Redis (v2.24.0 issue #68: adapter `RedisLockStore` — SET NX PX + owner token di dalam satu Lua atomik, release/refresh compare-and-act Lua, TTL dipaksakan server Redis; `LeaderElector` leader election time-bounded; scheduler cluster-safe via lease sticky `zef:scheduler:*`; `LockingJobIdempotencyStore` claim exactly-once per window TTL)
 
 ### Database Management (Target — belum ada di monolith)
-- [ ] Multi-connection · Read/write splitting · Pooling · Sharding · [x] `Query builder` (v2.18.0: `QueryBuilder` fluent, identifier-grammar ketat, subquery) · ORM
-- [ ] Seeding · Schema builder · [x] `Migration` (v2.18.0: `Migrator` versi 14-digit, lock TTL, rollback) · [x] `Transactions nested/savepoints` (v2.18.0: `PdoConnection` SAVEPOINT + depth 16)
-- [x] `Repository pattern` (v2.18.0: `Repository` base di atas QueryBuilder) · [ ] Specification · [ ] Unit of Work · [ ] Identity Map · [ ] Batch ops
+- [ ] Multi-connection
+- [ ] Read/write splitting
+- [ ] Pooling
+- [ ] Sharding
+- [x] Query builder (v2.18.0: `QueryBuilder` fluent, identifier-grammar ketat, subquery)
+- [ ] ORM
+- [ ] Seeding
+- [ ] Schema builder
+- [x] Migration (v2.18.0: `Migrator` versi 14-digit, lock TTL, rollback)
+- [x] Transactions nested/savepoints (v2.18.0: `PdoConnection` SAVEPOINT + depth 16)
+- [x] Repository pattern (v2.18.0: `Repository` base di atas QueryBuilder)
+- [ ] Specification
+- [x] Unit of Work (v2.22.0 UoW-lite: scope transaksi terkelola dengan hook after-commit, decorator command bus transaksional, antrean tulisan deferred yang flush atomik — lihat `docs/TRANSACTION-HOOKS.md`)
+- [ ] Identity Map
+- [ ] Batch ops
 
 ---
 
@@ -180,10 +202,14 @@
 
 - [x] In-process job worker → `InProcessJobWorker` · Envelope metadata → `JobEnvelope`
 - [x] Job middleware · Retry policies (exponential backoff) → `RetryPolicy`
-- [x] Dead letter queue · Idempotency store · Cancellation & timeout · Drain mode · [x] Claim idempotent lintas node (v2.24.0: `LockingJobIdempotencyStore` — exactly-once per key dalam window TTL, kegagalan me-release lease agar retry sah)
+- [x] Dead letter queue · Idempotency store · Cancellation & timeout · Drain mode
+- [x] Claim idempotent lintas node (v2.24.0: `LockingJobIdempotencyStore` — exactly-once per key dalam window TTL, kegagalan me-release lease agar retry sah)
 - [x] Delayed jobs & priorities (konten queue: `availableAtUnixNano`, `priority`)
 - [x] Scheduled/recurring (v2.8.0: `Scheduler` + `FixedIntervalSchedule` + `CronExpression` 5-field UTC) · [x] Cluster-safe scheduler (v2.24.0: lease `LockStoreInterface` opsional — follower skip tick alih-alih dobel-enqueue, leader lapse diambil alih otomatis setelah TTL)
-- [x] Multi-driver (v2.32.0: `RedisStreamJobQueue` — XADD + claim Lua atomik (XRANGE→XDEL+SREM satu langkah), ordering paritas PdoJobQueue `priority DESC, available_at ASC, seq ASC`, duplicate-backstop SET id live, zero-pad 20-digit nano anti Lua-double; **CLI `queue:work`** (graceful SIGTERM/SIGINT antar-job + guard `--memory=<mb>` exit 2 untuk supervisor restart) · Database ✔ v2.30) · [x] Worker operasional v2.32.0: **`queue:failed`** (inspeksi DLQ read-only via `peek()`), **`queue:retry`** (re-delivery attempt-dipertahankan, skip duplikat + seen-set anti-siklus), **`queue:flush`** (drain port-agnostic) — failed storage = instansi `JobQueueInterface` kedua (stream `zef.queue.failed` / tabel PDO), driver-agnostic lewat port · [ ] Beanstalk, SQS · Chaining/batching
+- [x] Multi-driver (v2.32.0: `RedisStreamJobQueue` — XADD + claim Lua atomik (XRANGE→XDEL+SREM satu langkah), ordering paritas PdoJobQueue `priority DESC, available_at ASC, seq ASC`, duplicate-backstop SET id live, zero-pad 20-digit nano anti Lua-double; **CLI `queue:work`** (graceful SIGTERM/SIGINT antar-job + guard `--memory=<mb>` exit 2 untuk supervisor restart) · Database ✔ v2.30)
+- [x] Worker operasional (v2.32.0: **`queue:failed`** (inspeksi DLQ read-only via `peek()`), **`queue:retry`** (re-delivery attempt-dipertahankan, skip duplikat + seen-set anti-siklus), **`queue:flush`** (drain port-agnostic) — failed storage = instansi `JobQueueInterface` kedua (stream `zef.queue.failed` / tabel PDO), driver-agnostic lewat port)
+- [ ] Beanstalk · SQS
+- [ ] Chaining/batching
 - [ ] Job rate limiting · Monitoring dashboard
 
 ---
@@ -207,12 +233,17 @@
 
   #### Target Enterprise API:
   - [ ] HATEOAS · JSON:API · HAL · Content negotiation · Partial responses · Sparse fieldsets
-  - [x] Pagination (offset/page: `PageRequest`+`PageSlice` dengan hard cap; cursor: `Cursor` opaque ber-checksum) (v2.8.0) · [x] Sorting/filtering (v2.10.0: `SortSpec`+`FilterSpec`, whitelist-wajib anti-injection) · [ ] Resource embedding
-  - [x] ETag/Last-Modified conditional requests (v2.8.0: `ETagMiddleware`, opt-in) · [ ] Vary handling lanjutan
+  - [x] Pagination (offset/page: `PageRequest`+`PageSlice` dengan hard cap; cursor: `Cursor` opaque ber-checksum) (v2.8.0)
+  - [x] Sorting/filtering (v2.10.0: `SortSpec`+`FilterSpec`, whitelist-wajib anti-injection)
+  - [ ] Resource embedding
+  - [x] ETag/Last-Modified conditional requests (v2.8.0: `ETagMiddleware`, opt-in)
+  - [ ] Vary handling lanjutan
   - [x] RFC 9457 Problem Details (v2.8.0: `ProblemDetails` factory `application/problem+json`)
   - [ ] GraphQL (schema, resolvers, DataLoader, depth limiting, federation, playground)
   - [ ] WebSocket (channels, presence, auth, broadcasting) · SSE fallback
-  - [ ] OpenAPI 3.0 generation · Postman export · SDK generation
+  - [x] OpenAPI generation (v2.20.0: generator spesifikasi 3.1 dari route table + PHP 8.4 Attributes, serializer JSON/YAML dependency-free, CLI `openapi:generate`, Swagger UI dev-only)
+  - [x] Postman export (v2.20.0: export Postman v2.1 dari spesifikasi, flag `--postman=<path>`)
+  - [ ] SDK generation
 
 ---
 
@@ -222,7 +253,9 @@
 - [x] HTTP status/method validators · Trusted host → `TrustedHostValidator` · Port range
 - [x] Container/config dependency validation → `DependencyGraphValidator`
 - [x] Rules engine field-based (v2.8.0: `Validator` + `FieldRules` + `ValidationResult` + `ValidationError`, ReDoS-guarded) · [x] Form request objects terintegrasi HTTP (v2.10.0: `FormRequest::fromServerRequest()`) · [x] Async rules (v2.27.0: `AsyncRuleEngine` konkuren di atas fiber scheduler — semaphore cap, deadline kooperatif per rule, fail-fast graceful; `RuleVerdict`/`RuleReport`/`RuleEngineOptions` — zona mutasi `app-rules` MSI 96.40%)
-- [x] Localized error messages (v2.10.0: `MessageCatalog` + `ValidationTranslator`) · [ ] HTML purifier · Sanitization filters
+- [x] Localized error messages (v2.10.0: `MessageCatalog` + `ValidationTranslator`)
+- [ ] HTML purifier
+- [ ] Sanitization filters
 
 ---
 
@@ -240,8 +273,11 @@
 - [x] Route inspector → `bin/zef route:list` (v2.8.0) · Code generators → `bin/zef make:*` (v2.8.0: module/handler/middleware; **v2.16.0 ZEF Maker: plugin, config, command, query, entity, valueobject, service**; **v2.29.0: `make:app` — scaffold aplikasi standalone** — engine hexagonal `src/Infrastructure/Console`) · Command catalog → `bin/zef list [--json]` · Inspectors → `module:list`, `plugin:list`, `config:show` (v2.16.0) · **Queue ops → `bin/zef queue:work/failed/retry/flush` (v2.32.0: worker daemon + guard memori + harness DLQ)**
 - [x] **v2.29.0 DX release**: standalone app scaffolding (`make:app`) · RoadRunner transparency (`rr:init` dari knob `ZEF_*`, collision-safe) · environment preflight + boot smoke (`doctor`, exit 1 hanya pada FAIL) · tutorial Zero-to-Hero (`TUTORIAL-CQRS-101.md`, diverifikasi end-to-end) · kontrak manifest + registry plugin (`PLUGINS.md`)
 - [x] Tinker/REPL (v2.10.0: `TinkerSession` + `bin/zef tinker`)
-- [ ] Debug toolbar · [ ] Profiler · [ ] Hot reload
-- [ ] PhpStorm/VS Code plugin · Beautiful error pages (parsial: `ErrorResponseFactory`)
+- [ ] Debug toolbar
+- [ ] Profiler
+- [ ] Hot reload
+- [ ] PhpStorm/VS Code plugin
+- [ ] Beautiful error pages (parsial: `ErrorResponseFactory`)
 
 ---
 
@@ -251,7 +287,7 @@
 - [x] Request factory edge cases · Router semantic tests · Pipeline error handling
 - [x] JSON scalar boundary · Zero critical bugs gate · 145 assertion suite via `CliRunner`
 - [x] Mutation testing (v2.13.1: Infection + PCOV dieksekusi nyata, 8.907 mutan, gate no-regression 55/60)
-- [ ] Mutation deep-dive ke MSI 85/90 (riwayat kampanye per rilis):
+- [x] Mutation deep-dive ke MSI 85/90 — **TERCAPAI di v2.15.0, gate dipertahankan sejak itu** (riwayat kampanye per rilis):
   - v2.14.0 ronde 1: MSI 59.6→61.8, gate 58/62
   - v2.14.1 ronde 2: **MSI ~67.0 / covered ~73.0, gate 64/68**, RequestFactory 181→35 escape, Router 136→66, Kernel 185→137, Telemetry 158→74
   - v2.14.2 ronde 3 kurikulum EDGE-CASE-MATRIX: fase 1 SecVal **64.4→84.0**
@@ -274,7 +310,10 @@
 - [x] Request admission control → `InMemoryAdmissionController` · Graceful shutdown · Resource health
 - [x] RoadRunner adapter → `bin/worker.php` · Docker-ready entrypoints (`bin/`, `public/`)
 - [x] Docker/Compose templates → `deploy/Dockerfile`, `deploy/docker-compose.yml` + healthcheck · CI template → `.github/workflows/ci.yml` (v2.8.0)
-- [x] K8s manifests (v2.10.0: `deploy/k8s/`) · Helm · Blue-green/canary · IaC
+- [x] K8s manifests (v2.10.0: `deploy/k8s/`)
+- [ ] Helm
+- [ ] Blue-green/canary
+- [ ] IaC
 
 ---
 

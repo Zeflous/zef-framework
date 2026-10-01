@@ -13,16 +13,20 @@ berarsitektur *Hexagonal (Ports & Adapters)* dengan worker RoadRunner.
 | Dokumen | Isi | Untuk siapa |
 |---------|-----|-------------|
 | [`INSTALLATION.md`](INSTALLATION.md) | Persyaratan, instalasi (Composer & zero-composer), RoadRunner, Docker, Kubernetes, variabel lingkungan | Operator, developer baru |
-| [`CLI.md`](CLI.md) | Referensi lengkap `bin/zef` — self-test, serve, route list, inspector, 11 generator `make:*`, `rr:init`/`doctor`, tinker | Developer sehari-hari |
+| [`CLI.md`](CLI.md) | Referensi lengkap `bin/zef` — self-test, serve, inspector, 11 generator `make:*`, `openapi:generate`, `rr:init`/`doctor`, tinker, `queue:*`, `outbox:work` | Developer sehari-hari |
 | [`TUTORIAL-CQRS-101.md`](TUTORIAL-CQRS-101.md) | **v2.29.0** — Zero-to-Hero: `make:app` → modul → command/query → wiring bus → HTTP/RoadRunner, plus troubleshooting | Developer baru |
 | [`PLUGINS.md`](PLUGINS.md) | **v2.29.0** — kontrak manifest plugin, registrasi composition root, kriteria registry index, distribusi | Author plugin, maintainer |
 | [`INTEGRATIONS.md`](INTEGRATIONS.md) | **v2.30.0** — peta port × adapter ekosistem (object storage S3/Local, transport pesan, job queue PDO), resep kontributor adapter broker, jembatan Cycle ORM, matriks kompatibilitas | Integrator, kontributor adapter |
-| [`ARCHITECTURE.md`](ARCHITECTURE.md) | Pemecahan monolith → layer hexagonal, aturan arah dependensi, peta namespace → layer, autoloading ganda | Arsitek, reviewer |
+| [`ARCHITECTURE.md`](ARCHITECTURE.md) | Pemecahan monolith → layer hexagonal, aturan arah dependensi, peta namespace → layer, autoloading ganda, evolusi v2.12.0–v2.34.1 | Arsitek, reviewer |
 | [`QUALITY.md`](QUALITY.md) | Seluruh gerbang kualitas: PHPUnit, coverage, **mutation testing (MSI per area)**, PHPStan, PHPCS, cs-fixer, Rector, Deptrac | Kontributor, release manager |
+| [`GOVERNANCE.md`](GOVERNANCE.md) | **v2.31.0+** — tabel kanonik 13 konteks gate, jumlah required checks, protokol rilis & sinkronisasi dokumen | Maintainer, release manager |
 | [`DEPLOYMENT.md`](DEPLOYMENT.md) | Pola produksi: RoadRunner (persistent worker), graceful shutdown, observabilitas, health probe, keamanan | SRE, DevOps |
 | [`ROADMAP.md`](ROADMAP.md) | Rencana kerja dan status fitur | Product, kontributor |
 | [`EDGE-CASE-MATRIX.md`](EDGE-CASE-MATRIX.md) | Kurikulum uji edge-case per fase kampanye mutasi | QA, kontributor |
 | [`OPENAPI-GATE-PARITY.md`](OPENAPI-GATE-PARITY.md) | **v2.33.0** — kontrak paritas 12 batas runtime gate OpenAPI (B1–B12) + wire-up + non-goals | Kontributor API, QA |
+| [`TRANSACTION-HOOKS.md`](TRANSACTION-HOOKS.md) | **v2.22.0** — orkestrasi transaksi & UoW-lite: scope terkelola, hook after-commit, command bus transaksional | Developer aplikasi |
+| [`JOB-QUEUE-PARITY.md`](JOB-QUEUE-PARITY.md) | **v2.34.1** — matriks paritas antrean job Redis Streams × PDO + reproduksi bug padNano | Kontributor job queue |
+| [`WIKI-INDEX.md`](WIKI-INDEX.md) | Cara kerja mirror indeks API ke GitHub Wiki (manual, opt-in, double-gated) | Maintainer |
 | `CHANGELOG-v*.md` | Catatan rilis per versi (append-only) | Semua |
 
 ## Rujukan cepat
@@ -50,20 +54,25 @@ docs/
 ├── CLI.md
 ├── TUTORIAL-CQRS-101.md
 ├── PLUGINS.md
+├── INTEGRATIONS.md
 ├── ARCHITECTURE.md
 ├── QUALITY.md
+├── GOVERNANCE.md
 ├── DEPLOYMENT.md
 ├── ROADMAP.md
 ├── EDGE-CASE-MATRIX.md
 ├── OPENAPI-GATE-PARITY.md
+├── TRANSACTION-HOOKS.md
+├── JOB-QUEUE-PARITY.md
+├── WIKI-INDEX.md
 ├── security/
 │   ├── php-sast.md
 │   ├── sonarcloud.md
 │   ├── stub-prescan.md
 │   ├── snyk-security.md
 │   └── code-scanning-issues.md
-├── CHANGELOG-v2.7.0.md … CHANGELOG-v2.33.0.md
-└── CHANGELOG-v2.34.0.md   (rilis terbaru)
+├── CHANGELOG-v2.7.0.md … CHANGELOG-v2.34.0.md
+└── CHANGELOG-v2.34.1.md   (rilis terbaru)
 ```
 
 ## Konvensi dokumen
