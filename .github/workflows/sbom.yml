@@ -3,11 +3,6 @@ name: SBOM
 on:
   push:
     branches: ["main"]
-    # Release tags too: the SBOM is a release artifact, and a tag pushed
-    # without a preceding main-branch push (or with the main run superseded)
-    # would otherwise ship a release with no SBOM evidence for that commit.
-    tags:
-      - "v*.*.*"
   workflow_dispatch:
 
 permissions:
@@ -17,29 +12,24 @@ concurrency:
   group: sbom-${{ github.ref }}
   cancel-in-progress: true
 
+# Role split (#352): this workflow is the BRANCH attestation lane only —
+# generation, artifact upload and keyless OIDC attestation for every commit
+# that lands on main, least-privilege (contents: read), no release interaction.
+#
+# The release-attached SBOM asset is owned exclusively by the `publish` job in
+# release.yml (single writer, runs after the mutation gate with the release
+# guaranteed to exist — no race). The former tag-triggered `sbom-release` job
+# here relied on anchore/sbom-action's implicit attach, which silently skipped
+# whenever the release did not exist yet at attach time: v2.31.0 and v2.34.1
+# shipped without a SBOM asset while the job stayed green. Tag commits are
+# already attested by the main-branch run (tags only point at main commits),
+# and release.yml re-attests on the tag ref for belt-and-braces evidence.
+
 jobs:
-  # Branch pushes + workflow_dispatch on branches: least-privilege (read) —
-  # generation, artifact upload and keyless OIDC attestation only; no release
-  # interaction. Identical to the previous single-job behavior.
   sbom:
     if: github.ref_type != 'tag'
     permissions:
       contents: read
-      id-token: write # required for keyless (OIDC) SBOM attestation
-      attestations: write # required to persist the attestation to the attestation store
-    uses: ./.github/workflows/sbom-generate.yml
-
-  # Tag pushes: the anchore/sbom-action attaches the generated SBOM to the
-  # release matching the tag, which requires contents:write. The v2.32.0 tag
-  # run failed with "Resource not accessible by integration" because the job
-  # only carried contents:read and the release had already been published
-  # before the run reached the attach; v2.31.0 only dodged it by timing (its
-  # release was published after the tag run finished, so the attach was
-  # skipped entirely and the release shipped without a SBOM asset).
-  sbom-release:
-    if: github.ref_type == 'tag'
-    permissions:
-      contents: write # attach the SBOM asset to the tagged release
       id-token: write # required for keyless (OIDC) SBOM attestation
       attestations: write # required to persist the attestation to the attestation store
     uses: ./.github/workflows/sbom-generate.yml
