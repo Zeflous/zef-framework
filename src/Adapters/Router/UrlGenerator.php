@@ -71,12 +71,17 @@ final readonly class UrlGenerator
      */
     public function generateHost(string $name, array $hostParams = []): ?string
     {
-        $record = $this->router->routeRecordFor($name);
-        if ($record === null) {
+        if (!$this->router->hasRouteName($name)) {
             throw new \InvalidArgumentException("Unknown route name '{$name}'.");
         }
-        $host = $record['host'] ?? '';
-        if (!is_string($host) || $host === '') {
+        $host = '';
+        foreach ($this->router->exportRoutes()['routes'] as $record) {
+            if (($record['name'] ?? null) === $name) {
+                $host = is_string($record['host'] ?? null) ? $record['host'] : '';
+                break;
+            }
+        }
+        if ($host === '') {
             return null;
         }
         $labels = [];

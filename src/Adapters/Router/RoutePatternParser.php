@@ -207,12 +207,21 @@ final class RoutePatternParser
         string $requestHost,
     ): array|false|RouteConstraintException {
         $params = self::matchRoute($segments, $path, $constraints);
-        if (!is_array($params)) {
-            return $params;
-        }
-        if ($hostPattern === '') {
-            return $params;
-        }
+
+        return is_array($params) && $hostPattern !== ''
+            ? self::mergeHostParams($params, $hostPattern, $requestHost)
+            : $params;
+    }
+
+    /**
+     * Merges a matching host pattern's wildcards into the path parameters.
+     *
+     * @param array<string,string> $params
+     *
+     * @return array<string,string>|false
+     */
+    private static function mergeHostParams(array $params, string $hostPattern, string $requestHost): array|false
+    {
         $hostParams = HostPatternMatches::match($hostPattern, $requestHost);
         if ($hostParams === null) {
             return false;

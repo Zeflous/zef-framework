@@ -14,6 +14,7 @@ namespace Zef\Tests\Unit;
 use PHPUnit\Framework\TestCase;
 use Zef\Framework\Exception\InvalidConfigurationException;
 use Zef\Framework\Exception\ModuleDependencyViolationException;
+use Zef\Framework\Router\GroupAttributes;
 use Zef\Framework\Router\RouteCollection;
 use Zef\Framework\Router\RouteGroupStack;
 use Zef\Framework\Router\RoutePatternParser;
@@ -67,7 +68,7 @@ final class MutantKillRound2Test extends TestCase
         self::assertTrue($method->isPublic(), 'RouteGroupStack::push() must stay public');
 
         $stack = new RouteGroupStack();
-        $stack->push('/api', 'api.', ['m'], 3);
+        $stack->push(new GroupAttributes(prefix: '/api', namePrefix: 'api.', middleware: ['m'], priority: 3));
         self::assertSame(['m'], $stack->currentAttributes()['middleware']);
         self::assertSame(3, $stack->currentAttributes()['priority']);
     }

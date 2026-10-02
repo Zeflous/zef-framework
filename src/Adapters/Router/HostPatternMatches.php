@@ -28,6 +28,9 @@ namespace Zef\Framework\Router;
  */
 final class HostPatternMatches
 {
+    /** A whole label that is exactly `{name}` (unicode-aware). */
+    private const string PLACEHOLDER = '/^\{([A-Za-z_]\w*)\}$/u';
+
     /**
      * Validates a host pattern at registration time (fail-closed).
      *
@@ -47,12 +50,11 @@ final class HostPatternMatches
             if ($label === '' || $label === '*') {
                 continue;
             }
-            if (str_contains($label, '{') || str_contains($label, '}')) {
-                if (preg_match('/^\{([A-Za-z_]\w*)\}$/', $label) !== 1) {
-                    throw new \InvalidArgumentException(
-                        "Invalid route host label '{$label}': use a literal, '{name}' or '*'.",
-                    );
-                }
+            $braced = str_contains($label, '{') || str_contains($label, '}');
+            if ($braced && self::placeholderName($label) === null) {
+                throw new \InvalidArgumentException(
+                    "Invalid route host label '{$label}': use a literal, '{name}' or '*'.",
+                );
             }
         }
     }
@@ -65,37 +67,16 @@ final class HostPatternMatches
      */
     public static function match(string $pattern, string $host): ?array
     {
-        $host = strtolower(rtrim(trim($host), '.'));
-        // Strip a trailing :port (and leave IPv6 literals untouched).
-        if (!str_contains($host, ']') && str_contains($host, ':')) {
-            $host = preg_replace('/:\d+$/', '', $host) ?? $host;
-        }
+        $host = self::normalizeHost($host);
         $pattern = strtolower(trim($pattern));
         $patternLabels = self::labels($pattern);
         $hostLabels = $pattern === '' ? [] : self::labels($host);
-
         if (count($patternLabels) !== count($hostLabels)) {
             return null;
         }
         $params = [];
         foreach ($patternLabels as $index => $label) {
-            $value = $hostLabels[$index];
-            if ($label === '*') {
-                if ($value === '') {
-                    return null;
-                }
-
-                continue;
-            }
-            if (preg_match('/^\{([A-Za-z_]\w*)\}$/', $label, $m) === 1) {
-                if ($value === '') {
-                    return null;
-                }
-                $params[$m[1]] = $value;
-
-                continue;
-            }
-            if ($label !== $value) {
+            if (!self::labelMatches($label, $hostLabels[$index], $params)) {
                 return null;
             }
         }
@@ -112,12 +93,55 @@ final class HostPatternMatches
     {
         $names = [];
         foreach (self::labels($pattern) as $label) {
-            if (preg_match('/^\{([A-Za-z_]\w*)\}$/', $label, $m) === 1) {
-                $names[] = $m[1];
+            $name = self::placeholderName($label);
+            if ($name !== null) {
+                $names[] = $name;
             }
         }
 
         return $names;
+    }
+
+    /** Lowercases the host, drops a trailing dot and a trailing :port. */
+    private static function normalizeHost(string $host): string
+    {
+        $host = strtolower(rtrim(trim($host), '.'));
+        if (!str_contains($host, ']') && str_contains($host, ':')) {
+            return preg_replace('/:\d+$/', '', $host) ?? $host;
+        }
+
+        return $host;
+    }
+
+    /**
+     * @param array<string,string> $params by-reference capture sink
+     */
+    private static function labelMatches(string $label, string $value, array &$params): bool
+    {
+        $matched = false;
+        if ($value !== '') {
+            $name = self::placeholderName($label);
+            if ($label === '*' || $name !== null) {
+                if ($name !== null) {
+                    $params[$name] = $value;
+                }
+                $matched = true;
+            } else {
+                $matched = $label === $value;
+            }
+        }
+
+        return $matched;
+    }
+
+    /** The `{name}` captured by a whole-placeholder label, or null. */
+    private static function placeholderName(string $label): ?string
+    {
+        if (preg_match(self::PLACEHOLDER, $label, $m) === 1) {
+            return $m[1];
+        }
+
+        return null;
     }
 
     /** @return list<string> */

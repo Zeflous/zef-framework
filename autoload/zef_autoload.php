@@ -518,6 +518,7 @@ if (!function_exists('zef_framework_autoload')) {
                 "Zef\\Framework\\Resource\\SortSpec" => __DIR__ . '/../src/Domain/Resource/SortSpec.php',
                 "Zef\\Framework\\ResponseEmitter" => __DIR__ . '/../src/Adapters/Kernel/ResponseEmitter.php',
                 "Zef\\Framework\\Router\\ContentNegotiator" => __DIR__ . '/../src/Adapters/Router/ContentNegotiator.php',
+                "Zef\\Framework\\Router\\GroupAttributes" => __DIR__ . '/../src/Adapters/Router/GroupAttributes.php',
                 "Zef\\Framework\\Router\\HostPatternMatches" => __DIR__ . '/../src/Adapters/Router/HostPatternMatches.php',
                 "Zef\\Framework\\Router\\LocaleNegotiator" => __DIR__ . '/../src/Adapters/Router/LocaleNegotiator.php',
                 "Zef\\Framework\\Router\\RadixNode" => __DIR__ . '/../src/Adapters/Router/RadixNode.php',

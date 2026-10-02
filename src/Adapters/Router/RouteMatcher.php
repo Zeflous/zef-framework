@@ -87,7 +87,13 @@ final readonly class RouteMatcher
      *     middleware:list<string>,host:string,bindings:array<string,string>,accepts:list<string>,
      * }
      */
-    public function matchOrFallback(string $method, string $path, bool $frozen, ?string $fallbackHandler, string $host = ''): array
+    public function matchOrFallback(
+        string $method,
+        string $path,
+        bool $frozen,
+        ?string $fallbackHandler,
+        string $host = '',
+    ): array
     {
         try {
             $hit = $this->match($method, $path, $frozen, $host);
@@ -134,7 +140,13 @@ final readonly class RouteMatcher
                     continue;
                 }
                 $routeHost = is_string($route['host'] ?? null) ? $route['host'] : '';
-                $params = RoutePatternParser::matchHost($route['segments'], $path, $this->constraints, $routeHost, $host);
+                $params = RoutePatternParser::matchHost(
+                    $route['segments'],
+                    $path,
+                    $this->constraints,
+                    $routeHost,
+                    $host,
+                );
                 if ($params === false || $params instanceof RouteConstraintException) {
                     continue;
                 }

@@ -41,7 +41,6 @@ final class Router
 {
     private const string MSG_FROZEN = 'Router is frozen.';
 
-    private ?RouteMatcher $matcher = null;
     private ?string $fallbackHandler = null;
     private bool $frozen = false;
 
@@ -159,9 +158,8 @@ final class Router
     {
         $negotiator = new LocaleNegotiator($supported);
         if (!in_array($locale, $negotiator->supportedLocales(), true)) {
-            throw new \InvalidArgumentException(
-                "Locale '{$locale}' is not part of the supported set [" . implode(', ', $negotiator->supportedLocales()) . '].',
-            );
+            $set = implode(', ', $negotiator->supportedLocales());
+            throw new \InvalidArgumentException("Locale '{$locale}' is not a supported locale [{$set}].");
         }
         $this->group(['prefix' => '/' . $locale], $routes);
     }
@@ -210,17 +208,6 @@ final class Router
         return $this->collection->patternFor($name);
     }
 
-    /**
-     * v2.36.0: full record bound to a route name (reverse routing callers
-     * that need the handler/host/bindings, not just the path template).
-     *
-     * @return null|array<string,mixed>
-     */
-    public function routeRecordFor(string $name): ?array
-    {
-        return $this->collection->routeRecordFor($name);
-    }
-
     public function hasRouteName(string $name): bool
     {
         return $this->collection->hasRouteName($name);
@@ -240,7 +227,7 @@ final class Router
      */
     public function match(string $method, string $path, string $host = ''): array
     {
-        return $this->matcher()->match($method, $path, $this->frozen, $host);
+        return new RouteMatcher($this->collection, $this->constraints, $this->radix)->match($method, $path, $this->frozen, $host);
     }
 
     // ---------------------------------------------------------------------
@@ -274,7 +261,7 @@ final class Router
      */
     public function matchOrFallback(string $method, string $path, string $host = ''): array
     {
-        return $this->matcher()->matchOrFallback($method, $path, $this->frozen, $this->fallbackHandler, $host);
+        return new RouteMatcher($this->collection, $this->constraints, $this->radix)->matchOrFallback($method, $path, $this->frozen, $this->fallbackHandler, $host);
     }
 
     /**
@@ -327,12 +314,5 @@ final class Router
         $router->freeze(); // rebuilds the radix index once
 
         return $router;
-    }
-
-    private function matcher(): RouteMatcher
-    {
-        $this->matcher ??= new RouteMatcher($this->collection, $this->constraints, $this->radix);
-
-        return $this->matcher;
     }
 }

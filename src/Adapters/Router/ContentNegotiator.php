@@ -35,30 +35,10 @@ final class ContentNegotiator
     {
         $ranges = [];
         foreach (explode(',', $header) as $part) {
-            $part = trim($part);
-            if ($part === '') {
-                continue;
+            $range = self::parseRange($part);
+            if ($range !== null) {
+                $ranges[] = $range;
             }
-            $segments = explode(';', $part);
-            $media = strtolower(trim((string) array_shift($segments)));
-            $slash = explode('/', $media, 2);
-            $type = trim($slash[0]);
-            $subtype = trim($slash[1] ?? '');
-            if (!str_contains($media, '/') || $type === '' || $subtype === '') {
-                continue;
-            }
-            $q = 1.0;
-            foreach ($segments as $param) {
-                $param = strtolower(trim($param));
-                if (str_starts_with($param, 'q=')) {
-                    $raw = substr($param, 2);
-                    $q = is_numeric($raw) ? (float) $raw : 0.0;
-                }
-            }
-            if ($q <= 0.0) {
-                continue;
-            }
-            $ranges[] = ['type' => $type, 'subtype' => $subtype, 'q' => min($q, 1.0)];
         }
 
         return $ranges;
@@ -77,16 +57,11 @@ final class ContentNegotiator
             return true;
         }
         $ranges = self::parseAccept($acceptHeader);
-        if ($ranges === []) {
-            return false;
-        }
-        foreach ($representations as $representation) {
-            if (self::representationQuality($representation, $ranges) > 0.0) {
-                return true;
-            }
-        }
 
-        return false;
+        return $ranges !== [] && array_any(
+            $representations,
+            static fn (string $representation): bool => self::representationQuality($representation, $ranges) > 0.0,
+        );
     }
 
     /**
@@ -117,27 +92,77 @@ final class ContentNegotiator
     }
 
     /**
+     * One comma-separated media range, or null when malformed / q=0.
+     *
+     * @return null|array{type:string,subtype:string,q:float}
+     */
+    private static function parseRange(string $part): ?array
+    {
+        $part = trim($part);
+        if ($part === '') {
+            return null;
+        }
+        $segments = explode(';', $part);
+        $media = strtolower(trim(array_shift($segments)));
+        $slash = explode('/', $media, 2);
+        $type = trim($slash[0]);
+        $subtype = trim($slash[1] ?? '');
+        if (!str_contains($media, '/') || $type === '' || $subtype === '') {
+            return null;
+        }
+        $q = self::quality($segments);
+        if ($q <= 0.0) {
+            return null;
+        }
+
+        return ['type' => $type, 'subtype' => $subtype, 'q' => min($q, 1.0)];
+    }
+
+    /**
+     * @param list<string> $segments
+     */
+    private static function quality(array $segments): float
+    {
+        $q = 1.0;
+        foreach ($segments as $param) {
+            $param = strtolower(trim($param));
+            if (str_starts_with($param, 'q=')) {
+                $raw = substr($param, 2);
+                $q = is_numeric($raw) ? (float) $raw : 0.0;
+            }
+        }
+
+        return $q;
+    }
+
+    /**
      * @param list<array{type:string,subtype:string,q:float}> $ranges
      */
     private static function representationQuality(string $representation, array $ranges): float
     {
         $representation = strtolower(trim($representation));
-        $slash = explode('/', $representation, 2);
         if (!str_contains($representation, '/')) {
             return 0.0;
         }
-        $type = $slash[0];
-        $subtype = $slash[1];
+        $slash = explode('/', $representation, 2);
         $best = 0.0;
         foreach ($ranges as $range) {
-            if (($range['type'] === '*' || $range['type'] === $type)
-                && ($range['subtype'] === '*' || $range['subtype'] === $subtype)
-                && $range['q'] > $best
-            ) {
+            if (self::rangeAccepts($range, $slash[0], $slash[1]) && $range['q'] > $best) {
                 $best = $range['q'];
             }
         }
 
         return $best;
+    }
+
+    /**
+     * @param array{type:string,subtype:string,q:float} $range
+     */
+    private static function rangeAccepts(array $range, string $type, string $subtype): bool
+    {
+        $typeOk = $range['type'] === '*' || $range['type'] === $type;
+        $subtypeOk = $range['subtype'] === '*' || $range['subtype'] === $subtype;
+
+        return $typeOk && $subtypeOk;
     }
 }

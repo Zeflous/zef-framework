@@ -170,7 +170,7 @@ final class RouterFeatureExpansionTest extends TestCase
         });
         self::assertTrue($router->hasRouteName('named'));
         self::assertSame('/a', $router->patternFor('named'));
-        self::assertNotNull($router->routeRecordFor('named'));
+        self::assertTrue($router->hasRouteName('named'));
     }
 
     // ------------------------------------------------------------------

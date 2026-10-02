@@ -27,7 +27,6 @@ final readonly class RouteLister
         if ($json) {
             return $this->emitJson($routes);
         }
-
         $this->io->out(sprintf(
             '%-8s %-34s %-20s %-30s %-9s %-6s %-22s %s',
             'METHOD',
@@ -40,32 +39,7 @@ final readonly class RouteLister
             'HOST',
         ));
         foreach ($routes as $route) {
-            $middleware = is_array($route['middleware'] ?? null) ? $route['middleware'] : [];
-            $middlewareCell = '-';
-            if ($middleware !== []) {
-                $ids = [];
-                foreach ($middleware as $entry) {
-                    if (is_string($entry) && $entry !== '') {
-                        $ids[] = $entry;
-                    }
-                }
-                $middlewareCell = $ids === [] ? '-' : implode(',', $ids);
-            }
-            $name = $route['name'] ?? null;
-            $module = $route['module'] ?? null;
-            $priority = $route['priority'] ?? null;
-            $host = $route['host'] ?? null;
-            $this->io->out(sprintf(
-                '%-8s %-34s %-20s %-30s %-9s %-6d %-22s %s',
-                is_string($route['method'] ?? null) ? $route['method'] : '',
-                is_string($route['pattern'] ?? null) ? $route['pattern'] : '',
-                is_string($name) ? $name : '-',
-                is_string($route['handler'] ?? null) ? $route['handler'] : '',
-                is_string($module) ? $module : '-',
-                is_int($priority) ? $priority : 0,
-                $middlewareCell,
-                is_string($host) && $host !== '' ? $host : '-',
-            ));
+            $this->io->out(sprintf('%-8s %-34s %-20s %-30s %-9s %-6s %-22s %s', ...$this->row($route)));
         }
         $this->io->out('');
         $this->io->out(sprintf('%d route(s)', count($routes)));
@@ -93,15 +67,72 @@ final readonly class RouteLister
                 'accepts' => is_array($route['accepts'] ?? null) ? $route['accepts'] : [],
             ];
         }
-        $encoded = json_encode($exported, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-        $lines = is_string($encoded) ? preg_split('/\R/', $encoded) : false;
-        if ($lines === false) {
-            return 1;
-        }
-        foreach ($lines as $line) {
+        foreach ($this->lines($exported) as $line) {
             $this->io->out($line);
         }
 
         return 0;
+    }
+
+    /**
+     * @param array<string,mixed> $route
+     *
+     * @return array{0:string,1:string,2:string,3:string,4:string,5:int,6:string,7:string}
+     */
+    private function row(array $route): array
+    {
+        return [
+            $this->cell($route, 'method'),
+            $this->cell($route, 'pattern'),
+            $this->cell($route, 'name'),
+            $this->cell($route, 'handler'),
+            $this->cell($route, 'module'),
+            is_int($route['priority'] ?? null) ? $route['priority'] : 0,
+            $this->middlewareCell($route['middleware'] ?? null),
+            $this->hostCell($route['host'] ?? null),
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $route
+     */
+    private function cell(array $route, string $key): string
+    {
+        $value = $route[$key] ?? null;
+
+        return is_string($value) && $value !== '' ? $value : '-';
+    }
+
+    private function middlewareCell(mixed $middleware): string
+    {
+        if (!is_array($middleware)) {
+            return '-';
+        }
+        $ids = [];
+        foreach ($middleware as $entry) {
+            if (is_string($entry) && $entry !== '') {
+                $ids[] = $entry;
+            }
+        }
+
+        return $ids === [] ? '-' : implode(',', $ids);
+    }
+
+    private function hostCell(mixed $host): string
+    {
+        return is_string($host) && $host !== '' ? $host : '-';
+    }
+
+    /**
+     * @param list<array<string,mixed>> $exported
+     *
+     * @return list<string>
+     */
+    private function lines(array $exported): array
+    {
+        $encoded = json_encode($exported, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        $lines = is_string($encoded) ? preg_split('/\R/', $encoded) : false;
+
+        return $lines === false ? [] : $lines;
     }
 }
