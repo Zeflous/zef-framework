@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/Architecture-Hexagonal-38bdf8?style=for-the-badge" alt="Hexagonal">
   <br>
   <img src="https://img.shields.io/badge/Kelas%20PSR--4-1147-818cf8?style=for-the-badge" alt="1147 kelas">
-  <img src="https://img.shields.io/badge/Test%20PHPUnit-3738-c084fc?style=for-the-badge" alt="3738 test">
+  <img src="https://img.shields.io/badge/Test%20PHPUnit-3744-c084fc?style=for-the-badge" alt="3744 test">
   <img src="https://img.shields.io/badge/Coverage%20gate-%E2%89%A5%2090%25-22c55e?style=for-the-badge" alt="Coverage gate 90%">
   <img src="https://img.shields.io/badge/Mutation%20gate-MSI%20%E2%89%A5%2085-f59e0b?style=for-the-badge" alt="Mutation gate MSI 85">
   <br>
@@ -431,11 +431,11 @@ Runtime worker persisten berbeda mendasar dari PHP-FPM: proses hidup lama, sehin
 | `ZEF_MAX_BODY_BYTES` | bawaan framework | Batas ukuran request body (`413` bila lebih) |
 | `ZEF_TRUSTED_HOSTS` | `localhost,127.0.0.1,::1,zef.test` | Daftar host tepercaya (CSV) |
 | `ZEF_SECURITY_CSRF_SECRET` | — | Secret CSRF ≥ 32 byte; mengaktifkan CSRF |
-| `ZEF_SECURITY_CSRF_TOKEN_BYTES` · `_COOKIE` · `_HEADER` · `_SAMESITE` · `_SECURE` · `_HTTP_ONLY` | — | Penyetelan CSRF |
+| `ZEF_SECURITY_CSRF_TOKEN_BYTES` · `_COOKIE` · `_HEADER` · `_SAMESITE` · `_SECURE` · `_HTTP_ONLY` · `_TTL` | — | Penyetelan CSRF (`_TTL` dalam detik; `0` = tanpa kedaluwarsa) |
 | `ZEF_SECURITY_ORIGIN_POLICY` · `ZEF_SECURITY_ALLOWED_ORIGINS` | — | Kontrol origin |
 | `ZEF_SECURITY_RATE_LIMIT` · `_MAX` · `_WINDOW` · `_MAX_KEYS` · `_DISTRIBUTED_RATE_LIMIT` | — | Rate limiting global (SecurityRuntimeMiddleware) |
 | `ZEF_SECURITY_RATE_LIMIT_TIERS` | — (nonaktif) | Daftar JSON tier `RateLimitMiddleware` (lihat CHANGELOG v2.25.0) |
-| `ZEF_SECURITY_RATE_LIMIT_ALGORITHM` | `sliding` | Algoritma tier: `sliding` atau `token` |
+| `ZEF_SECURITY_RATE_LIMIT_ALGORITHM` | `sliding` | Algoritma tier: `sliding`, `token`, atau `fixed` |
 | `ZEF_SECURITY_RATE_LIMIT_FAIL_OPEN` | `false` | Lanjut tanpa kuota saat penyimpanan gagal (fail-open) |
 | `ZEF_SECURITY_HSTS` · `ZEF_SECURITY_CSP` | — | Header keamanan respons |
 | `ZEF_WORKER_MAX_JOBS` | `0` (tanpa batas) | Kapasitas job per worker sebelum daur ulang |
@@ -452,7 +452,7 @@ Sebuah perubahan tidak dianggap selesai sebelum **gerbang independen** hijau. "T
 <table width="100%">
   <tr><th align="left">#</th><th align="left">Gerbang</th><th align="left">Perintah</th><th align="left">Ambang / bukti</th></tr>
   <tr><td>1</td><td>Syntax</td><td><kbd>composer lint</kbd></td><td><code>879</code> berkas first-party, 0 kegagalan</td></tr>
-  <tr><td>2</td><td>Suite PHPUnit native</td><td><kbd>composer test</kbd></td><td><code>3738</code> test · <code>140643</code> assertion · 63 skipped</td></tr>
+  <tr><td>2</td><td>Suite PHPUnit native</td><td><kbd>composer test</kbd></td><td><code>3744</code> test · <code>140907</code> assertion · 6 skipped</td></tr>
   <tr><td>3</td><td>Coverage</td><td><kbd>composer coverage:gate</kbd></td><td>ambang statement <b>90%</b> (diukur Xdebug)</td></tr>
   <tr><td>4</td><td>Mutation testing</td><td><kbd>composer mutation</kbd></td><td><code>--min-msi=85 --min-covered-msi=90</code></td></tr>
   <tr><td>5</td><td>Analisis statis</td><td><kbd>composer stan</kbd></td><td>PHPStan level <b>max</b> + strict-rules, baseline ter-ratchet</td></tr>
@@ -462,7 +462,7 @@ Sebuah perubahan tidak dianggap selesai sebelum **gerbang independen** hijau. "T
 
 ```bash
 composer lint            # Linted 879 PHP files — 0 failure(s).
-composer test            # Tests: 3738, Assertions: 140643, Skipped: 63
+composer test            # Tests: 3744, Assertions: 140907, Skipped: 6
 php bin/zef --self-test  # PASSED: 501  FAILED: 0
 ```
 
