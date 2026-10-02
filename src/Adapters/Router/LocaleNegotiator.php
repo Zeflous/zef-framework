@@ -68,7 +68,7 @@ final readonly class LocaleNegotiator
     {
         if (preg_match('#^/(' . self::TOKEN_GRAMMAR . ')(/|$)#', $path, $m) === 1) {
             $token = $m[1];
-            if (isset($this->supported[$token]) || $this->isWellFormed($token)) {
+            if (isset($this->supported[$token]) || $this->isQualifiedTag($token)) {
                 $rest = substr($path, strlen($m[0]));
 
                 return [$token, $rest === '' ? '/' : '/' . $rest];
@@ -78,8 +78,15 @@ final readonly class LocaleNegotiator
         return [null, $path];
     }
 
-    private function isWellFormed(string $token): bool
+    /**
+     * A well-formed tag that carries a region/script subtag ("en-US", "pt_BR").
+     * A bare word ("users", "admin", "fr") is NOT treated as a locale unless it
+     * is explicitly registered as supported — this is what lets
+     * `Router::localized()` coexist with ordinary prefix-less routes.
+     */
+    private function isQualifiedTag(string $token): bool
     {
-        return preg_match('/^' . self::TOKEN_GRAMMAR . '$/', $token) === 1;
+        return (str_contains($token, '-') || str_contains($token, '_'))
+            && preg_match('/^' . self::TOKEN_GRAMMAR . '$/', $token) === 1;
     }
 }

@@ -127,6 +127,34 @@ final class RouterFeatureExpansionTest extends TestCase
         self::assertSame('{tenant}.example.com', $first['host']);
     }
 
+    public function testRouteListTextTableRendersMiddlewareAndHostColumns(): void
+    {
+        $router = new Router();
+        $router->group(
+            ['middleware' => ['mw.a', 'mw.b'], 'host' => '{tenant}.example.com'],
+            static function (Router $r): void {
+                $r->add('GET', '/dash/{id}', 'h.dash', 'dash.name', 5, 'dash');
+            },
+        );
+        $router->add('POST', '/plain', 'h.plain');
+        $stream = fopen('php://temp', 'r+');
+        if ($stream === false) {
+            self::fail('Cannot open a temp stream for route:list output.');
+        }
+        $exit = new RouteLister(new ConsoleIO($stream, $stream))->run($router->getRoutes(), false);
+        self::assertSame(0, $exit);
+        rewind($stream);
+        $raw = (string) stream_get_contents($stream);
+        self::assertStringContainsString('METHOD', $raw);
+        self::assertStringContainsString('MIDDLEWARE', $raw);
+        self::assertStringContainsString('HOST', $raw);
+        self::assertStringContainsString('mw.a,mw.b', $raw);
+        self::assertStringContainsString('{tenant}.example.com', $raw);
+        self::assertStringContainsString('2 route(s)', $raw);
+        // A route with no middleware/host renders the '-' placeholder.
+        self::assertStringContainsString('/plain', $raw);
+    }
+
     public function testGetRoutesRecordCarriesRouterMetadata(): void
     {
         $router = new Router();
@@ -379,6 +407,62 @@ final class RouterFeatureExpansionTest extends TestCase
         self::assertFalse(ContentNegotiator::matches('application/json;q=0', ['application/json']));
         self::assertSame('application/json', ContentNegotiator::select('application/json', ['application/json', 'text/html']));
         self::assertNull(ContentNegotiator::select('text/html', ['application/json']));
+    }
+
+    // ------------------------------------------------------------------
+
+    public function testLocaleNegotiatorSplitsSupportedAndWellFormedPrefixes(): void
+    {
+        $negotiator = new LocaleNegotiator(['en', 'id', 'en-US']);
+        self::assertSame(['en', 'id', 'en-US'], $negotiator->supportedLocales());
+        self::assertSame(['en', '/users'], $negotiator->splitPathPrefix('/en/users'));
+        self::assertSame(['en', '/'], $negotiator->splitPathPrefix('/en'));
+        // A well-formed tag WITH a region subtag is accepted even if unregistered.
+        self::assertSame(['fr-CA', '/x'], $negotiator->splitPathPrefix('/fr-CA/x'));
+        // A bare path word is never hijacked as a locale.
+        self::assertSame([null, '/users'], $negotiator->splitPathPrefix('/users'));
+        self::assertSame([null, '/fr/x'], $negotiator->splitPathPrefix('/fr/x'));
+        self::assertSame([null, '/'], $negotiator->splitPathPrefix('/'));
+    }
+
+    public function testLocaleNegotiatorRejectsEmptyAndMalformedSupportedLocales(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        new LocaleNegotiator([]);
+    }
+
+    public function testLocaleNegotiatorRejectsMalformedTag(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        new LocaleNegotiator(['not a tag!']);
+    }
+
+    public function testHostPatternMatchesCapturesWildcardsAndIgnoresPort(): void
+    {
+        self::assertSame(['tenant' => 'acme'], HostPatternMatches::match('{tenant}.example.com', 'acme.example.com'));
+        self::assertSame(['tenant' => 'acme'], HostPatternMatches::match('{tenant}.example.com', 'ACME.example.com:8443'));
+        self::assertSame([], HostPatternMatches::match('api.example.com', 'api.example.com'));
+        self::assertSame(['a' => 'x', 'b' => 'y'], HostPatternMatches::match('{a}.{b}.example.com', 'x.y.example.com'));
+        // Label-count mismatch never matches.
+        self::assertNull(HostPatternMatches::match('{tenant}.example.com', 'a.b.example.com'));
+        self::assertNull(HostPatternMatches::match('api.example.com', 'www.example.com'));
+        self::assertSame(['tenant'], HostPatternMatches::wildcardNames('{tenant}.example.com'));
+        self::assertSame([], HostPatternMatches::wildcardNames('*.example.com'));
+    }
+
+    public function testHostPatternRejectsMalformedPatterns(): void
+    {
+        $rejected = 0;
+        foreach (['', 'https://example.com', 'example.com:8080', 'api-{tenant}.example.com'] as $bad) {
+            try {
+                HostPatternMatches::assertValidPattern($bad);
+            } catch (\InvalidArgumentException) {
+                ++$rejected;
+            }
+        }
+        self::assertSame(4, $rejected, 'Every malformed host pattern must be rejected.');
+        HostPatternMatches::assertValidPattern('{tenant}.example.com');
+        HostPatternMatches::assertValidPattern('*.example.com');
     }
 
     // ------------------------------------------------------------------
