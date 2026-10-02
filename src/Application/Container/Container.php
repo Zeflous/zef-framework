@@ -366,19 +366,27 @@ final class Container implements ContainerInterface, ServiceRegistrarInterface
         $this->registry = new ServiceRegistry();
         $this->registrar = new ServiceRegistrar($this->registry);
         $graphValidator = new DependencyGraphValidator();
+        $guard = $initializationGuard ?? new FailFastInitializationGuard();
         $this->compiler = new ContainerCompiler($graphValidator);
         $this->middleware = new ServiceMiddlewarePipeline();
+        $subtrees = new SingletonSubtreeTracker();
         $this->resolver = new ContainerResolver(
             $this->registry,
             $graphValidator,
-            $initializationGuard ?? new FailFastInitializationGuard(),
+            $guard,
             $this->policy->maxResolutionDepth,
             $this->middleware,
+            $subtrees,
         );
         $this->providers = new ProviderBroker($this);
         $this->decorators = new DecoratorApplier();
         $this->contextualBindings = new ContextualBindingStore();
-        $this->fallbacks = new NamespaceFallbackResolver();
+        $this->fallbacks = new NamespaceFallbackResolver(
+            $guard,
+            $subtrees,
+            $this->middleware,
+            $this->policy->maxResolutionDepth,
+        );
         $this->namespaces = new NamespaceLayer();
         $this->warmer = new SingletonWarmer($this);
     }
