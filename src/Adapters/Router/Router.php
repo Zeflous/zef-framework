@@ -27,7 +27,8 @@ use Zef\Framework\Validation\RouteConstraintValidator;
  *     method: string, pattern: string, handler: string, module: ?string, priority: int, sequence: int,
  *     segments: list<array{dynamic:true,name:string,constraint?:string|null}|array{dynamic:false,value:string}>,
  *     signature: string, staticCount: int, constrainedCount: int,
- *     name: ?string, middleware: list<string>,
+ *     name: ?string, middleware: list<string>, host: string,
+ *     bindings: array<string,string>, accepts: list<string>,
  * }
  *
  * NOTE: this alias is declared LOCALLY (a verbatim copy of the RouteCollection
@@ -95,8 +96,12 @@ final class Router
 
         // v2.10.0: merge enclosing group prefix into the pattern and the
         // name prefix into the name, so parsing/signatures/collisions all
-        // see the final wire form.
-        ['pattern' => $pattern, 'name' => $name] = $this->groupStack->applyTo($pattern, $name);
+        // see the final wire form. v2.36.0: the effective host pattern
+        // travels alongside so signatures stay host-scoped.
+        $applied = $this->groupStack->applyTo($pattern, $name);
+        $pattern = $applied['pattern'];
+        $name = $applied['name'];
+        $host = $applied['host'];
         $segments = RoutePatternParser::parsePattern($pattern);
         RoutePatternParser::assertUniqueParams($segments, $this->constraints);
 
@@ -110,9 +115,12 @@ final class Router
             'module' => $module,
             'priority' => $priority + ($group['priority'] ?? 0),
             'segments' => $segments,
-            'signature' => RoutePatternParser::canonicalSignature($method, $segments),
+            'signature' => RoutePatternParser::canonicalSignature($method, $segments, $host),
             'name' => $name,
             'middleware' => $group['middleware'],
+            'host' => $host,
+            'bindings' => $group['bindings'],
+            'accepts' => $group['accepts'],
         ]);
     }
 
@@ -135,6 +143,27 @@ final class Router
         } finally {
             $this->groupStack->pop();
         }
+    }
+
+    /**
+     * v2.36.0 (roadmap: "Localization routing (/{locale}/...)"): registers
+     * routes under a fixed locale prefix, exactly like group(['prefix' =>
+     * '/{locale}']) but with the locale validated against the negotiator's
+     * supported set (a plain `{locale}` path parameter would silently
+     * capture any word). The locale string is also recorded as a route
+     * parameter so it is present in the match result for handlers.
+     *
+     * @param list<string> $supported supported locale tags, e.g. ['en','id']
+     */
+    public function localized(array $supported, string $locale, callable $routes): void
+    {
+        $negotiator = new LocaleNegotiator($supported);
+        if (!in_array($locale, $negotiator->supportedLocales(), true)) {
+            throw new \InvalidArgumentException(
+                "Locale '{$locale}' is not part of the supported set [" . implode(', ', $negotiator->supportedLocales()) . '].',
+            );
+        }
+        $this->group(['prefix' => '/' . $locale], $routes);
     }
 
     public function addConstraint(string $name, string $regex): void
@@ -178,6 +207,17 @@ final class Router
         return $this->collection->patternFor($name);
     }
 
+    /**
+     * v2.36.0: full record bound to a route name (reverse routing callers
+     * that need the handler/host/bindings, not just the path template).
+     *
+     * @return null|array<string,mixed>
+     */
+    public function routeRecordFor(string $name): ?array
+    {
+        return $this->collection->routeRecordFor($name);
+    }
+
     public function hasRouteName(string $name): bool
     {
         return $this->collection->hasRouteName($name);
@@ -190,11 +230,14 @@ final class Router
     }
 
     /**
-     * @return array{handler:string,module:?string,params:array<string,string>,pattern:string}
+     * @return array{
+     *     handler:string,module:?string,params:array<string,string>,pattern:string,
+     *     middleware:list<string>,host:string,bindings:array<string,string>,accepts:list<string>,
+     * }
      */
-    public function match(string $method, string $path): array
+    public function match(string $method, string $path, string $host = ''): array
     {
-        return $this->matcher()->match($method, $path, $this->frozen);
+        return $this->matcher()->match($method, $path, $this->frozen, $host);
     }
 
     // ---------------------------------------------------------------------
@@ -226,9 +269,9 @@ final class Router
      *
      * @return array{handler:string,module:?string,params:array<string,string>,pattern:string,fallback:bool}
      */
-    public function matchOrFallback(string $method, string $path): array
+    public function matchOrFallback(string $method, string $path, string $host = ''): array
     {
-        return $this->matcher()->matchOrFallback($method, $path, $this->frozen, $this->fallbackHandler);
+        return $this->matcher()->matchOrFallback($method, $path, $this->frozen, $this->fallbackHandler, $host);
     }
 
     /**

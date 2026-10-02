@@ -36,6 +36,14 @@ final class RouteRadixIndex
     private array $nodes = [];
 
     /**
+     * v2.36.0: the route-collection revision this index was last compiled
+     * from. An unfrozen match() can then skip the rebuild while nothing
+     * has been registered since (the previous behaviour rebuilt on EVERY
+     * unfrozen match, an O(routes x segments) cost per request).
+     */
+    private int $compiledRevision = -1;
+
+    /**
      * Rebuilds the index from the (sorted) route records. Called once at
      * freeze() time, and on the fly for every match() while unfrozen.
      *
@@ -56,6 +64,23 @@ final class RouteRadixIndex
             }
             $this->nodes[$nodeIndex]->routes[] = $index;
         }
+    }
+
+    /**
+     * v2.36.0 revision-aware compile: rebuilds only when the collection
+     * revision differs from the compiled one. `compile()` stays the
+     * unconditional primitive (freeze() and fromCompiledArray() call it
+     * directly); this is the idempotent fast path for unfrozen match().
+     *
+     * @param list<RouteRecord> $routes
+     */
+    public function compileIfStale(array $routes, int $revision): void
+    {
+        if ($this->compiledRevision === $revision) {
+            return;
+        }
+        $this->compile($routes);
+        $this->compiledRevision = $revision;
     }
 
     /**

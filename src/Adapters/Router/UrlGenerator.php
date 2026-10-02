@@ -88,6 +88,46 @@ final readonly class UrlGenerator
         return rawurlencode($value);
     }
 
+    /**
+     * v2.36.0: reverse routing for host (subdomain) patterns — returns the
+     * concrete host for a named route, substituting `{tenant}` wildcards
+     * from $hostParams. A route without a host pattern returns null; a
+     * missing wildcard parameter throws (same strictness as generate()).
+     *
+     * @param array<string,scalar|\Stringable> $hostParams
+     *
+     * @throws \InvalidArgumentException for unknown names or missing wildcards
+     */
+    public function generateHost(string $name, array $hostParams = []): ?string
+    {
+        $record = $this->router->routeRecordFor($name);
+        if ($record === null) {
+            throw new \InvalidArgumentException("Unknown route name '{$name}'.");
+        }
+        $host = $record['host'] ?? '';
+        if (!is_string($host) || $host === '') {
+            return null;
+        }
+        $labels = [];
+        foreach (explode('.', $host) as $label) {
+            if (preg_match('/^\{([A-Za-z_]\w*)\}$/', $label, $m) === 1) {
+                $paramName = $m[1];
+                if (!array_key_exists($paramName, $hostParams)) {
+                    throw new \InvalidArgumentException(
+                        "Route '{$name}' requires host parameter '{$paramName}'.",
+                    );
+                }
+                $value = $this->stringify($name, $paramName, $hostParams[$paramName]);
+                $labels[] = rawurlencode($value);
+
+                continue;
+            }
+            $labels[] = $label;
+        }
+
+        return implode('.', $labels);
+    }
+
     private function stringify(string $route, string $param, mixed $value): string
     {
         if (is_scalar($value)) {
