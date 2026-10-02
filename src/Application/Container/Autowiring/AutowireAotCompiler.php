@@ -93,16 +93,23 @@ final class AutowireAotCompiler
         foreach ($result->metadata as $serviceId => $metadata) {
             $entries .= '        ' . self::generateServiceEntry($metadata, $result->factoryCode[$serviceId]);
         }
-        $code = "<?php\n\n/* {$header} — generated file, do not edit. */\n\nreturn [\n{$entries}];\n";
+        // This banner is informational, but the artifact is later required as
+        // PHP. Keep an arbitrary caller-provided header inside its comment so
+        // it cannot terminate the comment and inject executable code.
+        $safeHeader = str_replace('*/', '* /', $header);
+        $code = "<?php\n\n/* {$safeHeader} — generated file, do not edit. */\n\nreturn [\n{$entries}];\n";
         // @infection-ignore-all Concat,ConcatOperandRemoval — ekuivalen: nama tmp hanya
         // terlihat sebelum rename atomik; komposisi tak terobservasi
-        $tmp = $path . '.tmp.' . getmypid();
+        // A PID alone collides when two fibers/tasks in the same worker export
+        // the same target concurrently. A random suffix preserves the atomic
+        // rename contract for each individual writer.
+        $tmp = $path . '.tmp.' . bin2hex(random_bytes(6));
         if (file_put_contents($tmp, $code, \LOCK_EX) === false) {
             throw new InvalidConfigurationException("Cannot write AOT export file '{$path}'.");
         }
         if (!rename($tmp, $path)) {
             // Cleanup of $tmp, a name this method generated itself
-            // ($path . '.tmp.' . getmypid()). No request input reaches the
+            // ($path . '.tmp.' . bin2hex(random_bytes(6))). No request input reaches the
             // argument; this runs only when the rename immediately above failed.
             // Registered as an accepted suppression: docs/security/php-sast.md §7.
             if (is_file($tmp)) {

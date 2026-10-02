@@ -96,6 +96,27 @@ final class SchedulerClusterSafetyTest extends TestCase
         }
     }
 
+    public function testLeaseIsRenewedBeforeAFollowerCanTakeOver(): void
+    {
+        $leader = $this->leader();
+        $follower = $this->follower();
+        foreach ([$leader, $follower] as $scheduler) {
+            $scheduler->register('cleanup', null, new FixedIntervalSchedule(60));
+        }
+
+        self::assertSame(1, $leader->tick($this->nano(0)));
+
+        // A healthy leader renews at t+20. Its original 30-second lease
+        // would have lapsed by t+35, so the follower must still be rejected
+        // before the leader's next tick.
+        $this->now[0] += 20;
+        self::assertSame(0, $leader->tick($this->nano(20)));
+        $this->now[0] += 15;
+        self::assertSame(0, $follower->tick($this->nano(35)));
+        self::assertTrue($leader->isClusterLeader());
+        self::assertFalse($follower->isClusterLeader());
+    }
+
     public function testLapsedLeaderIsTakenOverAutomatically(): void
     {
         $leaderQueue = new InMemoryJobQueue();
