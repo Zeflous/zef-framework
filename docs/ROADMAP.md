@@ -39,13 +39,14 @@
 - [x] Module-based registration
 - [x] Lazy loading support
 - [x] Request scope isolation
+- [x] Runtime implicit lifetime-capture guard (singleton subtree yang menarik service REQUEST/TRANSIENT via `$ctx->get()` di body factory fail-fast saat resolusi — melengkapi pass compile-time `assertSingletonClosure` untuk dep terdeklarasi)
 - [x] Architecture policy enforcement
 
   #### Target Enterprise:
   - [x] `Tagged services untuk grouping` (v2.8.0: `TaggedServiceLocator`, resolusi via tag `ServiceDefinition`)
   - [x] `Contextual binding` (v2.10.0: `Container::when()->needs()->give()`, registry-rewrite pre-freeze)
   - [x] `Service decoration chain` (v2.10.0: `Container::decorate()`, wrapper definitions + `@inner:*`)
-  - [ ] `Service middleware/interceptors`
+  - [x] `Service middleware/interceptors` (onion ber-priority di sekeliling KONSTRUKSI service — cache-miss path, konsisten dengan event resolving/resolved: priority lebih tinggi = terluar, short-circuit mengganti instance namun tetap melewati resolved listeners + per-lifetime caching, pipeline disegel saat `validateAndFreeze()` via `Container::addServiceMiddleware()`)
   - [x] `Container compilation untuk performa` (`ContainerCompiler` ✔ + autowiring AOT v2.9.0 ✔)
   - [x] `Service provider dengan deferred loading` (v2.10.0: `ServiceProviderInterface` + `DeferrableProviderInterface` + `bootProviders()`)
   - [x] `Container events (resolving, resolved)` (v2.10.0: `onResolving()` / `onResolved()` dengan instance replacement)

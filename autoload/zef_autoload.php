@@ -88,6 +88,7 @@ if (!function_exists('zef_framework_autoload')) {
                 "Zef\\Framework\\Container\\RadixTreeNavigator" => __DIR__ . '/../src/Domain/Container/RadixTreeNavigator.php',
                 "Zef\\Framework\\Container\\RequestScopeStore" => __DIR__ . '/../src/Application/Container/RequestScopeStore.php',
                 "Zef\\Framework\\Container\\ServiceInstantiator" => __DIR__ . '/../src/Application/Container/ServiceInstantiator.php',
+                "Zef\\Framework\\Container\\ServiceMiddlewarePipeline" => __DIR__ . '/../src/Application/Container/ServiceMiddlewarePipeline.php',
                 "Zef\\Framework\\Container\\SingletonWarmer" => __DIR__ . '/../src/Application/Container/SingletonWarmer.php',
                 "Zef\\Framework\\CQRS\\CommandBus" => __DIR__ . '/../src/Application/CQRS/CommandBus.php',
                 "Zef\\Framework\\CQRS\\CommandBusInterface" => __DIR__ . '/../src/Domain/CQRS/CommandBusInterface.php',

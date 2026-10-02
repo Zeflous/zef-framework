@@ -21,6 +21,9 @@ final class ResolutionContext implements ContainerInterface
 {
     private array $loading = [];
 
+    /** @var list<string> stack of singleton ids currently being instantiated (innermost last) */
+    private array $singletonStack = [];
+
     public function __construct(
         private readonly ContainerResolver $resolver,
         private readonly ?RequestScope $scope,
@@ -38,7 +41,13 @@ final class ResolutionContext implements ContainerInterface
         return $this->resolver->hasInContext($id);
     }
 
-    public function push(string $id): void
+    /**
+     * v2.35.0: lifetime-aware push. Pass the definition's lifetime so the
+     * context can track the enclosing singleton subtree — the runtime
+     * implicit-capture guard relies on it. Callers without a definition
+     * (legacy/internal) default to SINGLETON, preserving previous behaviour.
+     */
+    public function push(string $id, ?string $lifetime = null): void
     {
         if (count($this->loading) >= $this->resolver->maxResolutionDepth()) {
             throw new InvalidConfigurationException('Dependency resolution depth exceeds configured safety budget.');
@@ -51,16 +60,38 @@ final class ResolutionContext implements ContainerInterface
         }
         // @infection-ignore-all TrueValue — ekuivalen: isset() hanya membaca kunci; nilai tak dibaca
         $this->loading[$id] = true;
+        if (($lifetime ?? ServiceLifetime::SINGLETON) === ServiceLifetime::SINGLETON) {
+            $this->singletonStack[] = $id;
+        }
     }
 
-    public function pop(string $id): void
+    public function pop(string $id, ?string $lifetime = null): void
     {
         unset($this->loading[$id]);
+        if (($lifetime ?? ServiceLifetime::SINGLETON) === ServiceLifetime::SINGLETON
+            && $this->singletonStack !== []
+            && end($this->singletonStack) === $id
+        ) {
+            array_pop($this->singletonStack);
+        }
+    }
+
+    /** True while a singleton instantiation subtree is open on this context. */
+    public function insideSingleton(): bool
+    {
+        return $this->singletonStack !== [];
+    }
+
+    /** The innermost singleton currently being instantiated (null otherwise). */
+    public function currentSingleton(): ?string
+    {
+        return $this->singletonStack === [] ? null : (string) $this->singletonStack[count($this->singletonStack) - 1];
     }
 
     public function reset(): void
     {
         $this->loading = [];
+        $this->singletonStack = [];
     }
 }
 

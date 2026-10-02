@@ -38,6 +38,7 @@ final class Container implements ContainerInterface, ServiceRegistrarInterface
     private NamespaceFallbackResolver $fallbacks;
     private NamespaceLayer $namespaces;
     private SingletonWarmer $warmer;
+    private ServiceMiddlewarePipeline $middleware;
     private bool $frozen = false;
     private int $maxCrossModuleRefs = 0;
     private ArchitecturePolicy $policy;
@@ -94,6 +95,9 @@ final class Container implements ContainerInterface, ServiceRegistrarInterface
     {
         $this->providers->triggerRequired($this->registry);
         $this->decorators->apply($this->registry, $this->policy->maxServiceRegistrations);
+        // v2.35.0: seal the service middleware pipeline — the resolution
+        // pipeline is immutable once the container freezes.
+        $this->middleware->seal();
         $plan = $this->compiler->compile($this->registry, $this->maxCrossModuleRefs);
         // v2.11.0: build the sealed namespace radix tree AFTER graph validation
         // (all IDs canonical + proven) and enforce namespace scope policy.
@@ -319,6 +323,36 @@ final class Container implements ContainerInterface, ServiceRegistrarInterface
         $this->registry->addResolvedListener($listener);
     }
 
+    // ---------------------------------------------------------------------
+    // v2.35.0 — Service middleware/interceptors (roadmap checklist item).
+    // ---------------------------------------------------------------------
+
+    /**
+     * Register service middleware: an interceptor around service
+     * CONSTRUCTION (the cache-miss instantiation path — consistent with the
+     * resolving/resolved events, which also fire only on instantiation).
+     *
+     * Signature: fn(string $serviceId, Closure $next): mixed. Call $next()
+     * to run the default construction; returning without calling $next()
+     * short-circuits (the returned value becomes the service, still passing
+     * through resolved listeners and per-lifetime caching). Higher priority
+     * runs first (outermost); ties keep registration order.
+     *
+     * Adding middleware after validateAndFreeze() throws — the pipeline is
+     * sealed so a frozen container keeps a deterministic pipeline.
+     */
+    public function addServiceMiddleware(callable $middleware, int $priority = 0): void
+    {
+        $this->assertWritable();
+        $this->middleware->add($middleware, $priority);
+    }
+
+    /** Number of registered service middleware (exposed for diagnostics). */
+    public function serviceMiddlewareCount(): int
+    {
+        return $this->middleware->count();
+    }
+
     /**
      * php:S2830: the container is the composition root — its internal
      * collaborators are wired through a private initializer instead of
@@ -333,11 +367,13 @@ final class Container implements ContainerInterface, ServiceRegistrarInterface
         $this->registrar = new ServiceRegistrar($this->registry);
         $graphValidator = new DependencyGraphValidator();
         $this->compiler = new ContainerCompiler($graphValidator);
+        $this->middleware = new ServiceMiddlewarePipeline();
         $this->resolver = new ContainerResolver(
             $this->registry,
             $graphValidator,
             $initializationGuard ?? new FailFastInitializationGuard(),
             $this->policy->maxResolutionDepth,
+            $this->middleware,
         );
         $this->providers = new ProviderBroker($this);
         $this->decorators = new DecoratorApplier();
