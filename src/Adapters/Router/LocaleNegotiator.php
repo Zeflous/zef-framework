@@ -9,11 +9,13 @@ declare(strict_types=1);
 
 namespace Zef\Framework\Router;
 
+use Zef\Framework\Http\ApiVersionNegotiator;
+
 /**
  * Locale prefix negotiation for localized routes (roadmap: "Localization
  * routing (/{locale}/...)").
  *
- * Mirrors the {@see \Zef\Framework\Http\ApiVersionNegotiator} contract: the
+ * Mirrors the {@see ApiVersionNegotiator} contract: the
  * leading `/{locale}` segment is split off a request path and returned as a
  * locale token only when it is either a registered supported locale or a
  * well-formed BCP-47-ish language tag ("en", "en-US", "pt_BR"). A plain

@@ -20,6 +20,9 @@ use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Zef\Framework\Application;
+use Zef\Framework\Console\ConsoleIO;
+use Zef\Framework\Console\Inspector\RouteLister;
+use Zef\Framework\Exception\InvalidConfigurationException;
 use Zef\Framework\Exception\RouteNotFoundException;
 use Zef\Framework\Http\Response;
 use Zef\Framework\Router\ContentNegotiator;
@@ -27,8 +30,8 @@ use Zef\Framework\Router\HostPatternMatches;
 use Zef\Framework\Router\LocaleNegotiator;
 use Zef\Framework\Router\RouteModelBinderInterface;
 use Zef\Framework\Router\Router;
-use Zef\Framework\Router\UrlGenerator;
 use Zef\Framework\Router\RouteRadixIndex;
+use Zef\Framework\Router\UrlGenerator;
 
 /**
  * @internal
@@ -47,8 +50,10 @@ final class RouterFeatureExpansionTest extends TestCase
             public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
             {
                 $response = $handler->handle($request);
+                $headers = $response->getHeaders();
+                $headers['X-Route-MW'] = ['ran'];
 
-                return $response->withHeader('X-Route-MW', 'ran');
+                return new Response($response->getStatusCode(), $headers, (string) $response->getBody());
             }
         });
         $app->getContainer()->register('probe.handler', static fn (): RequestHandlerInterface => new class implements RequestHandlerInterface {
@@ -87,7 +92,7 @@ final class RouterFeatureExpansionTest extends TestCase
             $router->add('GET', '/boom', 'probe.handler');
         });
 
-        $this->expectException(\Zef\Framework\Exception\InvalidConfigurationException::class);
+        $this->expectException(InvalidConfigurationException::class);
         $app->handle(new ServerRequest('GET', 'http://example.com/boom'));
     }
 
@@ -97,16 +102,29 @@ final class RouterFeatureExpansionTest extends TestCase
 
     public function testRouteListJsonExposesMiddlewareHostBindingsAccepts(): void
     {
-        $root = dirname(__DIR__, 2);
-        $command = escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($root . '/bin/zef') . ' route:list --json 2>/dev/null';
-        $raw = (string) shell_exec($command);
+        $router = new Router();
+        $router->group(
+            ['middleware' => ['mw.a'], 'host' => '{tenant}.example.com', 'bindings' => ['id' => 'binder.x'], 'accepts' => ['application/json']],
+            static function (Router $r): void {
+                $r->add('GET', '/dash/{id}', 'h.dash', null, 0, 'dash');
+            },
+        );
+        $stream = fopen('php://temp', 'r+');
+        if ($stream === false) {
+            self::fail('Cannot open a temp stream for route:list output.');
+        }
+        new RouteLister(new ConsoleIO($stream, $stream))->run($router->getRoutes(), true);
+        rewind($stream);
+        $raw = (string) stream_get_contents($stream);
         $decoded = json_decode($raw, true);
         self::assertIsArray($decoded, "route:list --json must emit a JSON array; got: {$raw}");
-        self::assertNotEmpty($decoded);
+        $first = $decoded[0] ?? null;
+        self::assertIsArray($first);
         foreach (['method', 'path', 'name', 'handler', 'module', 'priority', 'middleware', 'host', 'bindings', 'accepts'] as $key) {
-            self::assertArrayHasKey($key, $decoded[0]);
+            self::assertArrayHasKey($key, $first);
         }
-        self::assertIsArray($decoded[0]['middleware']);
+        self::assertSame(['mw.a'], $first['middleware']);
+        self::assertSame('{tenant}.example.com', $first['host']);
     }
 
     public function testGetRoutesRecordCarriesRouterMetadata(): void
@@ -168,16 +186,15 @@ final class RouterFeatureExpansionTest extends TestCase
         // Two unfrozen matches: the first compiles, the second must reuse it.
         self::assertSame('h.one', $router->match('GET', '/one')['handler']);
         $index = $this->radixIndexOf($router);
-        $revisionProp = new \ReflectionProperty(RouteRadixIndex::class, 'compiledRevision');
-        $firstCompiled = (int) $revisionProp->getValue($index);
+        $firstCompiled = $this->compiledRevision($index);
 
         self::assertSame('h.two', $router->match('GET', '/two')['handler']);
-        self::assertSame($firstCompiled, (int) $revisionProp->getValue($index), 'No registration happened, so no recompile.');
+        self::assertSame($firstCompiled, $this->compiledRevision($index), 'No registration happened, so no recompile.');
 
         // A new registration bumps the revision and forces a rebuild.
         $router->add('GET', '/three', 'h.three');
         self::assertSame('h.three', $router->match('GET', '/three')['handler']);
-        self::assertGreaterThan($firstCompiled, (int) $revisionProp->getValue($index));
+        self::assertGreaterThan($firstCompiled, $this->compiledRevision($index));
     }
 
     // ------------------------------------------------------------------
@@ -275,7 +292,9 @@ final class RouterFeatureExpansionTest extends TestCase
         $app->getContainer()->register('bind.handler', static fn (): RequestHandlerInterface => new class implements RequestHandlerInterface {
             public function handle(ServerRequestInterface $request): ResponseInterface
             {
-                return new Response(200, ['Content-Type' => 'text/plain'], (string) $request->getAttribute('id'));
+                $value = $request->getAttribute('id');
+
+                return new Response(200, ['Content-Type' => 'text/plain'], is_scalar($value) ? (string) $value : '');
             }
         });
         $app->getRouter()->group(['bindings' => ['id' => 'binder.user']], static function (Router $r): void {
@@ -367,7 +386,17 @@ final class RouterFeatureExpansionTest extends TestCase
     private function radixIndexOf(Router $router): RouteRadixIndex
     {
         $prop = new \ReflectionProperty(Router::class, 'radix');
+        $index = $prop->getValue($router);
+        self::assertInstanceOf(RouteRadixIndex::class, $index);
 
-        return $prop->getValue($router);
+        return $index;
+    }
+
+    private function compiledRevision(RouteRadixIndex $index): int
+    {
+        $prop = new \ReflectionProperty(RouteRadixIndex::class, 'compiledRevision');
+        $value = $prop->getValue($index);
+
+        return is_int($value) ? $value : -1;
     }
 }

@@ -192,6 +192,9 @@ final class Router
         $this->frozen = true;
     }
 
+    /**
+     * @return list<array<string,mixed>>
+     */
     public function getRoutes(): array
     {
         return $this->collection->sortedRoutes();

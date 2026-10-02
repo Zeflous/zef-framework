@@ -153,7 +153,7 @@ $io = new \Zef\Framework\Console\ConsoleIO();
 $maker = new \Zef\Framework\Console\ZefMaker($root, $io);
 
 if ($command === 'route:list') {
-    exit(zef_route_list($args));
+    exit(zef_route_list($args, $io));
 }
 
 if ($command === 'module:list') {
@@ -398,52 +398,13 @@ function zef_cli_options(array $argv): array
     return $options;
 }
 
-function zef_route_list(array $argv = []): int
+function zef_route_list(array $argv, \Zef\Framework\Console\ConsoleIO $io): int
 {
     $json = in_array('--json', $argv, true);
     $app = \Zef\App\Bootstrap::createApp(false);
     $app->boot();
-    $routes = $app->getRouter()->getRoutes();
 
-    if ($json) {
-        $exported = [];
-        foreach ($routes as $route) {
-            $exported[] = [
-                'method' => $route['method'],
-                'path' => $route['pattern'],
-                'name' => $route['name'] ?? null,
-                'handler' => $route['handler'],
-                'module' => $route['module'] ?? null,
-                'priority' => $route['priority'],
-                'middleware' => $route['middleware'] ?? [],
-                'host' => $route['host'] ?? '',
-                'bindings' => $route['bindings'] ?? [],
-                'accepts' => $route['accepts'] ?? [],
-            ];
-        }
-        fwrite(STDOUT, (string) json_encode($exported, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
-
-        return 0;
-    }
-
-    printf("%-8s %-34s %-20s %-30s %-9s %-6s %-22s %s\n", 'METHOD', 'PATH', 'NAME', 'HANDLER', 'MODULE', 'PRIO', 'MIDDLEWARE', 'HOST');
-    foreach ($routes as $route) {
-        $middleware = $route['middleware'] ?? [];
-        printf(
-            "%-8s %-34s %-20s %-30s %-9s %-6d %-22s %s\n",
-            $route['method'],
-            $route['pattern'],
-            $route['name'] ?? '-',
-            $route['handler'],
-            $route['module'] ?? '-',
-            $route['priority'],
-            $middleware === [] ? '-' : implode(',', $middleware),
-            ($route['host'] ?? '') === '' ? '-' : $route['host'],
-        );
-    }
-    printf("\n%d route(s)\n", count($routes));
-
-    return 0;
+    return (new \Zef\Framework\Console\Inspector\RouteLister($io))->run($app->getRouter()->getRoutes(), $json);
 }
 
 /**

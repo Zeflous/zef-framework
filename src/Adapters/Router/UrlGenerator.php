@@ -60,35 +60,6 @@ final readonly class UrlGenerator
     }
 
     /**
-     * Resolves one path segment: dynamic `{param}` / `{param:constraint}`
-     * placeholders are substituted (validated) and marked consumed; static
-     * segments pass through untouched.
-     *
-     * @param array<string,scalar|\Stringable> $params
-     * @param array<string,true> $consumed
-     */
-    private function segment(string $name, string $part, array $params, array &$consumed): string
-    {
-        if (preg_match('/^\{([A-Za-z_]\w*)(?::([A-Za-z_]\w*))?\}$/', $part, $m) !== 1) {
-            return $part;
-        }
-        $paramName = $m[1];
-        $constraint = $m[2] ?? null;
-        if (!array_key_exists($paramName, $params)) {
-            throw new \InvalidArgumentException("Route '{$name}' requires parameter '{$paramName}'.");
-        }
-        $value = $this->stringify($name, $paramName, $params[$paramName]);
-        if ($constraint !== null && !$this->constraints->test($paramName, $constraint, $value)) {
-            // Mirrors Router::match() semantics: constraint violation throws.
-            throw new RouteConstraintException($paramName, $constraint, $value);
-        }
-        // @infection-ignore-all TrueValue — ekuivalen: $consumed hanya dibaca lewat isset(); nilai tidak relevan
-        $consumed[$paramName] = true;
-
-        return rawurlencode($value);
-    }
-
-    /**
      * v2.36.0: reverse routing for host (subdomain) patterns — returns the
      * concrete host for a named route, substituting `{tenant}` wildcards
      * from $hostParams. A route without a host pattern returns null; a
@@ -126,6 +97,35 @@ final readonly class UrlGenerator
         }
 
         return implode('.', $labels);
+    }
+
+    /**
+     * Resolves one path segment: dynamic `{param}` / `{param:constraint}`
+     * placeholders are substituted (validated) and marked consumed; static
+     * segments pass through untouched.
+     *
+     * @param array<string,scalar|\Stringable> $params
+     * @param array<string,true> $consumed
+     */
+    private function segment(string $name, string $part, array $params, array &$consumed): string
+    {
+        if (preg_match('/^\{([A-Za-z_]\w*)(?::([A-Za-z_]\w*))?\}$/', $part, $m) !== 1) {
+            return $part;
+        }
+        $paramName = $m[1];
+        $constraint = $m[2] ?? null;
+        if (!array_key_exists($paramName, $params)) {
+            throw new \InvalidArgumentException("Route '{$name}' requires parameter '{$paramName}'.");
+        }
+        $value = $this->stringify($name, $paramName, $params[$paramName]);
+        if ($constraint !== null && !$this->constraints->test($paramName, $constraint, $value)) {
+            // Mirrors Router::match() semantics: constraint violation throws.
+            throw new RouteConstraintException($paramName, $constraint, $value);
+        }
+        // @infection-ignore-all TrueValue — ekuivalen: $consumed hanya dibaca lewat isset(); nilai tidak relevan
+        $consumed[$paramName] = true;
+
+        return rawurlencode($value);
     }
 
     private function stringify(string $route, string $param, mixed $value): string

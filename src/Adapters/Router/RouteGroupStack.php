@@ -43,7 +43,7 @@ final class RouteGroupStack
     /** @var list<GroupAttributes> */
     private array $stack = [];
 
-    /** @var array<string,tag<string,list<string>>> host pattern => captured wildcard names */
+    /** @var array<string,list<string>> host pattern => captured wildcard names */
     private array $lockedHosts = [];
 
     /**
