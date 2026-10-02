@@ -125,12 +125,11 @@ final class ContainerResolver
             throw new ServiceResolutionException(
                 $id,
                 sprintf(
-                    "implicit lifetime capture: singleton '%s' resolves %s service '%s'."
-                    . " The instance would be captured for the singleton's lifetime."
-                    . ' Declare it as a singleton dependency, resolve it per-operation outside the singleton, or restructure.',
+                    "implicit lifetime capture: singleton '%s' resolves %s service '%s'. %s",
                     $owner,
                     $definition->lifetime,
                     $canonical,
+                    'Declare it as a singleton dependency, or resolve it outside the singleton.',
                 ),
             );
         }
