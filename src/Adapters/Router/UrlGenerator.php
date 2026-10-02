@@ -49,7 +49,8 @@ final readonly class UrlGenerator
             $path[] = $this->segment($name, $part, $params, $consumed);
         }
         foreach (array_keys($params) as $extra) {
-            // @infection-ignore-all CastString — ekuivalen: kunci array $consumed selalu string; cast tidak mengubah hasil isset()
+            // @infection-ignore-all CastString — ekuivalen: kunci array $consumed selalu string; cast tidak mengubah
+            // hasil isset()
             if (!isset($consumed[(string) $extra])) {
                 throw new \InvalidArgumentException("Route '{$name}' does not accept parameter '{$extra}'.");
             }

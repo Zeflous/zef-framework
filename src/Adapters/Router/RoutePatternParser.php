@@ -75,7 +75,8 @@ final class RoutePatternParser
     public static function splitPath(string $path): array
     {
         if ($path === '/') {
-            // @infection-ignore-all ReturnRemoval — ekuivalen: path '/' menghasilkan explode('', '') = [''] yang difilter menjadi []
+            // @infection-ignore-all ReturnRemoval — ekuivalen: path '/' menghasilkan explode('', '') = [''] yang
+            // difilter menjadi []
             return [];
         }
         $parts = explode('/', trim($path, '/'));

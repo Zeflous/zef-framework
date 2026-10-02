@@ -36,11 +36,13 @@ final readonly class MessageCatalog
                 throw new \InvalidArgumentException("Invalid catalog locale '" . $locale . "'.");
             }
             foreach ($rules as $rule => $template) {
-                // @infection-ignore-all Throw_ — ekuivalen: guard duplikat; constructor sudah memvalidasi kunci rule yang sama
+                // @infection-ignore-all Throw_ — ekuivalen: guard duplikat; constructor sudah memvalidasi kunci rule
+                // yang sama
                 if (!is_string($rule) || $rule === '' || strlen($rule) > 64) {
                     throw new \InvalidArgumentException('Catalog rule keys must be 1..64 byte strings.');
                 }
-                // @infection-ignore-all Throw_ — ekuivalen: guard duplikat; constructor sudah memvalidasi template yang sama
+                // @infection-ignore-all Throw_ — ekuivalen: guard duplikat; constructor sudah memvalidasi template
+                // yang sama
                 if (!is_string($template) || $template === '' || strlen($template) > self::MAX_TEMPLATE_BYTES) {
                     throw new \InvalidArgumentException(
                         "Catalog template for '{$locale}/{$rule}' must be 1.." . self::MAX_TEMPLATE_BYTES . ' bytes.'
@@ -135,7 +137,8 @@ final readonly class MessageCatalog
         }
         $chain[] = '*';
 
-        // @infection-ignore-all UnwrapArrayUnique,UnwrapArrayValues — ekuivalen: $chain dibangun tanpa duplikat; unwrap tidak mengubah hasil
+        // @infection-ignore-all UnwrapArrayUnique,UnwrapArrayValues — ekuivalen: $chain dibangun tanpa duplikat;
+        // unwrap tidak mengubah hasil
         return array_values(array_unique($chain));
     }
 

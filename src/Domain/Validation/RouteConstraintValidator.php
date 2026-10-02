@@ -48,7 +48,8 @@ final class RouteConstraintValidator
         }
         set_error_handler(
             static function (int $severity, string $message, string $file, int $line): bool {
-                // @infection-ignore-all IncrementInteger,DecrementInteger — ekuivalen: $severity/$line hanya metadata diagnostik pada exception, tidak memengaruhi kontrol
+                // @infection-ignore-all IncrementInteger,DecrementInteger — ekuivalen: $severity/$line hanya metadata
+                // diagnostik pada exception, tidak memengaruhi kontrol
                 throw new RouteConstraintPatternException($message, 0, $severity, $file, $line);
             }
         );
@@ -57,7 +58,8 @@ final class RouteConstraintValidator
             try {
                 $result = preg_match($regex, '');
             } catch (\ValueError $e) {
-                // @infection-ignore-all IncrementInteger,DecrementInteger — ekuivalen: kode exception 0 tidak dibaca oleh pemanggil
+                // @infection-ignore-all IncrementInteger,DecrementInteger — ekuivalen: kode exception 0 tidak dibaca
+                // oleh pemanggil
                 throw new InvalidConfigurationException(
                     "Invalid route constraint regex '{$name}': {$e->getMessage()}",
                     0,
@@ -85,10 +87,12 @@ final class RouteConstraintValidator
     public function test(string $param, string $type, string $value): bool
     {
         $this->assertKnown($type);
-        // @infection-ignore-all AssignCoalesce — ekuivalen: $this->custom[$name] selalu di-set; tidak ada nilai sebelumnya yang dipertahankan
+        // @infection-ignore-all AssignCoalesce — ekuivalen: $this->custom[$name] selalu di-set; tidak ada nilai
+        // sebelumnya yang dipertahankan
         $matcher = $this->compiled[$type] ??= $this->compile($type);
 
-        // @infection-ignore-all CatchBlockRemoval — ekuivalen: unset() tidak melempar; blok catch tidak pernah dieksekusi
+        // @infection-ignore-all CatchBlockRemoval — ekuivalen: unset() tidak melempar; blok catch tidak pernah
+        // dieksekusi
         try {
             return $matcher($value);
         } catch (InvalidConfigurationException $e) {
@@ -131,7 +135,8 @@ final class RouteConstraintValidator
     private function compile(string $type): callable
     {
         if (isset(self::BUILT_IN[$type])) {
-            // @infection-ignore-all MatchArmRemoval — ekuivalen: setiap arm mengembalikan closure berbeda; tidak ada arm yang dapat dihapus tanpa mengubah perilaku
+            // @infection-ignore-all MatchArmRemoval — ekuivalen: setiap arm mengembalikan closure berbeda; tidak ada
+            // arm yang dapat dihapus tanpa mengubah perilaku
             return match ($type) {
                 'int' => static fn (string $v): bool => $v !== '' && preg_match('/^\d+$/D', $v) === 1,
                 'uint' => static fn (string $v): bool => $v !== '' && $v[0] !== '0' && preg_match('/^\d+$/D', $v) === 1,

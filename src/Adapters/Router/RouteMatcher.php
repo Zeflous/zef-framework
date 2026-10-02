@@ -143,10 +143,12 @@ final readonly class RouteMatcher
         $candidates = $this->radix->candidates($path, false, $this->constraints);
         foreach ($candidates as $index) {
             $route = $routes[$index];
-            // @infection-ignore-all TrueValue — ekuivalen: $allowed hanya dibaca lewat array_keys(); nilai tidak relevan
+            // @infection-ignore-all TrueValue — ekuivalen: $allowed hanya dibaca lewat array_keys(); nilai tidak
+            // relevan
             $allowed[$route['method']] = true;
             if ($route['method'] === 'GET') {
-                // @infection-ignore-all TrueValue — ekuivalen: $allowed hanya dibaca lewat array_keys(); nilai tidak relevan
+                // @infection-ignore-all TrueValue — ekuivalen: $allowed hanya dibaca lewat array_keys(); nilai tidak
+                // relevan
                 $allowed['HEAD'] = true;
             }
             $constraintFailure ??= $this->constraintFailure(
