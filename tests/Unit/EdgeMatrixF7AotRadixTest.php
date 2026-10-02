@@ -121,6 +121,22 @@ final class EdgeMatrixF7AotRadixTest extends TestCase
         }
     }
 
+    public function testAotExportTreatsTheCustomHeaderAsCommentText(): void
+    {
+        $result = new AutowireResult([], [], []);
+        $path = sys_get_temp_dir() . '/zef-aot-' . bin2hex(random_bytes(4)) . '.php';
+
+        try {
+            AutowireAotCompiler::export($result, $path, "banner */ throw new \\RuntimeException('injected'); /*");
+
+            $code = (string) file_get_contents($path);
+            self::assertStringContainsString("banner * / throw new \\RuntimeException('injected'); /*", $code);
+            self::assertSame([], AutowireAotCompiler::loadDefinitions($path));
+        } finally {
+            @unlink($path); // nosemgrep: php.lang.security.unlink-use
+        }
+    }
+
     public function testAotGuards(): void
     {
         $result = new AutowireResult([], [], []);
