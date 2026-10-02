@@ -466,6 +466,60 @@ final class RouterFeatureExpansionTest extends TestCase
     }
 
     // ------------------------------------------------------------------
+    // Re-audit v21 — two new findings
+    // ------------------------------------------------------------------
+
+    /**
+     * v21 finding: a host wildcard and a path parameter sharing a name used
+     * to be accepted at registration and only blew up at MATCH time with a
+     * raw InvalidArgumentException — which the Dispatcher does not map to a
+     * status, so it escaped as an uncaught 500. It now fails closed at
+     * registration.
+     */
+    public function testHostWildcardCollidingWithPathParameterFailsAtRegistration(): void
+    {
+        $router = new Router();
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage("host wildcard 'tenant' collides with a path parameter");
+        $router->group(['host' => '{tenant}.example.com'], static function (Router $r): void {
+            $r->add('GET', '/x/{tenant}', 'h.x');
+        });
+    }
+
+    public function testHostWildcardWithDistinctPathParameterStillRegistersAndMatches(): void
+    {
+        $router = new Router();
+        $router->group(['host' => '{tenant}.example.com'], static function (Router $r): void {
+            $r->add('GET', '/x/{id}', 'h.x');
+        });
+        $router->freeze();
+        $hit = $router->match('GET', '/x/7', 'acme.example.com');
+        self::assertSame('h.x', $hit['handler']);
+        self::assertSame(['id' => '7', 'tenant' => 'acme'], $hit['params']);
+    }
+
+    /**
+     * v21 finding: Router::localized()'s docblock promised the locale would
+     * be exposed as a match parameter, but it never was. The locale is a
+     * LITERAL prefix segment (that is what stops '/fr/about' from being
+     * captured); the contract is now stated accordingly and the locale is
+     * readable from the matched pattern.
+     */
+    public function testLocalizedRouteExposesLocaleViaLiteralPrefixNotAParam(): void
+    {
+        $router = new Router();
+        $router->localized(['en', 'id'], 'en', static function (Router $r): void {
+            $r->add('GET', '/about', 'h.about', null, 0, 'en.about');
+        });
+        $router->freeze();
+        $hit = $router->match('GET', '/en/about');
+        self::assertSame('h.about', $hit['handler']);
+        self::assertSame([], $hit['params'], 'The locale is not a dynamic path parameter.');
+        self::assertSame('/en/about', $hit['pattern']);
+        self::assertSame('en', explode('/', $hit['pattern'])[1], 'Locale is readable from the literal prefix.');
+    }
+
+    // ------------------------------------------------------------------
 
     private function radixIndexOf(Router $router): RouteRadixIndex
     {

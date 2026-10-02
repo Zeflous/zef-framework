@@ -18,7 +18,7 @@ use Zef\Framework\Exception\InvalidConfigurationException;
  * cache export/hydration and reverse-routing lookups.
  *
  * v2.36.0 (router feature-expansion): each record also carries its host
- * pattern, param-bindings map and accepted reprepresentations; the name
+ * pattern, param-bindings map and accepted representations; the name
  * index now stores the full record (so reverse routing can resolve a
  * record, not just a pattern) and a monotonic revision counter lets the
  * matcher skip recompiling the radix index when nothing has changed.
