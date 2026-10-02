@@ -47,9 +47,17 @@ final readonly class Config
      *                                          is responsible for the
      *                                          fingerprint match); null builds
      *                                          the index eagerly as before
+     * @param list<string> $secretPaths dotted paths whose values were resolved
+     *                                  from `%secret:%` references (set by
+     *                                  ConfigLoader so typed-accessor error
+     *                                  messages mask the material instead of
+     *                                  echoing it — issue #308)
      */
-    public function __construct(private array $values, ?ConfigRadixTree $cachedIndex = null)
-    {
+    public function __construct(
+        private array $values,
+        ?ConfigRadixTree $cachedIndex = null,
+        private array $secretPaths = [],
+    ) {
         // php:S2830: the eager fallback goes through the named factory so the
         // constructor only picks between injected and derived state.
         $this->index = $cachedIndex ?? $this->buildIndex($values);
@@ -204,7 +212,8 @@ final readonly class Config
         $raw = DottedPaths::valueAt($this->values, $key);
         if (!$type->accepts($raw, $enumClass)) {
             throw new InvalidConfigurationException(
-                "Configuration key '{$key}' expects {$type->value}, got " . ConfigValueType::describe($raw)
+                "Configuration key '{$key}' expects {$type->value}, got "
+                . ConfigValueType::describe($raw, in_array($key, $this->secretPaths, true))
                 . $type->rejectionHint($raw)
             );
         }

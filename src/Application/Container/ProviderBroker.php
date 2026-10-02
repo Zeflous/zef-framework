@@ -125,19 +125,33 @@ final class ProviderBroker
             // provider, map referenced tetap kosong; loop menjadi no-op
             return;
         }
-        $referenced = [];
-        foreach ($registry->definitions() as $definition) {
-            foreach ($definition->dependencies as $dep) {
-                // @infection-ignore-all TrueValue — ekuivalen: array_keys() hanya membaca kunci; nilai tidak relevan
-                $referenced[$dep] = true;
+        // Worklist semantics: triggering a deferred provider registers NEW
+        // definitions whose dependencies may themselves reference other still-
+        // pending deferred providers. A single pass missed such chains and left
+        // them to fail at validateAndFreeze() with a misleading "missing
+        // service" error (issue #311). Repeat until a pass registers nothing
+        // new; triggerFor() is idempotent, and every pass that registers
+        // anything consumes at least one deferred provider, so the loop is
+        // bounded by the provider count.
+        $passes = count($this->providers) + 1;
+        do {
+            $registeredBefore = count($this->registeredProviders);
+            $referenced = [];
+            foreach ($registry->definitions() as $definition) {
+                foreach ($definition->dependencies as $dep) {
+                    // @infection-ignore-all TrueValue — array_keys() hanya membaca kunci, nilai tidak relevan
+                    $referenced[$dep] = true;
+                }
             }
-        }
-        foreach ($registry->aliases() as $target) {
-            // @infection-ignore-all TrueValue — ekuivalen: array_keys() hanya membaca kunci; nilai tidak relevan
-            $referenced[$target] = true;
-        }
-        foreach (array_keys($referenced) as $id) {
-            $this->triggerFor((string) $id);
-        }
+            foreach ($registry->aliases() as $target) {
+                // @infection-ignore-all TrueValue — array_keys() hanya membaca kunci, nilai tidak relevan
+                $referenced[$target] = true;
+            }
+            foreach (array_keys($referenced) as $id) {
+                $this->triggerFor((string) $id);
+            }
+            $registeredAfter = count($this->registeredProviders);
+            --$passes;
+        } while ($registeredAfter > $registeredBefore && $passes > 0);
     }
 }

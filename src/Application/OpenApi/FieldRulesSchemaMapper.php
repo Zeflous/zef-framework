@@ -51,6 +51,12 @@ final class FieldRulesSchemaMapper
 
     private function fieldIsRequired(FieldRules $rules): bool
     {
-        return array_any($rules->definitions(), fn (array $definition): bool => $definition['rule'] === 'required');
+        // A required rule disabled by nullable() (skipNull) accepts absent and
+        // null values, so the field must not be advertised as required — the
+        // runtime gate would 400 requests the validator itself accepts (#316).
+        return array_any(
+            $rules->definitions(),
+            fn (array $definition): bool => $definition['rule'] === 'required' && $definition['nullable'] === false,
+        );
     }
 }

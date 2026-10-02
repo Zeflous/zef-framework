@@ -96,14 +96,19 @@ enum ConfigValueType: string
      * Human-readable rendering of a raw value for violation messages.
      * Long strings are truncated deterministically at 61 chars + `...`.
      */
-    public static function describe(mixed $raw): string
+    public static function describe(mixed $raw, bool $secret = false): string
     {
         return match (true) {
             $raw === null => 'null',
             is_bool($raw) => $raw ? 'bool(true)' : 'bool(false)',
             is_int($raw) => 'int(' . $raw . ')',
             is_float($raw) => 'float(' . var_export($raw, true) . ')',
-            is_string($raw) => 'string(' . self::renderString($raw) . ')',
+            is_string($raw) => $secret
+                // Secret-resolved values are masked: the raw material would
+                // otherwise be echoed verbatim into violation messages that
+                // end up in logs and error trackers (issue #308).
+                ? "string('******')"
+                : 'string(' . self::renderString($raw) . ')',
             is_array($raw) => 'array(' . count($raw) . ')',
             is_object($raw) => 'object(' . $raw::class . ')',
             default => get_debug_type($raw),

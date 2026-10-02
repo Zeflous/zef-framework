@@ -41,7 +41,10 @@ final readonly class CompiledConfigSource implements ConfigSourceInterface
         }
 
         try {
-            $values = require_once $this->path;
+            // Plain require (not require_once): load() may run repeatedly for the
+            // same file within one process (reload / re-merge). require_once would
+            // return `true` after the first include and break every later read.
+            $values = require $this->path;
         } catch (\Throwable $e) {
             throw new InvalidConfigurationException(
                 "Compiled config file '{$this->path}' failed to load: {$e->getMessage()}",

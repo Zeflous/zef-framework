@@ -22,13 +22,21 @@ namespace Zef\Framework\Config;
  */
 final class ConfigSchemaValidator
 {
+    /** @var list<string> dotted paths resolved from `%secret:%` references */
+    private array $secretPaths = [];
+
     /**
      * @param array<array-key,mixed> $values
+     * @param list<string> $secretPaths paths resolved from `%secret:%`
+     *                                  references; their values are masked in
+     *                                  violation messages instead of echoed
+     *                                  verbatim (issue #308)
      *
      * @return list<ConfigViolation>
      */
-    public function validate(array $values, ConfigSchema $schema): array
+    public function validate(array $values, ConfigSchema $schema, array $secretPaths = []): array
     {
+        $this->secretPaths = $secretPaths;
         $violations = [];
         foreach ($schema->keys as $key) {
             $violation = $this->checkKey($values, $key);
@@ -80,7 +88,8 @@ final class ConfigSchemaValidator
         if (!$key->type->accepts($raw, $key->enumClass)) {
             return new ConfigViolation(
                 $key->key,
-                "expects {$key->type->value}, got " . ConfigValueType::describe($raw)
+                "expects {$key->type->value}, got "
+                    . ConfigValueType::describe($raw, in_array($key->key, $this->secretPaths, true))
                     . $key->type->rejectionHint($raw),
             );
         }

@@ -211,10 +211,24 @@ final readonly class RadixTreeCache
             'tree' => $tree,
         ]);
         $tmp = $directory . '/.' . $basename . '.' . bin2hex(random_bytes(6)) . '.tmp';
-        // file_put_contents() is guarded by the is_dir()/is_writable()
-        // checks above; a false return can only stem from a microsecond
-        // TOCTOU race with a concurrent writer.
-        if (file_put_contents($tmp, $entry) === false) {
+        // Create the temp file at 0600 before writing content (issue #310) —
+        // mirrors ConfigCompiler::export(): file_put_contents() would create
+        // the file with the process umask (typically 0644) and expose the
+        // cache payload until the mode application below. 'x' mode keeps the
+        // exclusive-create semantics of the random name.
+        // file_put_contents()/fwrite() are guarded by the is_dir()
+        // /is_writable() checks above; a false return can only stem from a
+        // microsecond TOCTOU race with a concurrent writer.
+        $handle = fopen($tmp, 'x');
+        if ($handle === false) {
+            throw new InvalidConfigurationException("Failed to write radix cache temp file '{$tmp}'.");
+        }
+        if (DIRECTORY_SEPARATOR === '/') {
+            chmod($tmp, 0o600);
+        }
+        $written = fwrite($handle, $entry);
+        $closed = fclose($handle);
+        if ($written === false || $closed === false) {
             throw new InvalidConfigurationException("Failed to write radix cache temp file '{$tmp}'.");
         }
         // POSIX-only mode contract — mirrors ConfigCompiler::export(): PHP's

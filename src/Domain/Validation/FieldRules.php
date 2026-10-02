@@ -148,10 +148,8 @@ final class FieldRules
     /** @param list<int|string> $allowed */
     public function in(array $allowed, string $message = 'is not one of the allowed values.'): self
     {
-        foreach ($allowed as $value) {
-            if (!is_string($value) && !is_int($value)) {
-                throw new \InvalidArgumentException('in() accepts only string/int values.');
-            }
+        if (array_any($allowed, static fn (mixed $value): bool => !is_string($value) && !is_int($value))) {
+            throw new \InvalidArgumentException('in() accepts only string/int values.');
         }
 
         return $this->add(
@@ -207,12 +205,23 @@ final class FieldRules
      */
     public function definitions(): array
     {
-        $out = [];
-        foreach ($this->rules as $rule) {
-            $out[] = ['rule' => $rule['rule'], 'params' => $rule['params'], 'nullable' => $this->nullableChain];
-        }
+        return array_map(
+            fn (array $r): array => [
+                'rule' => $r['rule'], 'params' => $r['params'], 'nullable' => $this->nullableChain,
+            ],
+            $this->rules,
+        );
+    }
 
-        return $out;
+    /**
+     * Whether an empty ('' or []) value would skip every registered rule:
+     * true when the chain is non-empty and all of its rules declare
+     * skipEmpty. `required()` (skipEmpty=false) makes this false.
+     */
+    public function skipsEmpty(): bool
+    {
+        return $this->rules !== []
+            && array_all($this->rules, static fn (array $rule): bool => $rule['skipEmpty']);
     }
 
     /** @return list<ValidationError> failures for the given raw value */

@@ -70,14 +70,14 @@ final class MiddlewareMutationDebtTest extends TestCase
         self::assertSame(
             [
                 'middleware.error',
+                'middleware.cors',
                 'middleware.security.runtime',
                 'middleware.security.rate_limit',
                 'middleware.security',
                 'middleware.timing',
-                'middleware.cors',
             ],
             $config['stack'],
-            'The tier middleware must be INSERTED at index 2 without removing or shifting out any other stack entry.',
+            'The tier middleware must be INSERTED after security.runtime (index 3) without removing or shifting out any other stack entry.',
         );
     }
 
@@ -87,7 +87,9 @@ final class MiddlewareMutationDebtTest extends TestCase
         $config = new ConfigProvider(false, new MiddlewareDebtEnv([]))->getConfig();
 
         self::assertSame(
-            ['middleware.error', 'middleware.security.runtime', 'middleware.security', 'middleware.timing', 'middleware.cors'],
+            // Issue #306: CORS sits immediately after the error handler so
+            // 429/403/500 short-circuits still carry CORS headers.
+            ['middleware.error', 'middleware.cors', 'middleware.security.runtime', 'middleware.security', 'middleware.timing'],
             $config['stack'],
         );
     }
