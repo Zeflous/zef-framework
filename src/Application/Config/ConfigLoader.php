@@ -21,7 +21,11 @@ use Zef\Framework\Exception\InvalidConfigurationException;
  *     AND the incoming data is stamped with an older schema version
  *     (`$sourceSchemaVersion` < schema version), run the registered
  *     migration steps IN ORDER on the merged raw tree;
- * 2. resolve `%secret:name%` references through the secrets port;
+ * 2. resolve `%secret:name%` references through the secrets port. Since the
+ *     C-1 hardening (issue #355) the scan runs even when NO provider is
+ *     bound: a literal reference then becomes a violation instead of
+ *     silently booting the app with the placeholder as the real value. An
+ *     empty resolved secret is a violation too (C-2, issue #355);
  * 3. validate against the schema (collect ALL violations);
  * 4. apply declared defaults;
  * 5. wrap the result in an immutable {@see Config} bag.
@@ -111,7 +115,9 @@ final readonly class ConfigLoader
     }
 
     /**
-     * @throws ConfigValidationException when secrets are unresolvable or the
+     * @throws ConfigValidationException when a secret reference is unresolvable,
+     *                                    unbound (no provider configured),
+     *                                    resolves to an empty value — or the
      *                                    merged values violate the schema
      */
     public function load(): Config
@@ -120,11 +126,14 @@ final readonly class ConfigLoader
         $values = $this->migrateValues($values);
         $violations = [];
         $secretPaths = [];
-        if ($this->secrets instanceof SecretsProviderInterface) {
-            $resolved = $this->resolveSecrets($values, '', $violations, $secretPaths);
+        // Issue #355 (C-1): the reference scan runs UNCONDITIONALLY. With no
+        // provider bound, a `%secret:%` literal used to pass through verbatim
+        // and validated as a plain string — the app booted with the
+        // placeholder as the actual value (e.g. DB password '%secret:db_pass%').
+        // Now that state is a startup violation like any other.
+        $resolved = $this->resolveSecrets($values, '', $violations, $secretPaths);
 
-            $values = $resolved;
-        }
+        $values = $resolved;
         if ($this->schema instanceof ConfigSchema) {
             $validator = new ConfigSchemaValidator();
             $violations = [...$violations, ...$validator->validate($values, $this->schema, $secretPaths)];
@@ -235,7 +244,9 @@ final readonly class ConfigLoader
 
     /**
      * Replaces `%secret:name%` string leaves; returns one violation per
-     * unresolvable reference (tree order, keys sorted per level).
+     * unresolvable reference, per reference found without a bound provider
+     * (C-1) and per reference resolving to an empty value (C-2) — tree order,
+     * keys sorted per level.
      *
      * @param array<array-key,mixed> $node
      * @param list<ConfigViolation> $violations
@@ -258,14 +269,8 @@ final readonly class ConfigLoader
                 continue;
             }
             if (is_string($value) && preg_match(self::SECRET_PATTERN, $value, $m) === 1) {
-                $resolved = $this->secrets?->get($m[1]);
-                if ($resolved === null) {
-                    $violations[] = new ConfigViolation($path, "references unknown secret '{$m[1]}'");
-                    $out[$key] = $value;
-                } else {
-                    $out[$key] = $resolved;
-                    $secretPaths[] = $path;
-                }
+                $resolved = $this->resolveSecretLeaf($path, $m[1], $violations, $secretPaths);
+                $out[$key] = $resolved ?? $value;
 
                 continue;
             }
@@ -273,5 +278,39 @@ final readonly class ConfigLoader
         }
 
         return $out;
+    }
+
+    /**
+     * Resolves ONE full-value secret reference leaf. Returns the resolved
+     * secret, or null after recording the targeted violation — the original
+     * placeholder then stays in the tree for the schema report. C-1 (no
+     * provider bound) and C-2 (empty resolution) join the unknown-name
+     * violation as fail-fast outcomes (issue #355).
+     *
+     * @param list<ConfigViolation> $violations
+     * @param list<string> $secretPaths
+     */
+    private function resolveSecretLeaf(string $path, string $name, array &$violations, array &$secretPaths): ?string
+    {
+        if (!$this->secrets instanceof SecretsProviderInterface) {
+            $violations[] = new ConfigViolation(
+                $path,
+                "references secret '{$name}' but no secrets provider is bound to the config loader",
+            );
+
+            return null;
+        }
+        $resolved = $this->secrets->get($name);
+        if ($resolved !== null && $resolved !== '') {
+            $secretPaths[] = $path;
+
+            return $resolved;
+        }
+        $message = $resolved === null
+            ? "references unknown secret '{$name}'"
+            : "secret '{$name}' resolved to an empty value";
+        $violations[] = new ConfigViolation($path, $message);
+
+        return null;
     }
 }

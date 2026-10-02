@@ -14,6 +14,13 @@ declare(strict_types=1);
  * so a recorded terminal session, a CI log capture, or a config pasted into
  * an issue cannot leak live credentials. `--reveal` prints values verbatim,
  * but refuses to run while ZEF_ENV=production — conscious debugging only.
+ *
+ * Authoritative masking (issue #355 C-3): name heuristics alone miss secrets
+ * stored under innocent-looking keys. When the caller supplies the app's
+ * loaded config bag, its `secretPaths()` map — the loader's exact record of
+ * which leaves were resolved from `%secret:%` references — is masked too,
+ * including any subtree asked for BY a parent key. Heuristics remain active
+ * as belt-and-braces for providers that bypass the loader.
  */
 
 namespace Zef\Framework\Console\Inspector;
@@ -43,16 +50,17 @@ final readonly class ConfigShower
     ];
 
     /**
-     * Issue #55: production reads the environment through the injected
-     * port, never the static facade. The nullable port keeps the standalone
-     * CLI call sites (bin/zef) zero-config — the concrete Env default is
-     * materialised lazily at read time (php:S2830 — no object creation in
-     * the constructor).
+     * @param list<string> $secretPaths authoritative dotted paths resolved from
+     *                                  `%secret:%` references (from the app's
+     *                                  Config bag via `secretPaths()`); empty
+     *                                  when the bag is unavailable — masking
+     *                                  then falls back to name heuristics only
      */
     public function __construct(
         private ConfigAggregator $aggregator,
         private ConsoleIO $io,
         private ?EnvInterface $env = null,
+        private array $secretPaths = [],
     ) {}
 
     public function run(?string $key, bool $reveal = false): int
@@ -81,7 +89,7 @@ final readonly class ConfigShower
 
     private function showAll(bool $reveal): void
     {
-        $this->io->out($this->encode($this->jsonSafe($this->aggregator->all(), $reveal)));
+        $this->io->out($this->encode($this->maskTree($this->aggregator->all(), $reveal, '')));
     }
 
     private function showKey(string $key, bool $reveal): int
@@ -94,18 +102,38 @@ final readonly class ConfigShower
         }
 
         $this->io->out($this->encode(
-            $reveal || !$this->pathIsSecret($key)
-                ? $this->jsonSafe($value, $reveal)
+            $reveal || !$this->isMaskedPath($key)
+                ? $this->maskTree($value, $reveal, $key)
                 : $this->mask($value),
         ));
 
         return 0;
     }
 
-    private function jsonSafe(mixed $value, bool $reveal): mixed
+    /**
+     * Path-aware safe rendering: `$prefix` is the dotted path the value sits
+     * at (root dump passes ''), so a leaf whose path is an authoritative
+     * secret — or lives inside one — is masked even when its key name looks
+     * innocent (issue #355 C-3).
+     */
+    private function maskTree(mixed $value, bool $reveal, string $prefix): mixed
     {
+        if (!$reveal && $this->inSecretSubtree($prefix)) {
+            return $this->mask($value);
+        }
         if (is_array($value)) {
-            return $this->jsonSafeArray($value, $reveal);
+            $out = [];
+            foreach ($value as $k => $v) {
+                // (string) is a no-op post PHP array-key normalisation; kept for
+                // JSON key stability. @infection-ignore-all
+                $key = (string) $k;
+                $path = $prefix === '' ? $key : $prefix . '.' . $key;
+                $out[$key] = !$reveal && $this->isMaskedPath($path)
+                    ? $this->mask($v)
+                    : $this->maskTree($v, $reveal, $path);
+            }
+
+            return $out;
         }
 
         return match (true) {
@@ -116,29 +144,36 @@ final readonly class ConfigShower
         };
     }
 
-    /**
-     * @param array<mixed, mixed> $value
-     *
-     * @return array<string, mixed>
-     */
-    private function jsonSafeArray(array $value, bool $reveal): array
-    {
-        $out = [];
-        foreach ($value as $k => $v) {
-            // (string) is a no-op post PHP array-key normalisation; kept for
-            // JSON key stability. @infection-ignore-all
-            $out[(string) $k] = !$reveal && $this->isSecretKey((string) $k)
-                ? $this->mask($v)
-                : $this->jsonSafe($v, $reveal);
-        }
-
-        return $out;
-    }
-
     /** Does this dotted config path point at a secret-looking slot? */
     private function pathIsSecret(string $dottedKey): bool
     {
         return array_any(explode('.', $dottedKey), fn (string $segment): bool => $this->isSecretKey($segment));
+    }
+
+    /**
+     * Masking decision for a dotted path: authoritative secret map first
+     * (exact path or any ancestor is a resolved secret), name heuristics
+     * second.
+     */
+    private function isMaskedPath(string $dottedKey): bool
+    {
+        return $this->inSecretSubtree($dottedKey) || $this->pathIsSecret($dottedKey);
+    }
+
+    /** Is this path an authoritative secret, or nested inside one? */
+    private function inSecretSubtree(string $dottedKey): bool
+    {
+        $path = $dottedKey;
+
+        do {
+            if (in_array($path, $this->secretPaths, true)) {
+                return true;
+            }
+            $pos = strrpos($path, '.');
+            $path = $pos === false ? '' : substr($path, 0, $pos);
+        } while ($path !== '');
+
+        return false;
     }
 
     private function isSecretKey(string $key): bool

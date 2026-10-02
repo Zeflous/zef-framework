@@ -53,8 +53,11 @@ final readonly class ConfigProvider implements ConfigProviderInterface
                     // default (debug builds keep the development signal,
                     // production gets no server-side timing side channel);
                     // ZEF_TIMING_HEADER=1/0 forces either way.
+                    // Issue #355 (C-4): strict fail-closed parsing — the
+                    // lenient readBool() mapped an unrecognized spelling
+                    // (e.g. 'enabled') to FALSE, silently dropping the header.
                     'factory' => fn (): TimingMiddleware => new TimingMiddleware(
-                        $this->env->readBool('ZEF_TIMING_HEADER', $this->devMode),
+                        $this->env->readBoolStrict('ZEF_TIMING_HEADER', $this->devMode),
                     ),
                     'deps' => [],
                 ],
@@ -140,7 +143,10 @@ final readonly class ConfigProvider implements ConfigProviderInterface
 
     private function buildCors(): CorsMiddleware
     {
-        if ($this->env->readBool('ZEF_CORS_ORIGIN_ANY')) {
+        // Issue #355 (C-4): strict fail-closed parsing (audit #304 grammar) —
+        // an unrecognized spelling must refuse to boot, not silently disable
+        // the any-origin switch.
+        if ($this->env->readBoolStrict('ZEF_CORS_ORIGIN_ANY')) {
             return new CorsMiddleware(['*']);
         }
         $origins = $this->env->readCsv('ZEF_CORS_ORIGIN');

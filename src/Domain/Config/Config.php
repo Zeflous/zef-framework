@@ -76,6 +76,21 @@ final readonly class Config
         return $this->values;
     }
 
+    /**
+     * Dotted paths whose values were resolved from `%secret:%` references
+     * (populated by {@see ConfigLoader}). This is the
+     * AUTHORITATIVE secret map of the bag — unlike key-name heuristics it
+     * knows exactly which leaves hold secret material, including paths whose
+     * key names look innocent (issue #355 C-3). Diagnostics surfaces
+     * (`config:show`) consume it to decide what to mask.
+     *
+     * @return list<string>
+     */
+    public function secretPaths(): array
+    {
+        return $this->secretPaths;
+    }
+
     public function has(string $key): bool
     {
         return DottedPaths::has($this->values, $key);

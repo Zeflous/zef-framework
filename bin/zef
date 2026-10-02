@@ -184,8 +184,18 @@ if ($command === 'config:show') {
     }
     $app = \Zef\App\Bootstrap::createApp(false);
     $app->boot();
+    // Issue #355 (C-3): hand the shower the loader's authoritative secret
+    // paths so secrets under innocent-looking keys are masked too. The bag
+    // load is guarded: config:show is a diagnostic tool and must stay usable
+    // even when the app config bag itself fails to load (heuristics still on).
+    $secretPaths = [];
     try {
-        exit((new \Zef\Framework\Console\Inspector\ConfigShower($app->getConfigAggregator(), $io))->run($keyArg, $reveal));
+        $secretPaths = $app->config()->secretPaths();
+    } catch (\Throwable) {
+        $io->err('note: application config bag failed to load; masking falls back to key-name heuristics.');
+    }
+    try {
+        exit((new \Zef\Framework\Console\Inspector\ConfigShower($app->getConfigAggregator(), $io, null, $secretPaths))->run($keyArg, $reveal));
     } catch (\Zef\Framework\Console\ConsoleException $e) {
         $io->err($e->getMessage());
         exit(1);
