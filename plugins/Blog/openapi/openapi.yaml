@@ -1,0 +1,31 @@
+openapi: 3.1.0
+info: {title: ZEF Blog API, version: 1.0.0}
+paths:
+  /blog/v1/{resource}:
+    get: {summary: List blog resources, parameters: [{$ref: '#/components/parameters/resource'}, {$ref: '#/components/parameters/page'}, {$ref: '#/components/parameters/limit'}, {$ref: '#/components/parameters/q'}, {$ref: '#/components/parameters/sort'}], responses: {'200': {description: Paginated resources}}}
+    post: {summary: Create a blog resource, parameters: [{$ref: '#/components/parameters/resource'}], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ResourceInput'}}}}, responses: {'201': {description: Created}, '403': {$ref: '#/components/responses/Forbidden'}}}
+  /blog/v1/{resource}/{id}:
+    get: {summary: Get a resource, parameters: [{$ref: '#/components/parameters/resource'}, {$ref: '#/components/parameters/id'}], responses: {'200': {description: Resource}, '404': {$ref: '#/components/responses/NotFound'}}}
+    patch: {summary: Update a resource, parameters: [{$ref: '#/components/parameters/resource'}, {$ref: '#/components/parameters/id'}], responses: {'200': {description: Updated}, '403': {$ref: '#/components/responses/Forbidden'}}}
+    delete: {summary: Delete a resource, parameters: [{$ref: '#/components/parameters/resource'}, {$ref: '#/components/parameters/id'}], responses: {'204': {description: Deleted}, '403': {$ref: '#/components/responses/Forbidden'}}}
+  /blog/v1/posts/{id}/transition:
+    post: {summary: Transition draft-review-published-archived lifecycle, parameters: [{$ref: '#/components/parameters/id'}], responses: {'200': {description: Transitioned}, '422': {description: Invalid transition}}}
+  /blog/v1/posts/{id}/revisions:
+    get: {summary: List immutable post revisions, parameters: [{$ref: '#/components/parameters/id'}], responses: {'200': {description: Revisions}}}
+  /blog/v1/posts/{id}/restore:
+    post: {summary: Restore a post revision, parameters: [{$ref: '#/components/parameters/id'}], responses: {'200': {description: Restored}}}
+  /blog/v1/comments/{id}/moderate:
+    post: {summary: Approve or mark comment as spam, parameters: [{$ref: '#/components/parameters/id'}], responses: {'200': {description: Moderated}}}
+components:
+  parameters:
+    resource: {name: resource, in: path, required: true, schema: {type: string, enum: [posts, categories, tags, authors, comments, media]}}
+    id: {name: id, in: path, required: true, schema: {type: string}}
+    page: {name: page, in: query, schema: {type: integer, minimum: 1, default: 1}}
+    limit: {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+    q: {name: q, in: query, schema: {type: string}}
+    sort: {name: sort, in: query, schema: {type: string}}
+  schemas:
+    ResourceInput: {type: object, additionalProperties: true}
+  responses:
+    Forbidden: {description: Server-side permission denied}
+    NotFound: {description: Resource not found}

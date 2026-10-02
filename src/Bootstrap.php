@@ -16,6 +16,7 @@ use Zef\Framework\Http\RequestBodyPolicy;
 use Zef\Middleware\ConfigProvider as MiddlewareConfigProvider;
 use Zef\Module\Core\ConfigProvider as CoreConfigProvider;
 use Zef\Module\Health\ConfigProvider as HealthConfigProvider;
+use Zef\Plugin\Blog\ConfigProvider as BlogConfigProvider;
 use Zef\Plugin\Toko\ConfigProvider as TokoConfigProvider;
 
 final class Bootstrap
@@ -44,6 +45,7 @@ final class Bootstrap
         $app->addProvider(new MiddlewareConfigProvider($debug));
         $app->addProvider(new CoreConfigProvider());
         $app->addProvider(new TokoConfigProvider());
+        $app->addProvider(new BlogConfigProvider());
         $app->addProvider(new HealthConfigProvider());
 
         return $app;
