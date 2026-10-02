@@ -203,8 +203,11 @@ final class RuntimeSoakVariantsTest extends TestCase
         putenv('ZEF_SECURITY_RATE_LIMIT=1');
         // Ambang sangat longgar agar 3.300 request berurutan dari satu
         // klien tetap 200 — yang dikawal adalah jalur Redis-nya, bukan
-        // keputusan limit-nya.
+        // keputusan limit-nya. Window di-pin eksplisit ke default (60) agar
+        // ekspektasi kunci bucket di bawah tidak bergantung pada default
+        // konfigurasi yang bisa berubah (audit #322: bucket = key>window).
         putenv('ZEF_SECURITY_RATE_LIMIT_MAX=1000000');
+        putenv('ZEF_SECURITY_RATE_LIMIT_WINDOW=60');
         putenv('ZEF_SECURITY_CSRF_SECRET=' . str_repeat('s', 32));
         putenv('ZEF_RATE_LIMIT_STORE=redis');
         putenv('ZEF_REDIS_URL=redis://:zef-test-secret@127.0.0.1:6399/0');
@@ -242,12 +245,15 @@ final class RuntimeSoakVariantsTest extends TestCase
             // Server tetap sehat dan koneksi reuse terjadi: satu hash
             // rate-limit dengan count tepat TOTAL_REQUESTS (setiap request
             // satu EVAL increment pada koneksi pconnect yang sama).
+            // Audit #322: identitas bucket mengikat window — kunci disimpan
+            // sebagai hash('sha256', key . '>' . windowSeconds); soak ini
+            // berjalan pada window default 60 detik (SecurityPolicy).
             self::assertTrue($redis->ping(), 'Redis wajib tetap responsif pasca-soak');
             $keys = $redis->keys('zef:ratelimit:*');
             self::assertSame(
-                ['zef:ratelimit:' . hash('sha256', '127.0.0.1')],
+                ['zef:ratelimit:' . hash('sha256', '127.0.0.1>60')],
                 $keys,
-                'wajib tepat satu bucket rate-limit untuk client 127.0.0.1',
+                'wajib tepat satu bucket rate-limit untuk client 127.0.0.1 (window 60s)',
             );
             $count = (int) $redis->hGet($keys[0], 'count');
             self::assertSame(

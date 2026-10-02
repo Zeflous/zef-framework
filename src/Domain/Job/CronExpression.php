@@ -36,7 +36,14 @@ namespace Zef\Framework\Job;
  */
 final readonly class CronExpression implements ScheduleInterface
 {
-    private const int MAX_SCAN_MINUTES = 1461 * 24 * 60; // one full leap cycle
+    // Audit #325: leap-aware bound. One 4-year "leap cycle" is NOT enough:
+    // across a non-leap century year (2100) the gap between consecutive
+    // February 29s is exactly 2922 days (2096-02-29 -> 2104-02-29), so a
+    // Feb-29-only expression asked from 2096/2097 missed its next fire and
+    // threw a spurious "no matching minute". Eight full years counted as
+    // worst-case leap years (8*366 = 2928 days) covers that gap with
+    // margin, including the strictly-after-"now" off-by-one.
+    private const int MAX_SCAN_MINUTES = 8 * 366 * 24 * 60;
 
     private const string NEVER_FIRES_MESSAGE = <<<'MSG'
         Cron expression '%s' can never fire (the restricted day-of-month has no valid date in the restricted months).
@@ -196,7 +203,7 @@ final readonly class CronExpression implements ScheduleInterface
         }
 
         throw new CronExpressionException(
-            "Cron expression '{$this->expression}' has no matching minute within 4 years.",
+            "Cron expression '{$this->expression}' has no matching minute within 8 years.",
         );
     }
 

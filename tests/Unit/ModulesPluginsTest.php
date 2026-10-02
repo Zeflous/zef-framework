@@ -483,7 +483,7 @@ final class ModulesPluginsTest extends TestCase
             }
 
             #[\Override]
-            public function peek(string $key, int $now): ?array
+            public function peek(string $key, int $windowSeconds, int $now): ?array
             {
                 return null;
             }

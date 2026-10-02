@@ -180,7 +180,10 @@ final class YamlSpecificationSerializer
             return true;
         }
 
-        return preg_match('/^[\[\]{}#&*!|>\'%@`,:\-]/', $value) === 1
+        // Audit #333: '?' joins the leading-indicator class — "? " is the
+        // YAML explicit-key token and an unquoted emission corrupted the
+        // document; over-quoting a bare "?x" is always safe.
+        return preg_match('/^[\[\]{}#&*!|>\'%@`,:\-?]/', $value) === 1
             || str_contains($value, ': ')
             || str_contains($value, ' #')
             || str_contains($value, '"');

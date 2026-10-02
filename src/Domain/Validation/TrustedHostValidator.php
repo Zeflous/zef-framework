@@ -12,8 +12,11 @@ namespace Zef\Framework\Validation;
 
 final readonly class TrustedHostValidator
 {
-    public function __construct(private array $trustedHosts = [])
-    {
+    public function __construct(
+        private array $trustedHosts = [],
+        /** Audit #331: opt-in fail-closed posture for compositions that REQUIRE pinning. */
+        private bool $failClosedOnEmptyList = false,
+    ) {
         // Reject malformed allow-list entries up front: a non-string element
         // would otherwise reach the `(string) $allowed` cast below, emitting
         // an "Array to string conversion" warning (fatal under
@@ -31,6 +34,14 @@ final readonly class TrustedHostValidator
     /**
      * Reject a host that is not in the trusted allow-list.
      *
+     * Audit #331: the two early-outs are DELIBERATE defaults, now explicit:
+     * an empty allow-list means pinning is not configured (Uri relies on
+     * this for every relative reference) — compositions that require
+     * pinning opt in via failClosedOnEmptyList and fail loudly instead of
+     * silently trusting every Host header; an empty host likewise stays
+     * accepted here because the ingress path (RequestFactory) rejects an
+     * empty request Host on its own before this validator ever runs.
+     *
      * Named `assertTrusted()` rather than `assert()` on purpose: a bare
      * `assert()` call reads as the PHP built-in assertion function, which
      * static analysers (Snyk Code, and any rule keyed on the `assert`
@@ -40,7 +51,16 @@ final readonly class TrustedHostValidator
      */
     public function assertTrusted(string $host): void
     {
-        if ($host === '' || $this->trustedHosts === []) {
+        if ($this->trustedHosts === []) {
+            if ($this->failClosedOnEmptyList) {
+                throw new \InvalidArgumentException(
+                    'Trusted host allow-list is empty — host-header pinning is misconfigured.',
+                );
+            }
+
+            return;
+        }
+        if ($host === '') {
             return;
         }
         $normalize = static function (string $value): string {

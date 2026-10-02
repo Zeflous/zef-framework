@@ -334,9 +334,11 @@ final class MiddlewareMutationDebtTest extends TestCase
     {
         $middleware = new CorsMiddleware(['https://a.example']);
 
+        // Audit #328: a preflight is an OPTIONS that carries the
+        // Access-Control-Request-Method marker.
         foreach (['OPTIONS', 'options'] as $method) {
             $response = $middleware->process(
-                $this->request('/', $method, ['Origin' => 'https://evil.example']),
+                $this->request('/', $method, ['Origin' => 'https://evil.example', 'Access-Control-Request-Method' => 'POST']),
                 $this->handler(),
             );
             self::assertSame(204, $response->getStatusCode(), "Method {$method}: a disallowed preflight must stay a bare 204.");
@@ -379,8 +381,9 @@ final class MiddlewareMutationDebtTest extends TestCase
     {
         $middleware = new CorsMiddleware(['https://a.example']);
 
+        // Audit #328: preflight = OPTIONS + Access-Control-Request-Method.
         $response = $middleware->process(
-            $this->request('/', 'options', ['Origin' => 'https://a.example']),
+            $this->request('/', 'options', ['Origin' => 'https://a.example', 'Access-Control-Request-Method' => 'POST']),
             $this->handler(),
         );
         self::assertSame(204, $response->getStatusCode());

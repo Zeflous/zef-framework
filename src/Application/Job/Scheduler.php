@@ -94,11 +94,16 @@ final class Scheduler
         if (!isset($this->registrations[$jobType]) && count($this->registrations) >= $this->maxRegistrations) {
             throw new \OverflowException("Scheduler registration budget exceeded ({$this->maxRegistrations}).");
         }
+        $existing = $this->registrations[$jobType] ?? null;
         $this->registrations[$jobType] = [
             'schedule' => $schedule,
             'payload' => $payload,
             'correlationId' => $correlationId,
-            'nextRunUnixNano' => null,
+            // Audit #324: honour the documented "keeping its cursor" — a
+            // schedule swap / config reload must not reset the cursor to
+            // null, which caused a duplicate catch-up burst for the fires
+            // the previous schedule had already computed.
+            'nextRunUnixNano' => $existing['nextRunUnixNano'] ?? null,
         ];
     }
 

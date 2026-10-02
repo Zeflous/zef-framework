@@ -151,11 +151,11 @@ final class RedisStoreTest extends TestCase
         $second = $store->increment('unit-key-a', 60, $now);
         self::assertSame(2, $second['count']);
 
-        $peeked = $store->peek('unit-key-a', $now);
+        $peeked = $store->peek('unit-key-a', 60, $now);
         self::assertIsArray($peeked);
         self::assertSame(2, $peeked['count']);
 
-        self::assertNull($store->peek('unit-key-never-touched', $now));
+        self::assertNull($store->peek('unit-key-never-touched', 60, $now));
     }
 
     public function testRedisSharedStoreExpiresOldWindows(): void

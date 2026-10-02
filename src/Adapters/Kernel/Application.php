@@ -135,9 +135,17 @@ final class Application
     public function setTrustedHosts(array $hosts): void
     {
         $this->assertNotBooted('change trusted hosts');
-        $this->trustedHosts = array_values(
-            array_filter(array_map(strval(...), $hosts), static fn (string $v): bool => $v !== '')
-        );
+        $nonEmpty = static fn (string $v): bool => $v !== '';
+        $filtered = array_values(array_filter(array_map(strval(...), $hosts), $nonEmpty));
+        // Audit #331: every provided entry trimmed to nothing (e.g. a
+        // ZEF_TRUSTED_HOSTS=" , , " explode). Silently disabling pinning from
+        // an INTENDED configuration is a misconfiguration — refuse; [] stays default.
+        if ($filtered === [] && $hosts !== []) {
+            throw new \InvalidArgumentException(
+                'setTrustedHosts(): every provided entry is empty — refusing to silently disable host-header pinning.',
+            );
+        }
+        $this->trustedHosts = $filtered;
     }
 
     public function setTrustedProxies(array $proxies): void

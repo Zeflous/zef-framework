@@ -172,8 +172,14 @@ final class ZefDeep15StorageTest extends TestCase
 
         ShadowCurlState::$execResult = 'x';
         $transport->request('PUT', 'https://example.com/bucket/k', ['X-Test' => '1'], 'payload');
-        self::assertSame(['X-Test: 1'], ShadowCurlState::$opts[CURLOPT_HTTPHEADER]);
+        // Audit #334: bodied requests now carry an explicit Content-Type so
+        // libcurl's application/x-www-form-urlencoded default never leaks
+        // onto stored objects; a caller-provided one is respected verbatim.
+        self::assertSame(['X-Test: 1', 'Content-Type: application/octet-stream'], ShadowCurlState::$opts[CURLOPT_HTTPHEADER]);
         self::assertSame('payload', ShadowCurlState::$opts[CURLOPT_POSTFIELDS]);
+
+        $transport->request('PUT', 'https://example.com/bucket/k', ['Content-Type' => 'text/csv'], 'payload');
+        self::assertSame(['Content-Type: text/csv'], ShadowCurlState::$opts[CURLOPT_HTTPHEADER]);
 
         ShadowCurlState::$execResult = '';
         $transport->request('GET', 'https://example.com/bucket/k', [], '');

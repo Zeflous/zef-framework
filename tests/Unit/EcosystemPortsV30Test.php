@@ -163,7 +163,9 @@ final class EcosystemPortsV30Test extends TestCase
         self::assertFalse(ShadowCurlState::$opts[CURLOPT_FOLLOWLOCATION]);
         self::assertSame(5, ShadowCurlState::$opts[CURLOPT_CONNECTTIMEOUT]);
         self::assertSame(30, ShadowCurlState::$opts[CURLOPT_TIMEOUT]);
-        self::assertSame(['X-Test: 1'], ShadowCurlState::$opts[CURLOPT_HTTPHEADER]);
+        // Audit #334: bodied requests carry an explicit Content-Type (libcurl's
+        // form-urlencoded default must never describe a stored object).
+        self::assertSame(['X-Test: 1', 'Content-Type: application/octet-stream'], ShadowCurlState::$opts[CURLOPT_HTTPHEADER]);
         self::assertSame('payload', ShadowCurlState::$opts[CURLOPT_POSTFIELDS]);
         self::assertIsCallable(ShadowCurlState::$opts[CURLOPT_HEADERFUNCTION]);
         // the header function returned byte counts and fed the raw headers
