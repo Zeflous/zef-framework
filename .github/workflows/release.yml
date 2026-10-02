@@ -158,6 +158,8 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: write
+      id-token: write # required for keyless (OIDC) SBOM attestation (#352)
+      attestations: write # required to persist the attestation to the attestation store (#352)
 
     steps:
       # gh release create needs a git work tree to resolve the repository
@@ -175,6 +177,26 @@ jobs:
           name: release-artifacts-${{ github.ref_name }}
           path: .
 
+      # SBOM is a release artifact and this job is its single writer (#352):
+      # generate here and attach inside the create-or-upload step below. The
+      # former sbom-release job in sbom.yml raced the publish (attach ran ~20s
+      # after the tag push, the release only exists after this job's mutation-
+      # gate wait), silently skipped whenever no release object existed yet,
+      # and shipped v2.31.0 and v2.34.1 without a SBOM asset while green.
+      - name: Generate CycloneDX SBOM
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2 (same pin as sbom-generate.yml)
+        with:
+          path: .
+          format: cyclonedx-json
+          output-file: zef-framework-sbom.cdx.json
+
+      - name: Verify SBOM artifact is present and non-empty
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s zef-framework-sbom.cdx.json
+          echo "SBOM bytes: $(wc -c < zef-framework-sbom.cdx.json)"
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -188,12 +210,13 @@ jobs:
           # with the same tag name already exists" and mark the tag run
           # red even though the release itself is complete — so refresh
           # the artifacts on the existing release instead. --clobber only
-          # replaces same-named assets; the SBOM asset name differs and
-          # is left to the sbom-release job.
+          # replaces same-named assets; the SBOM asset is uploaded below by
+          # THIS job (single writer, #352) — no other workflow touches it.
           if gh release view "${GITHUB_REF_NAME}" > /dev/null 2>&1; then
             gh release upload "${GITHUB_REF_NAME}" \
               "zef-framework-${GITHUB_REF_NAME}.tar.gz" \
               "zef-framework-${GITHUB_REF_NAME}.tar.gz.sha256" \
+              "zef-framework-sbom.cdx.json" \
               --clobber
             # Close the draft blind-spot (v2.32.0 AND v2.33.0, both measured):
             # Release Drafter maintains a rolling draft for the NEXT version on
@@ -217,6 +240,36 @@ jobs:
             gh release create "${GITHUB_REF_NAME}" \
               "zef-framework-${GITHUB_REF_NAME}.tar.gz" \
               "zef-framework-${GITHUB_REF_NAME}.tar.gz.sha256" \
+              "zef-framework-sbom.cdx.json" \
               --generate-notes \
               --verify-tag
           fi
+
+      # Keyless SBOM attestation via GitHub Actions OIDC (no long-lived key).
+      # Blocking: if the attestation cannot be persisted the run fails, so an
+      # attestation regression cannot pass silently. Same contract as the
+      # branch lane in sbom-generate.yml.
+      - name: Attest SBOM (keyless, OIDC)
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0 (same pin as sbom-generate.yml)
+        with:
+          subject-path: zef-framework-sbom.cdx.json
+          sbom-path: zef-framework-sbom.cdx.json
+
+      # Fail-loud guard for the failure mode that shipped v2.31.0 and
+      # v2.34.1 without a SBOM asset while every job stayed green (#352):
+      # assert the asset is actually present on the release before this run
+      # can be called a success.
+      - name: Assert SBOM asset is attached to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          assets=$(gh release view "${GITHUB_REF_NAME}" --json assets --jq '.assets[].name')
+          echo "Release assets:"
+          echo "${assets}"
+          if ! echo "${assets}" | grep -Fxq "zef-framework-sbom.cdx.json"; then
+            echo "::error::SBOM asset zef-framework-sbom.cdx.json is missing from release ${GITHUB_REF_NAME}"
+            exit 1
+          fi
+          echo "SBOM asset attached: OK"
