@@ -85,9 +85,14 @@ final class RoutePatternParser
     }
 
     /**
+     * v2.36.0: the signature is host-scoped so two routes with the same
+     * method+path under different host patterns coexist instead of
+     * colliding as duplicates — host is `''` for host-less routes, which
+     * keeps every pre-existing signature byte-identical.
+     *
      * @param list<Segment> $segments
      */
-    public static function canonicalSignature(string $method, array $segments): string
+    public static function canonicalSignature(string $method, array $segments, string $host = ''): string
     {
         $parts = [];
         foreach ($segments as $segment) {
@@ -96,7 +101,7 @@ final class RoutePatternParser
                 : $segment['value'];
         }
 
-        return $method . '|/' . implode('/', $parts);
+        return $host . '|' . $method . '|/' . implode('/', $parts);
     }
 
     /**
@@ -179,5 +184,57 @@ final class RoutePatternParser
         }
 
         return $matched ? $params : false;
+    }
+
+    /**
+     * v2.36.0 host-aware matching for the radix fast path: like
+     * matchRoute(), but also gates on the route's host pattern (a
+     * host-less route matches any host; a host route matches only when
+     * HostPatternMatches accepts the request host) and merges the captured
+     * host wildcards into the returned parameter map. A host mismatch is a
+     * plain `false` (fall through to the next candidate), never a 400 — a
+     * route bound to another subdomain is simply not a candidate here.
+     *
+     * @param list<Segment> $segments
+     *
+     * @return array<string,string>|false|RouteConstraintException
+     */
+    public static function matchHost(
+        array $segments,
+        string $path,
+        RouteConstraintValidator $constraints,
+        string $hostPattern,
+        string $requestHost,
+    ): array|false|RouteConstraintException {
+        $params = self::matchRoute($segments, $path, $constraints);
+
+        return is_array($params) && $hostPattern !== ''
+            ? self::mergeHostParams($params, $hostPattern, $requestHost)
+            : $params;
+    }
+
+    /**
+     * Merges a matching host pattern's wildcards into the path parameters.
+     *
+     * @param array<string,string> $params
+     *
+     * @return array<string,string>|false
+     */
+    private static function mergeHostParams(array $params, string $hostPattern, string $requestHost): array|false
+    {
+        $hostParams = HostPatternMatches::match($hostPattern, $requestHost);
+        if ($hostParams === null) {
+            return false;
+        }
+        foreach ($hostParams as $name => $value) {
+            if (isset($params[$name])) {
+                throw new \InvalidArgumentException(
+                    "Host wildcard '{$name}' collides with a path parameter of the same name.",
+                );
+            }
+            $params[$name] = $value;
+        }
+
+        return $params;
     }
 }

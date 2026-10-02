@@ -28,9 +28,12 @@ final class RouterInternalsMutantKillTest extends TestCase
     /** canonicalSignature renders dynamic-with-constraint as '*constraint' (kills Concat/ConcatOperandRemoval:93). */
     public function testCanonicalSignatureRendersSegments(): void
     {
-        self::assertSame('GET|/a/*int', RoutePatternParser::canonicalSignature('GET', RoutePatternParser::parsePattern('/a/{id:int}')));
-        self::assertSame('GET|/a/*', RoutePatternParser::canonicalSignature('GET', RoutePatternParser::parsePattern('/a/{id}')));
-        self::assertSame('GET|/a/b', RoutePatternParser::canonicalSignature('GET', RoutePatternParser::parsePattern('/a/b')));
+        // v2.36.0: the signature is host-scoped — an empty host prefix keeps
+        // pre-existing (host-less) signatures stable apart from the leading '|'.
+        self::assertSame('|GET|/a/*int', RoutePatternParser::canonicalSignature('GET', RoutePatternParser::parsePattern('/a/{id:int}')));
+        self::assertSame('|GET|/a/*', RoutePatternParser::canonicalSignature('GET', RoutePatternParser::parsePattern('/a/{id}')));
+        self::assertSame('|GET|/a/b', RoutePatternParser::canonicalSignature('GET', RoutePatternParser::parsePattern('/a/b')));
+        self::assertSame('acme.example.com|GET|/a/b', RoutePatternParser::canonicalSignature('GET', RoutePatternParser::parsePattern('/a/b'), 'acme.example.com'));
     }
 
     /** parsePattern('/') is the empty segment list (kills ReturnRemoval:78). */

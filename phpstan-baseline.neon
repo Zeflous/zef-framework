@@ -535,12 +535,6 @@ parameters:
                         path: src/Adapters/Router/Router.php
 
                 -
-                        message: '#^Method Zef\\Framework\\Router\\Router\:\:getRoutes\(\) return type has no value type specified in iterable type array\.$#'
-                        identifier: missingType.iterableValue
-                        count: 1
-                        path: src/Adapters/Router/Router.php
-
-                -
                         message: '#^Method Zef\\Framework\\Security\\SecurityRuntimeMiddleware\:\:process\(\) should return Psr\\Http\\Message\\ResponseInterface but returns Psr\\Http\\Message\\MessageInterface\.$#'
                         identifier: return.type
                         count: 1
@@ -2389,21 +2383,9 @@ parameters:
                         path: tests/V2100EnterpriseSuite.php
 
                 -
-                        message: '#^Cannot access offset ''middleware'' on mixed\.$#'
-                        identifier: offsetAccess.nonOffsetAccessible
-                        count: 1
-                        path: tests/V2100EnterpriseSuite.php
-
-                -
                         message: '#^Cannot access offset ''name'' on array\<string, mixed\>\|object\.$#'
                         identifier: offsetAccess.nonOffsetAccessible
                         count: 2
-                        path: tests/V2100EnterpriseSuite.php
-
-                -
-                        message: '#^Cannot access offset ''pattern'' on mixed\.$#'
-                        identifier: offsetAccess.nonOffsetAccessible
-                        count: 1
                         path: tests/V2100EnterpriseSuite.php
 
                 -

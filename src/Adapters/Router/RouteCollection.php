@@ -17,6 +17,12 @@ use Zef\Framework\Exception\InvalidConfigurationException;
  * signature collisions, name bindings), lazy priority sorting, compiled
  * cache export/hydration and reverse-routing lookups.
  *
+ * v2.36.0 (router feature-expansion): each record also carries its host
+ * pattern, param-bindings map and accepted reprepresentations; the name
+ * index now stores the full record (so reverse routing can resolve a
+ * record, not just a pattern) and a monotonic revision counter lets the
+ * matcher skip recompiling the radix index when nothing has changed.
+ *
  * @phpstan-type Segment array{dynamic:true,name:string,constraint?:string|null}|array{dynamic:false,value:string}
  *
  * NOTE: local verbatim copy of the RoutePatternParser declaration (no
@@ -25,7 +31,8 @@ use Zef\Framework\Exception\InvalidConfigurationException;
  * @phpstan-type RouteRecord array{
  *     method: string, pattern: string, handler: string, module: ?string, priority: int, sequence: int,
  *     segments: list<Segment>, signature: string, staticCount: int, constrainedCount: int,
- *     name: ?string, middleware: list<string>,
+ *     name: ?string, middleware: list<string>, host: string,
+ *     bindings: array<string,string>, accepts: list<string>,
  * }
  */
 final class RouteCollection
@@ -36,12 +43,19 @@ final class RouteCollection
     /** @var array<string,string> signature => pattern (for O(1) collision detection) */
     private array $signatureIndex = [];
 
-    /** @var array<string,string> name => pattern (reverse routing, v2.8.0) */
+    /** @var array<string,RouteRecord> name => route record (reverse routing, v2.8.0) */
     private array $nameIndex = [];
 
     private int $sequence = 0;
     private bool $sorted = true;
     private int $maxRoutesBudget = 10000;
+
+    /**
+     * v2.36.0: monotonic registration counter — the radix index can detect
+     * "nothing changed since the last compile" instead of rebuilding on
+     * every unfrozen match().
+     */
+    private int $revision = 0;
 
     /**
      * Fails fast when the next registration would exceed the router
@@ -64,6 +78,7 @@ final class RouteCollection
      * @param array{
      *     method: string, pattern: string, handler: string, module: ?string, priority: int,
      *     segments: list<Segment>, signature: string, name: ?string, middleware: list<string>,
+     *     host?: string, bindings?: array<string,string>, accepts?: list<string>,
      * } $record
      */
     public function add(array $record): void
@@ -93,9 +108,21 @@ final class RouteCollection
             // Dynamic segment without a constraint: neither counter applies.
         }
 
+        // v2.36.0: a route with no name (or a name-emptied group prefix) is
+        // UNNAMED — a null name is never recorded in the name index.
+        $name = $record['name'] ?? null;
+        if (is_string($name)) {
+            $name = trim($name);
+            if ($name === '') {
+                $name = null;
+            }
+        } else {
+            $name = null;
+        }
+
         $registrationSequence = $this->sequence;
         ++$this->sequence;
-        $this->routes[] = [
+        $stored = [
             'method' => $record['method'],
             'pattern' => $record['pattern'],
             'handler' => $record['handler'],
@@ -106,23 +133,34 @@ final class RouteCollection
             'signature' => $signature,
             'staticCount' => $staticCount,
             'constrainedCount' => $constrainedCount,
-            'name' => $record['name'],
+            'name' => $name,
             'middleware' => $record['middleware'],
+            'host' => $record['host'] ?? '',
+            'bindings' => $record['bindings'] ?? [],
+            'accepts' => $record['accepts'] ?? [],
         ];
-
+        $this->routes[] = $stored;
         $this->signatureIndex[$signature] = $record['pattern'];
 
-        $name = $record['name'];
         if ($name !== null) {
-            $trimmedName = trim($name);
-            if (isset($this->nameIndex[$trimmedName])) {
+            if (isset($this->nameIndex[$name])) {
                 throw new \InvalidArgumentException(
-                    "Duplicate route name '{$trimmedName}'; already bound to {$this->nameIndex[$trimmedName]}."
+                    "Duplicate route name '{$name}'; already bound to {$this->nameIndex[$name]['pattern']}.",
                 );
             }
-            $this->nameIndex[$trimmedName] = $record['pattern'];
+            $this->nameIndex[$name] = $stored;
         }
         $this->sorted = false;
+        ++$this->revision;
+    }
+
+    /**
+     * v2.36.0: changes since the last compile — the radix index compares
+     * its compiled revision against this to skip a needless rebuild.
+     */
+    public function revision(): int
+    {
+        return $this->revision;
     }
 
     /** @return list<RouteRecord> */
@@ -141,9 +179,22 @@ final class RouteCollection
     public function patternFor(string $name): string
     {
         $name = trim($name);
+        $record = $this->nameIndex[$name] ?? null;
 
-        return $this->nameIndex[$name]
+        return $record['pattern']
             ?? throw new \InvalidArgumentException("Unknown route name '{$name}'.");
+    }
+
+    /**
+     * v2.36.0: full record previously bound to a route name (reverse
+     * routing callers that need the handler/host/bindings, not just the
+     * path template).
+     *
+     * @return ?RouteRecord
+     */
+    public function routeRecordFor(string $name): ?array
+    {
+        return $this->nameIndex[trim($name)] ?? null;
     }
 
     public function hasRouteName(string $name): bool
@@ -154,7 +205,12 @@ final class RouteCollection
     /** @return array<string,string> name => pattern */
     public function routeNames(): array
     {
-        return $this->nameIndex;
+        $names = [];
+        foreach ($this->nameIndex as $name => $record) {
+            $names[$name] = $record['pattern'];
+        }
+
+        return $names;
     }
 
     /**
@@ -173,7 +229,7 @@ final class RouteCollection
         return [
             'routes' => $this->routes,
             'signatureIndex' => $this->signatureIndex,
-            'nameIndex' => $this->nameIndex,
+            'nameIndex' => $this->routeNames(),
             'sequence' => $this->sequence,
         ];
     }
@@ -182,6 +238,9 @@ final class RouteCollection
      * Restores storage state from a compiled cache payload written by
      * export() (trusted data: routes were validated when they were first
      * registered). The result is pre-sorted — no per-route re-validation.
+     * The name index is rebuilt from the records (never trusted from the
+     * payload) so an unnamed route can never re-enter the index under the
+     * empty name.
      *
      * @param array<string,mixed> $data
      */
@@ -198,9 +257,18 @@ final class RouteCollection
         $restoredSignatureIndex = is_array($data['signatureIndex'] ?? null) ? $data['signatureIndex'] : [];
         $this->signatureIndex = $restoredSignatureIndex;
 
-        /** @var array<string,string> $restoredNameIndex */
-        $restoredNameIndex = is_array($data['nameIndex'] ?? null) ? $data['nameIndex'] : [];
-        $this->nameIndex = $restoredNameIndex;
+        $this->nameIndex = [];
+        foreach ($records as $record) {
+            $name = is_array($record) ? ($record['name'] ?? null) : null;
+            if (!is_string($name)) {
+                continue;
+            }
+            $name = trim($name);
+            if ($name === '') {
+                continue;
+            }
+            $this->nameIndex[$name] = $record;
+        }
 
         $rawSequence = $data['sequence'] ?? count($records);
         $this->sequence = is_numeric($rawSequence) ? (int) $rawSequence : count($records);
@@ -209,6 +277,7 @@ final class RouteCollection
         $this->maxRoutesBudget = max(1, is_numeric($rawBudget) ? (int) $rawBudget : count($records));
 
         $this->sorted = true;
+        ++$this->revision;
     }
 
     public function setMaxRoutesBudget(int $max): void

@@ -153,7 +153,7 @@ $io = new \Zef\Framework\Console\ConsoleIO();
 $maker = new \Zef\Framework\Console\ZefMaker($root, $io);
 
 if ($command === 'route:list') {
-    exit(zef_route_list());
+    exit(zef_route_list($args, $io));
 }
 
 if ($command === 'module:list') {
@@ -398,25 +398,13 @@ function zef_cli_options(array $argv): array
     return $options;
 }
 
-function zef_route_list(): int
+function zef_route_list(array $argv, \Zef\Framework\Console\ConsoleIO $io): int
 {
+    $json = in_array('--json', $argv, true);
     $app = \Zef\App\Bootstrap::createApp(false);
     $app->boot();
-    $routes = $app->getRouter()->getRoutes();
-    printf("%-8s %-38s %-22s %-32s %-10s %s\n", 'METHOD', 'PATH', 'NAME', 'HANDLER', 'MODULE', 'PRIO');
-    foreach ($routes as $route) {
-        printf(
-            "%-8s %-38s %-22s %-32s %-10s %d\n",
-            $route['method'],
-            $route['pattern'],
-            $route['name'] ?? '-',
-            $route['handler'],
-            $route['module'] ?? '-',
-            $route['priority'],
-        );
-    }
-    printf("\n%d route(s)\n", count($routes));
-    return 0;
+
+    return (new \Zef\Framework\Console\Inspector\RouteLister($io))->run($app->getRouter()->getRoutes(), $json);
 }
 
 /**

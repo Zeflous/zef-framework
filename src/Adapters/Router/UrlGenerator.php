@@ -60,6 +60,52 @@ final readonly class UrlGenerator
     }
 
     /**
+     * v2.36.0: reverse routing for host (subdomain) patterns — returns the
+     * concrete host for a named route, substituting `{tenant}` wildcards
+     * from $hostParams. A route without a host pattern returns null; a
+     * missing wildcard parameter throws (same strictness as generate()).
+     *
+     * @param array<string,scalar|\Stringable> $hostParams
+     *
+     * @throws \InvalidArgumentException for unknown names or missing wildcards
+     */
+    public function generateHost(string $name, array $hostParams = []): ?string
+    {
+        if (!$this->router->hasRouteName($name)) {
+            throw new \InvalidArgumentException("Unknown route name '{$name}'.");
+        }
+        $host = '';
+        foreach ($this->router->exportRoutes()['routes'] as $record) {
+            if (($record['name'] ?? null) === $name) {
+                $host = is_string($record['host'] ?? null) ? $record['host'] : '';
+
+                break;
+            }
+        }
+        if ($host === '') {
+            return null;
+        }
+        $labels = [];
+        foreach (explode('.', $host) as $label) {
+            if (preg_match('/^\{([A-Za-z_]\w*)\}$/', $label, $m) === 1) {
+                $paramName = $m[1];
+                if (!array_key_exists($paramName, $hostParams)) {
+                    throw new \InvalidArgumentException(
+                        "Route '{$name}' requires host parameter '{$paramName}'.",
+                    );
+                }
+                $value = $this->stringify($name, $paramName, $hostParams[$paramName]);
+                $labels[] = rawurlencode($value);
+
+                continue;
+            }
+            $labels[] = $label;
+        }
+
+        return implode('.', $labels);
+    }
+
+    /**
      * Resolves one path segment: dynamic `{param}` / `{param:constraint}`
      * placeholders are substituted (validated) and marked consumed; static
      * segments pass through untouched.

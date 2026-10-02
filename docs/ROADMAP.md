@@ -63,15 +63,14 @@
 - [x] Module-scoped routes
 
   #### Target Enterprise:
-  - [x] `Route groups dengan prefixes` (v2.10.0: `Router::group()`, prefix/name/middleware/priority bersarang)
-  - [ ] `Subdomain routing untuk multi-tenancy`
+  - [x] `Subdomain routing untuk multi-tenancy` (v2.36.0: group `host` + wildcard `{tenant}`, `HostPatternMatches`, signature host-aware + `UrlGenerator::generateHost()`)
   - [x] `API versioning (URL, header, query)` (v2.10.0: `ApiVersionNegotiator`, prioritas path > header > query > default)
-  - [ ] `Route model binding otomatis`
+  - [x] `Route model binding otomatis` (v2.36.0: port `RouteModelBinderInterface`, group `bindings`, diselesaikan di `Dispatcher`)
   - [x] `Route caching & compilation` (v2.10.0: `exportRoutes()`/`fromCompiledArray()`/`RouteCache`, file murni atomik)
-  - [ ] `Localization routing (/{locale}/...)`
-  - [ ] `Content negotiation routing`
+  - [x] `Localization routing (/{locale}/...)` (v2.36.0: `Router::localized()` + `LocaleNegotiator` untuk parsing prefix locale)
+  - [x] `Content negotiation routing` (v2.36.0: group `accepts` + `ContentNegotiator`, balasan 406 saat tak dapat diterima)
   - [x] `Route naming & reverse routing` (v2.8.0: `RouteDefinition.name`, `Router::patternFor()`, `UrlGenerator`)
-  - [x] `Route middleware assignment` (v2.10.0: metadata `middleware` per-route via groups, terekspor di `getRoutes()`)
+  - [x] `Route middleware assignment` (v2.10.0 metadata; **v2.36.0 dieksekusi** — `Dispatcher` membangun sub-pipeline dari `middleware` per-route)
   - [x] `Fallback routes & custom 404` (v2.10.0: `Router::fallback()` + `matchOrFallback()`, 405 tetap dijaga)
 
 ---
