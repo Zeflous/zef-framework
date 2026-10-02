@@ -90,13 +90,26 @@ final readonly class OpenApiGateMiddleware implements MiddlewareInterface
         if ($stream->isSeekable()) {
             $bodyProvider = static fn (): string => (string) $stream;
         } else {
-            $buffered = (string) $stream;
-            $rewrapped = $request->withBody(Stream::fromString($buffered));
-            if (!$rewrapped instanceof ServerRequestInterface) {
-                throw new \LogicException('withBody must preserve the request type.');
-            }
-            $request = $rewrapped;
-            $bodyProvider = static fn (): string => $buffered;
+            // Do not consume a streaming body merely because this middleware
+            // is global. OpenApiGateRequest invokes the provider only for an
+            // admitted operation that declares requestBody. When it does, the
+            // handler receives a rewindable replacement of exactly the bytes
+            // consumed for validation.
+            $buffered = null;
+            $bodyProvider = static function () use (&$request, $stream, &$buffered): string {
+                if (is_string($buffered)) {
+                    return $buffered;
+                }
+
+                $buffered = (string) $stream;
+                $rewrapped = $request->withBody(Stream::fromString($buffered));
+                if (!$rewrapped instanceof ServerRequestInterface) {
+                    throw new \LogicException('withBody must preserve the request type.');
+                }
+                $request = $rewrapped;
+
+                return $buffered;
+            };
         }
 
         $verdict = $this->gate->evaluate($this->gateRequest($request, $bodyProvider));

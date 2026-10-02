@@ -179,6 +179,21 @@ final class OpenApiGateMiddlewareTest extends TestCase
         self::assertSame($body, (string) $stream);
     }
 
+    public function testNonSeekableBodyIsNotConsumedForAnOperationWithoutRequestBody(): void
+    {
+        $body = 'streamed bytes must reach the handler untouched';
+        $handler = new RecordingHandler(new HttpTextResponse(200, [], 'ok'));
+        $middleware = new OpenApiGateMiddleware($this->middlewareSpec());
+        $middleware->process(
+            $this->request('GET', '/ping', body: new NonSeekableBodyStream($body)),
+            $handler,
+        );
+
+        self::assertNotNull($handler->seen);
+        self::assertFalse($handler->seen->getBody()->isSeekable());
+        self::assertSame($body, (string) $handler->seen->getBody());
+    }
+
     public function testForRoutesBuildsTheGateFromTheRouteTable(): void
     {
         $router = new Router();
