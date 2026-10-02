@@ -119,7 +119,7 @@ final class ContainerLifetimeCaptureGuardTest extends TestCase
         $container->validateAndFreeze();
 
         $outer = $container->get('svc.outer');
-        \assert($outer instanceof \stdClass);
+        assert($outer instanceof \stdClass);
         self::assertInstanceOf(\stdClass::class, $outer->inner);
         self::assertSame($outer, $container->get('svc.outer'), 'singleton caching is untouched');
     }
@@ -135,7 +135,7 @@ final class ContainerLifetimeCaptureGuardTest extends TestCase
         $scope = $container->createRequestScope();
         $first = $scope->get('action.handler');
         $second = $scope->get('action.handler');
-        \assert($first instanceof \stdClass);
+        assert($first instanceof \stdClass);
         self::assertNotSame($first, $second, 'transient stays transient');
         self::assertSame($scope->get('req.ctx'), $first->ctx, 'request-scoped dep is shared within the scope');
     }

@@ -108,7 +108,7 @@ final class ContainerServiceMiddlewareTest extends TestCase
         $container = new Container();
         $container->addServiceMiddleware(static function (string $id, \Closure $next): \stdClass {
             $inner = $next();
-            \assert($inner instanceof \stdClass);
+            assert($inner instanceof \stdClass);
             $inner->marked = true;
 
             return $inner;
@@ -117,7 +117,7 @@ final class ContainerServiceMiddlewareTest extends TestCase
         $container->validateAndFreeze();
 
         $marked = $container->get('svc.marked');
-        \assert($marked instanceof \stdClass);
+        assert($marked instanceof \stdClass);
         self::assertTrue($marked->marked);
     }
 
@@ -248,7 +248,7 @@ final class ContainerServiceMiddlewareTest extends TestCase
         $container->validateAndFreeze();
 
         $outer = $container->get('svc.outer');
-        \assert($outer instanceof \stdClass);
+        assert($outer instanceof \stdClass);
         self::assertSame($outer->inner, $container->get('dep.inner'));
         self::assertSame(0, $container->serviceMiddlewareCount());
     }
