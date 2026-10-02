@@ -72,6 +72,8 @@ final class RouteRadixIndex
         foreach ($parts as $part) {
             $frontier = $this->advance($frontier, $part, $applyConstraints, $constraints);
             if ($frontier === []) {
+                // @infection-ignore-all ReturnRemoval — ekuivalen: frontier kosong membuat loop berikutnya tidak
+                // berjalan; hasil akhir tetap []
                 return [];
             }
         }
@@ -105,6 +107,8 @@ final class RouteRadixIndex
                 ) {
                     continue;
                 }
+                // @infection-ignore-all TrueValue — ekuivalen: $next hanya dibaca lewat array_keys(); nilai tidak
+                // relevan
                 $next[$dynamicChild] = true;
             }
         }
@@ -126,6 +130,8 @@ final class RouteRadixIndex
             }
         }
         if ($candidates === []) {
+            // @infection-ignore-all ReturnRemoval — ekuivalen: $candidates kosong menghasilkan
+            // array_map(array_keys([])) = [] yang identik
             return [];
         }
         $candidates = array_map(intval(...), array_keys($candidates));

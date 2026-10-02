@@ -75,6 +75,8 @@ final class RoutePatternParser
     public static function splitPath(string $path): array
     {
         if ($path === '/') {
+            // @infection-ignore-all ReturnRemoval — ekuivalen: path '/' menghasilkan explode('', '') = [''] yang
+            // difilter menjadi []
             return [];
         }
         $parts = explode('/', trim($path, '/'));
@@ -171,6 +173,7 @@ final class RoutePatternParser
             if ($segment['value'] !== $value) {
                 $matched = false;
 
+                // @infection-ignore-all Break_ — ekuivalen: $matched sudah false; iterasi lanjutan tidak mengubah hasil
                 break;
             }
         }
