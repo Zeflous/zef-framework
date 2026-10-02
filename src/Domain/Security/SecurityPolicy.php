@@ -86,6 +86,11 @@ final readonly class SecurityPolicy
                 'ZEF_SECURITY_CSRF=1 requires ZEF_SECURITY_CSRF_SECRET (>= 32 bytes).'
             );
         }
+        if ($csrfEnabled && $csrfSecret === '' && self::isProduction($env)) {
+            throw new SecurityPolicyException(
+                'ZEF_SECURITY_CSRF_SECRET must be set (>= 32 bytes) when CSRF is enabled in production.'
+            );
+        }
         if ($csrfEnabled && $csrfSecret === '') {
             $csrfEnabled = false;
             $msg = sprintf(
@@ -122,6 +127,16 @@ final readonly class SecurityPolicy
             csrfTokenTtlSeconds: self::envNonNegativeInt('ZEF_SECURITY_CSRF_TTL', 0, $env),
             csrfSpaMode: self::envBool($env, 'ZEF_SECURITY_CSRF_SPA', false, $logger),
         );
+    }
+
+    /**
+     * ZEF_ENV is already the runtime's production guard convention (CLI and
+     * maker). Keep development ergonomic, but never silently disable a
+     * browser-facing control in production because a secret was omitted.
+     */
+    private static function isProduction(EnvInterface $env): bool
+    {
+        return in_array(strtolower(trim($env->readString('ZEF_ENV'))), ['production', 'prod'], true);
     }
 
     private function assertRateLimitBounds(int $maxRequests, int $windowSeconds, int $maxKeys): void

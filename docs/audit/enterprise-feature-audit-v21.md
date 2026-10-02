@@ -26,7 +26,7 @@ payload regression tests.
 |---|---|---|---|
 | Configuration | Source aggregation, schema validation, typed accessor, secrets ports, compiled config, metrics and cache are present. | Secret-provider availability and compiled-config freshness are deployment controls; no hosted secret-manager adapter is delivered. A stale secret/config can cause unsafe runtime policy. | P1: document deployment ownership; add Vault/KMS adapters only when an operational target is selected. |
 | Router | Radix matching, constraints/ReDoS guard, 405, cache, host, locale, binding, content negotiation and route middleware execution are present. | No GraphQL/WebSocket/gRPC transport adapter. These are separate ingress planes, not a router bug. | P2: roadmap-managed; define protocol/auth/backpressure contracts before implementation. |
-| Security | Auth/authz ports, rate limits, replay, CSRF, CORS, trusted host/proxy, headers, body limits, client-IP resolution, AES-GCM and rotation exist. | OAuth2/SAML/WebAuthn, ABAC/RLS, malware scanning and privacy-retention controls remain planned. Missing controls can make regulated or federated deployments non-compliant. | P0 for deployments requiring federation/regulatory scope: do not claim support; use a vetted identity provider at the edge. |
+| Security | Auth/authz ports, rate limits, replay, CSRF, CORS, trusted host/proxy, headers, body limits, client-IP resolution, AES-GCM and rotation exist. | OAuth2/SAML/WebAuthn, ABAC/RLS, malware scanning and privacy-retention controls remain planned. Missing controls can make regulated or federated deployments non-compliant. | P0 fixed: production now refuses a missing enabled-CSRF secret; use a vetted identity provider at the edge for federation. |
 | CQRS & event-driven | Command/query buses, idempotency, event store, snapshots, projections, outbox and retry primitives are present. | Broker adapters, saga orchestration, event migration/version tooling and exactly-once/order guarantees are not delivered. The prior recursive serializer was a worker-availability DoS; **fixed**. | P0 fixed; P1: use outbox + idempotent consumers and explicitly document at-least-once semantics. |
 | Observability | Trace context, spans, OTLP, metrics, structured logging/redaction, Prometheus and health endpoints exist. | No APM vendor adapters, sampling/baggage, slow-query/N+1 tooling, alerting or incident integrations. This raises MTTR under high traffic. | P1: set SLOs, alert rules and trace sampling policy outside the library before production scale-out. |
 | Database | Query builder, migration locking/rollback, nested transactions/savepoints, repositories and UoW hooks are present. | Multi-connection, replica routing, pooling, sharding, ORM/specification/identity map and batch operations remain planned. Single-connection assumptions become an availability bottleneck. | P1: introduce a connection-selection port with read-consistency policy; do not add transparent splitting without transaction pinning. |
@@ -49,6 +49,14 @@ single very wide input from first allocating an enormous work queue.
 
 **Tests:** deep payload retains the `JsonException` contract; cyclic and wide
 payloads fail deterministically with `InvalidArgumentException`.
+
+### Finding: production CSRF secret omission — **P0 security**
+
+An omitted `ZEF_SECURITY_CSRF_SECRET` previously downgraded enabled CSRF to a
+warning-only disabled policy. Production (`ZEF_ENV=production` or `prod`) now
+fails boot unless CSRF is explicitly disabled or supplied a valid secret. This
+preserves local-development ergonomics while making production configuration
+fail secure. Regression tests pin both the refusal and explicit API-only opt-out.
 
 ## Compliance and governance assessment
 
