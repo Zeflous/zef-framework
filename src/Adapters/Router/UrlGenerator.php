@@ -78,6 +78,7 @@ final readonly class UrlGenerator
         foreach ($this->router->exportRoutes()['routes'] as $record) {
             if (($record['name'] ?? null) === $name) {
                 $host = is_string($record['host'] ?? null) ? $record['host'] : '';
+
                 break;
             }
         }

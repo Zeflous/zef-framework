@@ -107,11 +107,8 @@ final class ContentNegotiator
         $slash = explode('/', $media, 2);
         $type = trim($slash[0]);
         $subtype = trim($slash[1] ?? '');
-        if (!str_contains($media, '/') || $type === '' || $subtype === '') {
-            return null;
-        }
         $q = self::quality($segments);
-        if ($q <= 0.0) {
+        if (!str_contains($media, '/') || $type === '' || $subtype === '' || $q <= 0.0) {
             return null;
         }
 

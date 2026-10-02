@@ -93,8 +93,7 @@ final readonly class RouteMatcher
         bool $frozen,
         ?string $fallbackHandler,
         string $host = '',
-    ): array
-    {
+    ): array {
         try {
             $hit = $this->match($method, $path, $frozen, $host);
             $hit['fallback'] = false;

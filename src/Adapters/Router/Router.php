@@ -159,6 +159,7 @@ final class Router
         $negotiator = new LocaleNegotiator($supported);
         if (!in_array($locale, $negotiator->supportedLocales(), true)) {
             $set = implode(', ', $negotiator->supportedLocales());
+
             throw new \InvalidArgumentException("Locale '{$locale}' is not a supported locale [{$set}].");
         }
         $this->group(['prefix' => '/' . $locale], $routes);
@@ -227,7 +228,9 @@ final class Router
      */
     public function match(string $method, string $path, string $host = ''): array
     {
-        return new RouteMatcher($this->collection, $this->constraints, $this->radix)->match($method, $path, $this->frozen, $host);
+        $matcher = new RouteMatcher($this->collection, $this->constraints, $this->radix);
+
+        return $matcher->match($method, $path, $this->frozen, $host);
     }
 
     // ---------------------------------------------------------------------
@@ -261,7 +264,9 @@ final class Router
      */
     public function matchOrFallback(string $method, string $path, string $host = ''): array
     {
-        return new RouteMatcher($this->collection, $this->constraints, $this->radix)->matchOrFallback($method, $path, $this->frozen, $this->fallbackHandler, $host);
+        $matcher = new RouteMatcher($this->collection, $this->constraints, $this->radix);
+
+        return $matcher->matchOrFallback($method, $path, $this->frozen, $this->fallbackHandler, $host);
     }
 
     /**

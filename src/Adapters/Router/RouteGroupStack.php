@@ -242,16 +242,13 @@ final class RouteGroupStack
      */
     private function mergeHost(string $parentHost, string $childHost): string
     {
-        if ($childHost === '') {
+        if ($childHost === '' || $childHost === $parentHost) {
             return $parentHost;
         }
         if ($parentHost === '') {
             $this->lockHost($childHost);
 
             return $childHost;
-        }
-        if ($childHost === $parentHost) {
-            return $parentHost;
         }
         if (!$this->isHostSuffix($childHost, $parentHost)) {
             throw new \InvalidArgumentException(
