@@ -29,6 +29,14 @@ use Zef\Framework\Foundation\ZefVersion;
  * window exists) and carries a header reminding operators to keep it out of
  * version control. The recommended target is `var/cache/config.php`, which
  * ships in `.gitignore`.
+ *
+ * INTEGRITY ENVELOPE (issue #355 C-5): the file no longer returns the raw
+ * value tree but a stamped envelope — framework `version`, SHA-256
+ * `fingerprint` of the value tree, and the `values` themselves (mirrors
+ * {@see RadixTreeCache}). {@see CompiledConfigSource} verifies both stamps at
+ * load: a file compiled by a different framework version or one whose
+ * contents were edited/corrupted/truncated is refused instead of silently
+ * served — recompile with this class to refresh.
  */
 final readonly class ConfigCompiler
 {
@@ -61,10 +69,20 @@ final readonly class ConfigCompiler
                 "Config value at '{$unexportable}' cannot be compiled (only scalars, nulls and arrays are exportable)."
             );
         }
+        // Issue #355 (C-5): stamped envelope — see the class docblock. The
+        // fingerprint is content-derived (SHA-256 over the serialized tree,
+        // same scheme as RadixTreeCache), so hand edits, corruption and
+        // truncation are detected at load; the version stamp catches files
+        // left behind by a different framework build.
+        $payload = [
+            'version' => ZefVersion::VERSION,
+            'fingerprint' => $this->fingerprint($values),
+            'values' => $values,
+        ];
         $code = "<?php\n\ndeclare(strict_types=1);\n\n/* Compiled application configuration (ZEF Framework v"
             . ZefVersion::VERSION
             . "). Do not edit. Contains resolved secrets — keep out of version control, chmod 600. */\n\nreturn "
-            . var_export($values, true)
+            . var_export($payload, true)
             . ";\n";
         $tmp = $directory . '/.' . $basename . '.' . bin2hex(random_bytes(6)) . '.tmp';
         // Create the temp file at 0600 BEFORE any secret-bearing bytes are
@@ -117,6 +135,17 @@ final readonly class ConfigCompiler
 
             throw new InvalidConfigurationException("Failed to publish compiled config '{$targetFile}'.");
         }
+    }
+
+    /**
+     * Content fingerprint of the value tree: SHA-256 over the serialized
+     * values, the same scheme as {@see RadixTreeCache::fingerprint()}.
+     *
+     * @param array<array-key,mixed> $values
+     */
+    private function fingerprint(array $values): string
+    {
+        return hash('sha256', serialize($values));
     }
 
     /**

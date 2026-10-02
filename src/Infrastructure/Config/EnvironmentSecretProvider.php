@@ -10,6 +10,16 @@ declare(strict_types=1);
 
 namespace Zef\Framework\Config;
 
+/**
+ * Environment-backed legacy secrets port: reads a secret from getenv().
+ *
+ * @deprecated since v2.36.0 (issue #355 C-6) — the legacy
+ *             {@see SecretProviderInterface} port is superseded by
+ *             {@see SecretsProviderInterface}. Wrap this provider in
+ *             {@see SecretProviderAdapter} to use it
+ *             through the canonical port (ConfigLoader, chains, resilience);
+ *             removal of the legacy port is scheduled for v3.0.
+ */
 final class EnvironmentSecretProvider implements SecretProviderInterface
 {
     #[\Override]

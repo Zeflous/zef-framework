@@ -46,7 +46,10 @@ final class TelemetryFactory
         ?EnvInterface $env = null,
     ): Telemetry {
         $env ??= new Env();
-        $enabled = $env->readBool('ZEF_OTEL_ENABLED', false);
+        // Issue #355 (C-4): strict fail-closed parsing (audit #304 grammar) —
+        // an unrecognized ZEF_OTEL_ENABLED spelling now refuses to boot
+        // instead of silently disabling telemetry.
+        $enabled = $env->readBoolStrict('ZEF_OTEL_ENABLED', false);
         $logger ??= new NullLogger();
         if (!$enabled) {
             return new Telemetry(

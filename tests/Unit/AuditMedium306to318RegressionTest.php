@@ -176,7 +176,10 @@ final class AuditMedium306to318RegressionTest extends TestCase
     public function testCompiledConfigSourceLoadIsRepeatable(): void
     {
         $path = $this->workspace . '/compiled.php';
-        file_put_contents($path, '<?php return ["a" => 1];');
+        // Issue #355 (C-5): load() now verifies the compiler's integrity
+        // envelope, so the fixture is produced by ConfigCompiler instead of a
+        // hand-written plain array.
+        new ConfigCompiler()->export(new Config(['a' => 1]), $path);
         $source = new CompiledConfigSource($path);
         self::assertSame(['a' => 1], $source->load());
         self::assertSame(['a' => 1], $source->load(), 'A second load() must return the array, not the require_once `true`.');
