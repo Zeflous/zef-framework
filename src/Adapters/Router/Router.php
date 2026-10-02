@@ -103,6 +103,29 @@ final class Router
         $host = $applied['host'];
         $segments = RoutePatternParser::parsePattern($pattern);
         RoutePatternParser::assertUniqueParams($segments, $this->constraints);
+        // v2.36.0 (re-audit fix): a host wildcard (`{tenant}`) and a path
+        // parameter of the SAME name would collide when the captured host
+        // value is merged into the match parameters. Detect it HERE, at
+        // registration, so a mis-configured subdomain route fails the
+        // build instead of throwing an InvalidArgumentException during a
+        // later request (which is neither a 404/405/400 the kernel maps,
+        // nor caught by the pipeline, so it would surface as a raw 500).
+        if ($host !== '') {
+            $pathParams = [];
+            foreach ($segments as $segment) {
+                if ($segment['dynamic']) {
+                    $pathParams[$segment['name']] = true;
+                }
+            }
+            foreach (HostPatternMatches::wildcardNames($host) as $hostParam) {
+                if (isset($pathParams[$hostParam])) {
+                    throw new \InvalidArgumentException(
+                        "Route host wildcard '{$hostParam}' collides with a path parameter of the same name "
+                        . "on [{$method}] {$pattern} ({$host}).",
+                    );
+                }
+            }
+        }
 
         // v2.10.0: apply group attributes. The innermost group already
         // carries the merged parent attributes — take the top only.
@@ -146,11 +169,15 @@ final class Router
 
     /**
      * v2.36.0 (roadmap: "Localization routing (/{locale}/...)"): registers
-     * routes under a fixed locale prefix, exactly like group(['prefix' =>
-     * '/{locale}']) but with the locale validated against the negotiator's
-     * supported set (a plain `{locale}` path parameter would silently
-     * capture any word). The locale string is also recorded as a route
-     * parameter so it is present in the match result for handlers.
+     * routes under a fixed locale prefix. The locale is validated against
+     * the negotiator's supported set and then folded into the prefix as a
+     * LITERAL segment (e.g. '/en/about'), so it can never be silently
+     * captured as a wildcard: an unsupported locale such as '/fr/about'
+     * is a plain 404. It is deliberately NOT registered as a dynamic
+     * `{locale}` path parameter — the matched locale is read from the
+     * route pattern (via LocaleNegotiator on the request path), not from
+     * the match parameters (re-audit v21: the previous docblock falsely
+     * promised a `locale` parameter that was never emitted).
      *
      * @param list<string> $supported supported locale tags, e.g. ['en','id']
      */
