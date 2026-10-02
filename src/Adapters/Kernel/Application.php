@@ -138,15 +138,12 @@ final class Application
         $filtered = array_values(
             array_filter(array_map(strval(...), $hosts), static fn (string $v): bool => $v !== '')
         );
-        // Audit #331: entries were provided but every one trimmed to nothing
-        // (e.g. ZEF_TRUSTED_HOSTS=" , , " exploded and trimmed). Silently
-        // disabling host-header pinning from an INTENDED configuration is a
-        // misconfiguration — refuse loudly. Passing a literal [] remains the
-        // documented no-pinning default.
+        // Audit #331: every provided entry trimmed to nothing (e.g. a
+        // ZEF_TRUSTED_HOSTS=" , , " explode). Silently disabling pinning from
+        // an INTENDED configuration is a misconfiguration — refuse; [] stays default.
         if ($filtered === [] && $hosts !== []) {
             throw new \InvalidArgumentException(
-                'setTrustedHosts(): every provided entry is empty — refusing to silently disable '
-                . 'host-header pinning (pass [] explicitly for the no-pinning default).',
+                'setTrustedHosts(): every provided entry is empty — refusing to silently disable host-header pinning.',
             );
         }
         $this->trustedHosts = $filtered;
