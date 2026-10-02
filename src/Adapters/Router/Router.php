@@ -119,10 +119,13 @@ final class Router
             }
             foreach (HostPatternMatches::wildcardNames($host) as $hostParam) {
                 if (isset($pathParams[$hostParam])) {
-                    throw new \InvalidArgumentException(
-                        "Route host wildcard '{$hostParam}' collides with a path parameter of the same name "
-                        . "on [{$method}] {$pattern} ({$host}).",
-                    );
+                    throw new \InvalidArgumentException(sprintf(
+                        "Route host wildcard '%s' collides with a path parameter of the same name on [%s] %s (%s).",
+                        $hostParam,
+                        $method,
+                        $pattern,
+                        $host,
+                    ));
                 }
             }
         }
