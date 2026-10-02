@@ -431,11 +431,11 @@ Runtime worker persisten berbeda mendasar dari PHP-FPM: proses hidup lama, sehin
 | `ZEF_MAX_BODY_BYTES` | bawaan framework | Batas ukuran request body (`413` bila lebih) |
 | `ZEF_TRUSTED_HOSTS` | `localhost,127.0.0.1,::1,zef.test` | Daftar host tepercaya (CSV) |
 | `ZEF_SECURITY_CSRF_SECRET` | — | Secret CSRF ≥ 32 byte; mengaktifkan CSRF |
-| `ZEF_SECURITY_CSRF_TOKEN_BYTES` · `_COOKIE` · `_HEADER` · `_SAMESITE` · `_SECURE` · `_HTTP_ONLY` | — | Penyetelan CSRF |
+| `ZEF_SECURITY_CSRF_TOKEN_BYTES` · `_COOKIE` · `_HEADER` · `_SAMESITE` · `_SECURE` · `_HTTP_ONLY` · `_TTL` | — | Penyetelan CSRF (`_TTL` dalam detik; `0` = tanpa kedaluwarsa) |
 | `ZEF_SECURITY_ORIGIN_POLICY` · `ZEF_SECURITY_ALLOWED_ORIGINS` | — | Kontrol origin |
 | `ZEF_SECURITY_RATE_LIMIT` · `_MAX` · `_WINDOW` · `_MAX_KEYS` · `_DISTRIBUTED_RATE_LIMIT` | — | Rate limiting global (SecurityRuntimeMiddleware) |
 | `ZEF_SECURITY_RATE_LIMIT_TIERS` | — (nonaktif) | Daftar JSON tier `RateLimitMiddleware` (lihat CHANGELOG v2.25.0) |
-| `ZEF_SECURITY_RATE_LIMIT_ALGORITHM` | `sliding` | Algoritma tier: `sliding` atau `token` |
+| `ZEF_SECURITY_RATE_LIMIT_ALGORITHM` | `sliding` | Algoritma tier: `sliding`, `token`, atau `fixed` |
 | `ZEF_SECURITY_RATE_LIMIT_FAIL_OPEN` | `false` | Lanjut tanpa kuota saat penyimpanan gagal (fail-open) |
 | `ZEF_SECURITY_HSTS` · `ZEF_SECURITY_CSP` | — | Header keamanan respons |
 | `ZEF_WORKER_MAX_JOBS` | `0` (tanpa batas) | Kapasitas job per worker sebelum daur ulang |
