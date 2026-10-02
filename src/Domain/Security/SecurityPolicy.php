@@ -114,7 +114,12 @@ final readonly class SecurityPolicy
             allowedOrigins: $env->readCsv('ZEF_SECURITY_ALLOWED_ORIGINS'),
             originEnabled: self::envBool($env, 'ZEF_SECURITY_ORIGIN_POLICY', false, $logger),
             csrfTokenBytes: max(16, self::envPositiveInt('ZEF_SECURITY_CSRF_TOKEN_BYTES', 32, $env)),
-            csrfTokenTtlSeconds: self::envPositiveInt('ZEF_SECURITY_CSRF_TTL', 0, $env),
+            // Audit #320: 0 is a VALUE here, not "unset" — the cookie-policy
+            // and token-manager contracts both document 0 = no expiry.
+            // envPositiveInt clamps an explicit '0' to 1, which flipped
+            // "no expiry" into a 1-second TTL (every unsafe request 403s
+            // a second after issue) — parse digits as-is instead.
+            csrfTokenTtlSeconds: self::envNonNegativeInt('ZEF_SECURITY_CSRF_TTL', 0, $env),
             csrfSpaMode: self::envBool($env, 'ZEF_SECURITY_CSRF_SPA', false, $logger),
         );
     }
@@ -268,5 +273,22 @@ final readonly class SecurityPolicy
         }
 
         return max(1, (int) $raw);
+    }
+
+    /**
+     * Audit #320: the CSRF TTL is the one security integer whose 0 is a
+     * meaningful value (0 = no expiry, per assertCsrfCookiePolicy and
+     * CsrfTokenManager). ctype_digit only matches unsigned digit strings,
+     * so the cast below can never go negative; unlike envPositiveInt it
+     * must NOT clamp an explicit '0' up to 1.
+     */
+    private static function envNonNegativeInt(string $name, int $default, EnvInterface $env): int
+    {
+        $raw = trim($env->readString($name));
+        if ($raw === '' || !ctype_digit($raw)) {
+            return $default;
+        }
+
+        return (int) $raw;
     }
 }

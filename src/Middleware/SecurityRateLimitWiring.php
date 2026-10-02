@@ -57,9 +57,16 @@ final class SecurityRateLimitWiring
         $algorithm = RateLimitAlgorithm::fromString(
             $env->readString('ZEF_SECURITY_RATE_LIMIT_ALGORITHM', 'sliding'),
         );
-        $limiter = $algorithm === RateLimitAlgorithm::TokenBucket
-            ? new TokenBucketRateLimiter(new HrTimeClock())
-            : new SlidingWindowRateLimiter(new HrTimeClock());
+        // Audit #319: an exhaustive match (no default arm) so every enum
+        // case maps to its own implementation. The old TokenBucket-vs-rest
+        // ternary accepted 'fixed' but silently ran the sliding-window
+        // limiter — a config lie, and a future fourth algorithm would have
+        // fallen into it too. UnhandledMatchError is the fail-fast we want.
+        $limiter = match ($algorithm) {
+            RateLimitAlgorithm::TokenBucket => new TokenBucketRateLimiter(new HrTimeClock()),
+            RateLimitAlgorithm::FixedWindow => new InMemoryRateLimiter(),
+            RateLimitAlgorithm::SlidingWindow => new SlidingWindowRateLimiter(new HrTimeClock()),
+        };
 
         return new RateLimitMiddleware(
             new TieredRateLimiter($limiter),
