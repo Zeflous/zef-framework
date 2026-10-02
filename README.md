@@ -18,7 +18,7 @@
   <img src="https://img.shields.io/badge/Mutation%20gate-MSI%20%E2%89%A5%2085-f59e0b?style=for-the-badge" alt="Mutation gate MSI 85">
   <br>
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="MIT">
-  <img src="https://img.shields.io/badge/Rilis%20terdokumentasi-v2.34.1-0ea5e9?style=for-the-badge" alt="v2.34.1">
+  <img src="https://img.shields.io/badge/Rilis%20terdokumentasi-v2.35.0-0ea5e9?style=for-the-badge" alt="v2.35.0">
 
 </div>
 
@@ -35,11 +35,11 @@
   <a href="https://github.com/Zeflous/zef-framework/actions/workflows/phpbench.yml"><img src="https://github.com/Zeflous/zef-framework/actions/workflows/phpbench.yml/badge.svg" alt="PHPBench"></a>
   <!-- Mutation & Release dipicu tag rilis, bukan push ke main. Tanpa ?branch=, badge Mutation
        resolve ke run terakhir di main (2026-09-17, era trigger lama) yang gagal — tampak merah.
-       Param ?branch= dipasang ke run rilis terakhir (v2.34.1); perbarui saat sinkronisasi README tiap rilis. -->
-  <a href="https://github.com/Zeflous/zef-framework/actions/workflows/mutation.yml"><img src="https://github.com/Zeflous/zef-framework/actions/workflows/mutation.yml/badge.svg?branch=v2.34.1" alt="Mutation (v2.34.1)"></a>
+       Param ?branch= dipasang ke run rilis terakhir (v2.35.0); perbarui saat sinkronisasi README tiap rilis. -->
+  <a href="https://github.com/Zeflous/zef-framework/actions/workflows/mutation.yml"><img src="https://github.com/Zeflous/zef-framework/actions/workflows/mutation.yml/badge.svg?branch=v2.35.0" alt="Mutation (v2.35.0)"></a>
   <a href="https://github.com/Zeflous/zef-framework/actions/workflows/sbom.yml"><img src="https://github.com/Zeflous/zef-framework/actions/workflows/sbom.yml/badge.svg" alt="SBOM"></a>
   <a href="https://github.com/Zeflous/zef-framework/actions/workflows/pages.yml"><img src="https://github.com/Zeflous/zef-framework/actions/workflows/pages.yml/badge.svg" alt="Docs &amp; Pages"></a>
-  <a href="https://github.com/Zeflous/zef-framework/actions/workflows/release.yml"><img src="https://github.com/Zeflous/zef-framework/actions/workflows/release.yml/badge.svg?branch=v2.34.1" alt="Release (v2.34.1)"></a>
+  <a href="https://github.com/Zeflous/zef-framework/actions/workflows/release.yml"><img src="https://github.com/Zeflous/zef-framework/actions/workflows/release.yml/badge.svg?branch=v2.35.0" alt="Release (v2.35.0)"></a>
   <a href="https://github.com/Zeflous/zef-framework/actions/workflows/release-drafter.yml"><img src="https://github.com/Zeflous/zef-framework/actions/workflows/release-drafter.yml/badge.svg" alt="Release Drafter"></a>
   <a href="https://github.com/Zeflous/zef-framework/actions/workflows/auto-fix.yml"><img src="https://github.com/Zeflous/zef-framework/actions/workflows/auto-fix.yml/badge.svg" alt="Auto Fix"></a>
   <a href="https://github.com/Zeflous/zef-framework/actions/workflows/composer-lock.yml"><img src="https://github.com/Zeflous/zef-framework/actions/workflows/composer-lock.yml/badge.svg" alt="Composer Lock"></a>
@@ -137,7 +137,7 @@ Banyak framework PHP tumbuh dari kenyamanan. ZEF tumbuh dari pembongkaran: satu 
 </table>
 
 <details>
-<summary><b>Riwayat rilis selengkapnya (v2.8.0 → v2.34.1)</b> — 41 berkas CHANGELOG · 28 entri ringkas</summary>
+<summary><b>Riwayat rilis selengkapnya (v2.8.0 → v2.35.0)</b> — 42 berkas CHANGELOG · 29 entri ringkas</summary>
 
 <br>
 
@@ -172,9 +172,10 @@ Setiap rilis bersifat **aditif**: perilaku lama tidak diubah.
 | **v2.32.0** | **Unified Queue & Broker**: driver antrean durable `RedisStreamJobQueue` di atas Redis Streams (klaim atomik single-Lua XRANGE→XDEL+SREM tanpa XREADGROUP/pending-entry, ordering paritas PDO `priority DESC/available_at ASC/seq ASC`, dedupe SET padanan `UNIQUE(job_id)`, nano zero-padded 20-digit anti Lua-double), CLI terpadu `queue:work`/`queue:failed`/`queue:retry`/`queue:flush` (SIGTERM drain antar-job, memory guard exit 2), zona mutasi `infra-job-redis` MSI 98.35 — nol paket runtime baru |
 | **v2.33.0** | **OpenAPI Runtime Gate**: PSR-15 `OpenApiGateMiddleware` menegakkan kontrak dokumen OpenAPI 3.1 per-request (matriks paritas 12 batas dikommit sebelum implementasi; precedensi 405→401/403→415→400; rejection RFC 9457 problem+json + `Allow`; security dari identitas terverifikasi `zef.auth.identity` + bukti kehadiran; boot fail-closed reuse `OpenApiSpecValidator`/`OpenApiSecurityValidator`; `forRoutes()` — dokumen yang ditegakkan = yang di-serve), `OpenApiSchemaChecker` subset JSON-Schema persis `Schema::toArray()`, fix `release.yml` create-release idempotent, zona mutasi `openapi-gate` MSI 95.39/1064 — nol paket runtime baru |
 | **v2.34.0** | **Stub Pre-scan CI**: pre-scan korpus fixture `tests/` (matriks paritas 12 dimensi INCLUDED/EXCLUDED dikommit sebelum implementasi) — project SonarCloud terkarantina `zeflous_zef-framework-stubs` di-scan scope ter-pin positif dengan gate zero-tolerance bugs/vulnerabilities/hotspots (baseline terukur nol; kondisi overall tanpa dependensi new-code period; provisioning idempotent fail-closed di dalam workflow), ratchet jumlah fixture `tests/fixtures.limit` fail-closed dua arah + assert ukuran `files` SonarCloud, keluarga correctness Semgrep masuk 4 lane php-sast dari tarball ter-pin yang sama (0/652 + 0/190 terukur), fix `release.yml` publish draft blind-spot (v2.32.0+v2.33.0), required checks 11→12, indirection kredensial curl anti-FP gitleaks — nol paket baru, nol kode produk berubah |
+| **v2.35.0** | **Kampanye Remediasi Audit Penuh + Keselamatan Container**: 47 issue ditutup (5 audit runtime #278–#282 · 36 deep logic audit #300–#335 · 5 re-audit container #343–#347) + 36 mutan ekuivalen terdokumentasi (#299); fitur container runtime: service middleware/interceptors onion ber-priority + implicit lifetime-capture guard fail-fast (`SingletonSubtreeTracker` per-fiber, round-2 #343–#347 menutup celah fallback/root-pull); SonarCloud efektif sebagai required check; refresh menyeluruh dokumen stale (#337); +205 test (3539 → 3744) · kelas 1146 → 1147 |
 | **v2.34.1** | **Paritas Available-at Bertanda**: fix `RedisStreamJobQueue::padNano()` — deadline negatif tak ber-pad membalik urutan antrean & verdict ketersediaan di pembandingan leksikografis Lua (issue #272; matriks paritas 12 batas dikommit sebelum fix) — encoding order-preserving 9's complement: byte non-negatif identik dengan v2.32–v2.34 (**nol migrasi**), negatif = `'-'` + 19 digit komplemen, `PHP_INT_MIN` round-trip eksak; doktrin corrupt-entry liveness-over-preservation; +32 test / +74.090 aseri paritas 3 adapter |
 
-Rincian per rilis: [`docs/CHANGELOG-v2.34.1.md`](docs/CHANGELOG-v2.34.1.md), [`v2.34.0.md`](docs/CHANGELOG-v2.34.0.md), [`v2.33.0.md`](docs/CHANGELOG-v2.33.0.md), [`v2.32.0.md`](docs/CHANGELOG-v2.32.0.md), [`v2.31.0.md`](docs/CHANGELOG-v2.31.0.md), [`v2.30.0.md`](docs/CHANGELOG-v2.30.0.md), [`v2.29.0.md`](docs/CHANGELOG-v2.29.0.md), [`v2.28.0.md`](docs/CHANGELOG-v2.28.0.md), [`v2.27.0.md`](docs/CHANGELOG-v2.27.0.md), [`v2.26.0.md`](docs/CHANGELOG-v2.26.0.md), [`v2.25.0.md`](docs/CHANGELOG-v2.25.0.md), [`v2.23.0.md`](docs/CHANGELOG-v2.23.0.md), [`v2.22.0.md`](docs/CHANGELOG-v2.22.0.md), [`v2.21.1.md`](docs/CHANGELOG-v2.21.1.md), [`v2.21.0.md`](docs/CHANGELOG-v2.21.0.md), [`v2.19.0`](docs/CHANGELOG-v2.19.0.md), [`v2.18.0`](docs/CHANGELOG-v2.18.0.md), [`v2.17.0`](docs/CHANGELOG-v2.17.0.md), [`v2.16.0`](docs/CHANGELOG-v2.16.0.md), [`v2.15.0`](docs/CHANGELOG-v2.15.0.md), [`v2.14.0`](docs/CHANGELOG-v2.14.0.md) — atau seluruh berkas lainnya di [`docs/`](docs/README.md).
+Rincian per rilis: [`docs/CHANGELOG-v2.35.0.md`](docs/CHANGELOG-v2.35.0.md), [`v2.34.1.md`](docs/CHANGELOG-v2.34.1.md), [`v2.34.0.md`](docs/CHANGELOG-v2.34.0.md), [`v2.33.0.md`](docs/CHANGELOG-v2.33.0.md), [`v2.32.0.md`](docs/CHANGELOG-v2.32.0.md), [`v2.31.0.md`](docs/CHANGELOG-v2.31.0.md), [`v2.30.0.md`](docs/CHANGELOG-v2.30.0.md), [`v2.29.0.md`](docs/CHANGELOG-v2.29.0.md), [`v2.28.0.md`](docs/CHANGELOG-v2.28.0.md), [`v2.27.0.md`](docs/CHANGELOG-v2.27.0.md), [`v2.26.0.md`](docs/CHANGELOG-v2.26.0.md), [`v2.25.0.md`](docs/CHANGELOG-v2.25.0.md), [`v2.23.0.md`](docs/CHANGELOG-v2.23.0.md), [`v2.22.0.md`](docs/CHANGELOG-v2.22.0.md), [`v2.21.1.md`](docs/CHANGELOG-v2.21.1.md), [`v2.21.0.md`](docs/CHANGELOG-v2.21.0.md), [`v2.19.0`](docs/CHANGELOG-v2.19.0.md), [`v2.18.0`](docs/CHANGELOG-v2.18.0.md), [`v2.17.0`](docs/CHANGELOG-v2.17.0.md), [`v2.16.0`](docs/CHANGELOG-v2.16.0.md), [`v2.15.0`](docs/CHANGELOG-v2.15.0.md), [`v2.14.0`](docs/CHANGELOG-v2.14.0.md) — atau seluruh berkas lainnya di [`docs/`](docs/README.md).
 
 </details>
 

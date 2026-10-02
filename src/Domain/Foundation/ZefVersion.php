@@ -15,7 +15,7 @@ namespace Zef\Framework\Foundation;
  */
 final class ZefVersion
 {
-    public const string VERSION = '2.34.1';
+    public const string VERSION = '2.35.0';
 }
 
 /*
