@@ -49,6 +49,8 @@ final readonly class UrlGenerator
             $path[] = $this->segment($name, $part, $params, $consumed);
         }
         foreach (array_keys($params) as $extra) {
+            // @infection-ignore-all CastString — ekuivalen: kunci array $consumed selalu string; cast tidak mengubah
+            // hasil isset()
             if (!isset($consumed[(string) $extra])) {
                 throw new \InvalidArgumentException("Route '{$name}' does not accept parameter '{$extra}'.");
             }
@@ -80,6 +82,7 @@ final readonly class UrlGenerator
             // Mirrors Router::match() semantics: constraint violation throws.
             throw new RouteConstraintException($paramName, $constraint, $value);
         }
+        // @infection-ignore-all TrueValue — ekuivalen: $consumed hanya dibaca lewat isset(); nilai tidak relevan
         $consumed[$paramName] = true;
 
         return rawurlencode($value);
