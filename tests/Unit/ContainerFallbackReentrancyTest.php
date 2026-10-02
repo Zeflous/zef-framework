@@ -143,10 +143,10 @@ final class ContainerFallbackReentrancyTest extends TestCase
 
         // The registry is full, but this is a replacement rather than a 65th
         // prefix. It must remain configurable before the container freezes.
-        $container->registerNamespaceFallback('fb\\p0\\', static fn (): string => 'replacement');
+        $container->registerNamespaceFallback('fb\p0\\', static fn (): string => 'replacement');
         $container->validateAndFreeze();
 
-        self::assertSame('replacement', $container->get('fb\\p0\\service'));
+        self::assertSame('replacement', $container->get('fb\p0\service'));
     }
 
     /** A short-circuiting middleware may replace a fallback instance. */
