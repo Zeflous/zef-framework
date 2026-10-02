@@ -25,6 +25,13 @@ use Zef\Framework\Exception\ServiceResolutionException;
  * implicit-capture guard data) and the factory invocation is wrapped by
  * the service middleware pipeline (roadmap: service middleware/
  * interceptors) — resolving/resolved events remain the outer invariants.
+ *
+ * v2.36.0 (audit #343/#347): singleton constructions additionally open a
+ * container-wide SingletonSubtreeTracker entry (fiber-scoped) so root-
+ * container pulls cannot silently capture non-singletons; synthetic
+ * machinery ids ("@...", e.g. decorator "@inner:*") bypass the middleware
+ * onion; a null construction result names the actual culprit (middleware
+ * short-circuit vs factory return).
  */
 final readonly class ServiceInstantiator
 {
@@ -33,6 +40,7 @@ final readonly class ServiceInstantiator
         private RequestScopeStore $scopes,
         private InitializationGuard $initializationGuard,
         private ServiceMiddlewarePipeline $middleware = new ServiceMiddlewarePipeline(),
+        private SingletonSubtreeTracker $subtrees = new SingletonSubtreeTracker(),
     ) {}
 
     /**
@@ -80,22 +88,61 @@ final readonly class ServiceInstantiator
         ?RequestScope $scope,
     ): mixed {
         $ctx->push($canonical, $definition->lifetime);
+        $singleton = $definition->lifetime === ServiceLifetime::SINGLETON;
+        if ($singleton) {
+            $this->subtrees->enter($canonical);
+        }
 
         try {
             $this->fireResolvingListeners($canonical, $dependencies);
-            $instance = $this->middleware->hasMiddleware()
-                ? $this->runMiddleware($canonical, $ctx, $definition, $dependencies)
-                : $this->invokeFactory($canonical, $ctx, $definition, $dependencies);
+            $terminalRan = false;
+            $instance = $this->constructionPath($canonical, $ctx, $definition, $dependencies, $terminalRan);
             if ($instance === null) {
-                throw new ServiceResolutionException($canonical, 'factory returned null.');
+                throw new ServiceResolutionException($canonical, $terminalRan
+                    ? 'factory returned null.'
+                    : 'service middleware returned null without calling $next.');
             }
             $instance = $this->fireResolvedListeners($canonical, $instance);
             $this->cacheInstance($canonical, $definition, $scope, $instance);
 
             return $instance;
         } finally {
+            if ($singleton) {
+                $this->subtrees->exit($canonical);
+            }
             $ctx->pop($canonical, $definition->lifetime);
         }
+    }
+
+    /**
+     * Picks the construction path: synthetic machinery ids ("@..." —
+     * decorator/contextual plumbing) bypass the middleware onion, everything
+     * else runs through it when middleware is registered. $terminalRan is
+     * set when the guarded factory was actually reached (null diagnostics).
+     *
+     * @param list<string> $dependencies dependency ids of the canonical definition
+     */
+    private function constructionPath(
+        string $canonical,
+        ResolutionContext $ctx,
+        ServiceDefinition $definition,
+        array $dependencies,
+        bool &$terminalRan,
+    ): mixed {
+        if (!$this->middleware->hasMiddleware() || str_starts_with($canonical, '@')) {
+            $terminalRan = true;
+
+            return $this->invokeFactory($canonical, $ctx, $definition, $dependencies);
+        }
+
+        return $this->runMiddleware(
+            $canonical,
+            function () use (&$terminalRan, $canonical, $ctx, $definition, $dependencies): mixed {
+                $terminalRan = true;
+
+                return $this->invokeFactory($canonical, $ctx, $definition, $dependencies);
+            },
+        );
     }
 
     /**
@@ -126,20 +173,11 @@ final readonly class ServiceInstantiator
      * v2.35.0: middleware onion around the guarded factory invocation.
      * Exceptions from middleware are wrapped like listener failures;
      * ServiceResolutionException passes through unwrapped.
-     *
-     * @param list<string> $dependencies dependency ids of the canonical definition
      */
-    private function runMiddleware(
-        string $canonical,
-        ResolutionContext $ctx,
-        ServiceDefinition $definition,
-        array $dependencies,
-    ): mixed {
+    private function runMiddleware(string $canonical, \Closure $terminal): mixed
+    {
         try {
-            return $this->middleware->run(
-                $canonical,
-                fn (): mixed => $this->invokeFactory($canonical, $ctx, $definition, $dependencies),
-            );
+            return $this->middleware->run($canonical, $terminal);
         } catch (\Throwable $e) {
             if ($e instanceof ServiceResolutionException) {
                 throw $e;

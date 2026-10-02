@@ -24,6 +24,9 @@ final class ResolutionContext implements ContainerInterface
     /** @var list<string> stack of singleton ids currently being instantiated (innermost last) */
     private array $singletonStack = [];
 
+    /** v2.36.0: true when this context was created by resolveRoot() (fresh root-container pull). */
+    private bool $rootPull = false;
+
     public function __construct(
         private readonly ContainerResolver $resolver,
         private readonly ?RequestScope $scope,
@@ -74,6 +77,18 @@ final class ResolutionContext implements ContainerInterface
         ) {
             array_pop($this->singletonStack);
         }
+    }
+
+    /** Marks a context created by resolveRoot() so the container-wide capture guard can see it. */
+    public function markAsRootPull(): void
+    {
+        $this->rootPull = true;
+    }
+
+    /** True when this context is a fresh root-container pull (ContainerInterface::get()). */
+    public function isRootPull(): bool
+    {
+        return $this->rootPull;
     }
 
     /** True while a singleton instantiation subtree is open on this context. */

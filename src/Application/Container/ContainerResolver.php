@@ -36,6 +36,7 @@ final class ContainerResolver
         private readonly ?InitializationGuard $initializationGuard = null,
         int $resolutionDepthLimit = 256,
         private readonly ?ServiceMiddlewarePipeline $middleware = null,
+        private ?SingletonSubtreeTracker $subtrees = null,
     ) {
         $this->resolutionDepthLimit = max(1, $resolutionDepthLimit);
     }
@@ -79,6 +80,7 @@ final class ContainerResolver
             throw new \LogicException('Container resolver is not bound.');
         }
         $ctx = new ResolutionContext($this, null);
+        $ctx->markAsRootPull();
 
         try {
             return $ctx->get($id);
@@ -134,6 +136,14 @@ final class ContainerResolver
             );
         }
 
+        // v2.36.0 (audit #343): a root-container pull builds a FRESH context,
+        // so the per-context guard above cannot see it. Any non-singleton
+        // pulled through the root while a singleton construction is open on
+        // this fiber is the same silent-capture leak via a side channel.
+        if ($ctx->isRootPull()) {
+            $this->assertNoRootPullCapture($definition, $canonical);
+        }
+
         $hit = $this->activator()->cachedInstance($canonical, $definition, $scope);
         if ($hit[0]) {
             return $hit[1];
@@ -183,11 +193,47 @@ final class ContainerResolver
         throw new ServiceNotFoundException($id, is_string($module) ? $module : null);
     }
 
+    /**
+     * v2.36.0 (audit #343): root-container pulls during an open singleton
+     * construction must not resolve non-singletons — the instance would be
+     * captured by the singleton under construction (silent cross-request
+     * leak). Same contract as the per-context guard above, side channel
+     * closed. Singleton pulls stay legal (singleton -> singleton).
+     */
+    private function assertNoRootPullCapture(ServiceDefinition $definition, string $canonical): void
+    {
+        if ($definition->lifetime === ServiceLifetime::SINGLETON || !$this->subtrees()->isOpen()) {
+            return;
+        }
+        $owner = $this->subtrees()->current() ?? $canonical;
+
+        throw new ServiceResolutionException(
+            $canonical,
+            sprintf(
+                "implicit lifetime capture: singleton '%s' resolves %s service '%s' via the root container. %s",
+                $owner,
+                $definition->lifetime,
+                $canonical,
+                'Declare it as a singleton dependency, or resolve it within the construction scope.',
+            ),
+        );
+    }
+
     private function scopes(): RequestScopeStore
     {
         $this->scopeStore ??= new RequestScopeStore();
 
         return $this->scopeStore;
+    }
+
+    /** Lazily created tracker keeps zero-arg test constructions working. */
+    private function subtrees(): SingletonSubtreeTracker
+    {
+        if (!$this->subtrees instanceof SingletonSubtreeTracker) {
+            $this->subtrees = new SingletonSubtreeTracker();
+        }
+
+        return $this->subtrees;
     }
 
     private function activator(): ServiceInstantiator
@@ -197,6 +243,7 @@ final class ContainerResolver
             $this->scopes(),
             $this->initializationGuard ?? new FailFastInitializationGuard(),
             $this->middleware ?? new ServiceMiddlewarePipeline(),
+            $this->subtrees(),
         );
 
         return $this->activator;
