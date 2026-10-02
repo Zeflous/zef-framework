@@ -8,6 +8,9 @@ use PHPUnit\Framework\TestCase;
 use Zef\Framework\Message\JsonMessageSerializer;
 use Zef\Framework\Message\MessageEnvelope;
 
+/**
+ * @internal
+ */
 final class JsonMessageSerializerSafetyTest extends TestCase
 {
     public function testDeepPayloadIsRejectedByJsonDepthInsteadOfExhaustingPhpCallStack(): void
@@ -19,7 +22,7 @@ final class JsonMessageSerializerSafetyTest extends TestCase
 
         $this->expectException(\JsonException::class);
 
-        (new JsonMessageSerializer())->serialize(new MessageEnvelope('deep-message', 'audit.deep', $payload));
+        new JsonMessageSerializer()->serialize(new MessageEnvelope('deep-message', 'audit.deep', $payload));
     }
 
     public function testCyclicPayloadIsBoundedBeforeItCanLoopIndefinitely(): void
@@ -30,6 +33,16 @@ final class JsonMessageSerializerSafetyTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('safety limit');
 
-        (new JsonMessageSerializer())->serialize(new MessageEnvelope('cyclic-message', 'audit.cycle', $payload));
+        new JsonMessageSerializer()->serialize(new MessageEnvelope('cyclic-message', 'audit.cycle', $payload));
+    }
+
+    public function testExcessivelyWidePayloadIsRejectedBeforeGrowingValidationStack(): void
+    {
+        $payload = array_fill(0, 100_001, 'x');
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('safety limit');
+
+        new JsonMessageSerializer()->serialize(new MessageEnvelope('wide-message', 'audit.wide', $payload));
     }
 }

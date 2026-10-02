@@ -12,6 +12,14 @@ namespace Zef\Framework\Message;
 
 final class JsonMessageSerializer implements MessageSerializerInterface
 {
+    /**
+     * A serializer runs on an ingress boundary. Keep this deliberately below
+     * the 1 MiB wire limit so validation itself cannot become a memory DoS.
+     */
+    private const int MAX_PAYLOAD_NODES = 100_000;
+
+    private const int MAX_PAYLOAD_DEPTH = 1_024;
+
     #[\Override]
     public function serialize(MessageEnvelope $message): string
     {
@@ -77,7 +85,13 @@ final class JsonMessageSerializer implements MessageSerializerInterface
             if (!is_array($current)) {
                 continue;
             }
-            if ($depth >= 1_024 || ++$visited > 1_000_000) {
+            if ($depth >= self::MAX_PAYLOAD_DEPTH || ++$visited > self::MAX_PAYLOAD_NODES) {
+                throw new \InvalidArgumentException('Message payload structure exceeds the safety limit.');
+            }
+
+            // Check before growing the work queue. Counting only popped nodes
+            // would still permit one wide array to allocate an unbounded stack.
+            if (count($current) > self::MAX_PAYLOAD_NODES - count($stack)) {
                 throw new \InvalidArgumentException('Message payload structure exceeds the safety limit.');
             }
 
