@@ -58,7 +58,10 @@ final class NamespaceFallbackResolver
         callable $factory,
         string $lifetime = ServiceLifetime::SINGLETON,
     ): void {
-        if (count($this->namespaceFallbacks) >= 64) {
+        $normalizedPrefix = NamespaceScopePolicy::normalize($prefix);
+        // Re-registering a prefix replaces its factory; it does not consume
+        // an additional slot in the bounded fallback registry.
+        if (!array_key_exists($normalizedPrefix, $this->namespaceFallbacks) && count($this->namespaceFallbacks) >= 64) {
             throw new \OverflowException('Container namespace-fallback budget exceeded (64).');
         }
         if ($lifetime === ServiceLifetime::REQUEST) {
@@ -67,7 +70,7 @@ final class NamespaceFallbackResolver
             );
         }
         ServiceLifetime::assert($lifetime);
-        $this->namespaceFallbacks[NamespaceScopePolicy::normalize($prefix)] = [
+        $this->namespaceFallbacks[$normalizedPrefix] = [
             'factory' => $factory,
             'lifetime' => $lifetime,
         ];

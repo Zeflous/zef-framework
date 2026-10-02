@@ -44,7 +44,16 @@ final class InMemoryLockStore implements LockStoreInterface
         $existing = $this->locks[$key] ?? null;
         if ($existing !== null) {
             if ($existing['expiresAt'] > $now) {
-                return $existing['owner'] === $owner;
+                if ($existing['owner'] !== $owner) {
+                    return false;
+                }
+                // acquire() is the renewal operation used by Scheduler's
+                // sticky-leader loop. Keep its semantics aligned with the
+                // Redis implementation so a live owner does not leave a
+                // takeover window between otherwise healthy ticks.
+                $this->locks[$key]['expiresAt'] = $now + $ttlSeconds;
+
+                return true;
             }
             unset($this->locks[$key]);
         }

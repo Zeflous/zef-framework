@@ -134,6 +134,21 @@ final class ContainerFallbackReentrancyTest extends TestCase
         self::assertSame($first, $second, 'singleton fallbacks stay cached');
     }
 
+    public function testReplacingAnExistingFallbackDoesNotConsumeAnotherBudgetSlot(): void
+    {
+        $container = new Container();
+        for ($i = 0; $i < 64; ++$i) {
+            $container->registerNamespaceFallback("fb\\p{$i}\\", static fn (): string => 'original');
+        }
+
+        // The registry is full, but this is a replacement rather than a 65th
+        // prefix. It must remain configurable before the container freezes.
+        $container->registerNamespaceFallback('fb\p0\\', static fn (): string => 'replacement');
+        $container->validateAndFreeze();
+
+        self::assertSame('replacement', $container->get('fb\p0\service'));
+    }
+
     /** A short-circuiting middleware may replace a fallback instance. */
     public function testMiddlewareShortCircuitReplacesFallbackInstance(): void
     {
