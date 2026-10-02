@@ -20,6 +20,11 @@ use Zef\Framework\Exception\ServiceResolutionException;
  * → per-lifetime caching. The resolution stack (push/pop of the
  * canonical id) stays on the caller's ResolutionContext so circular
  * dependency detection keeps working across nested resolutions.
+ *
+ * v2.35.0: push/pop now carry the definition lifetime (runtime
+ * implicit-capture guard data) and the factory invocation is wrapped by
+ * the service middleware pipeline (roadmap: service middleware/
+ * interceptors) — resolving/resolved events remain the outer invariants.
  */
 final readonly class ServiceInstantiator
 {
@@ -27,6 +32,7 @@ final readonly class ServiceInstantiator
         private ServiceRegistry $registry,
         private RequestScopeStore $scopes,
         private InitializationGuard $initializationGuard,
+        private ServiceMiddlewarePipeline $middleware = new ServiceMiddlewarePipeline(),
     ) {}
 
     /**
@@ -73,11 +79,13 @@ final readonly class ServiceInstantiator
         array $dependencies,
         ?RequestScope $scope,
     ): mixed {
-        $ctx->push($canonical);
+        $ctx->push($canonical, $definition->lifetime);
 
         try {
             $this->fireResolvingListeners($canonical, $dependencies);
-            $instance = $this->invokeFactory($canonical, $ctx, $definition, $dependencies);
+            $instance = $this->middleware->hasMiddleware()
+                ? $this->runMiddleware($canonical, $ctx, $definition, $dependencies)
+                : $this->invokeFactory($canonical, $ctx, $definition, $dependencies);
             if ($instance === null) {
                 throw new ServiceResolutionException($canonical, 'factory returned null.');
             }
@@ -86,7 +94,7 @@ final readonly class ServiceInstantiator
 
             return $instance;
         } finally {
-            $ctx->pop($canonical);
+            $ctx->pop($canonical, $definition->lifetime);
         }
     }
 
@@ -111,6 +119,33 @@ final readonly class ServiceInstantiator
                 'resolving listener failed: ' . $e->getMessage(),
                 $e,
             );
+        }
+    }
+
+    /**
+     * v2.35.0: middleware onion around the guarded factory invocation.
+     * Exceptions from middleware are wrapped like listener failures;
+     * ServiceResolutionException passes through unwrapped.
+     *
+     * @param list<string> $dependencies dependency ids of the canonical definition
+     */
+    private function runMiddleware(
+        string $canonical,
+        ResolutionContext $ctx,
+        ServiceDefinition $definition,
+        array $dependencies,
+    ): mixed {
+        try {
+            return $this->middleware->run(
+                $canonical,
+                fn (): mixed => $this->invokeFactory($canonical, $ctx, $definition, $dependencies),
+            );
+        } catch (\Throwable $e) {
+            if ($e instanceof ServiceResolutionException) {
+                throw $e;
+            }
+
+            throw new ServiceResolutionException($canonical, 'service middleware failed: ' . $e->getMessage(), $e);
         }
     }
 

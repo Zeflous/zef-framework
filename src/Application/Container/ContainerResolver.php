@@ -35,6 +35,7 @@ final class ContainerResolver
         private readonly DependencyGraphValidator $graphValidator,
         private readonly ?InitializationGuard $initializationGuard = null,
         int $resolutionDepthLimit = 256,
+        private readonly ?ServiceMiddlewarePipeline $middleware = null,
     ) {
         $this->resolutionDepthLimit = max(1, $resolutionDepthLimit);
     }
@@ -110,6 +111,30 @@ final class ContainerResolver
             $dependencies = $activePlan->dependenciesOf($canonical);
         }
 
+        // v2.35.0: runtime implicit-capture guard. The compile-time pass
+        // (DependencyGraphValidator::assertSingletonClosure) already rejects
+        // DECLARED non-singleton deps of a singleton; this guard closes the
+        // remaining hole: factory bodies pulling REQUEST/TRANSIENT services
+        // through $ctx->get() while a singleton subtree is open. Everything
+        // resolved inside that subtree is captured by the singleton beyond
+        // its intended lifetime (cross-request leak under long-running
+        // workers / silent transient sharing), so fail fast instead.
+        if ($definition->lifetime !== ServiceLifetime::SINGLETON && $ctx->insideSingleton()) {
+            $owner = $ctx->currentSingleton() ?? $canonical;
+
+            throw new ServiceResolutionException(
+                $id,
+                sprintf(
+                    "implicit lifetime capture: singleton '%s' resolves %s service '%s'."
+                    . " The instance would be captured for the singleton's lifetime."
+                    . ' Declare it as a singleton dependency, resolve it per-operation outside the singleton, or restructure.',
+                    $owner,
+                    $definition->lifetime,
+                    $canonical,
+                ),
+            );
+        }
+
         $hit = $this->activator()->cachedInstance($canonical, $definition, $scope);
         if ($hit[0]) {
             return $hit[1];
@@ -172,6 +197,7 @@ final class ContainerResolver
             $this->registry,
             $this->scopes(),
             $this->initializationGuard ?? new FailFastInitializationGuard(),
+            $this->middleware ?? new ServiceMiddlewarePipeline(),
         );
 
         return $this->activator;

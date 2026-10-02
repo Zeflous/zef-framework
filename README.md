@@ -12,8 +12,8 @@
   <img src="https://img.shields.io/badge/RoadRunner-4.1-1f2937?style=for-the-badge" alt="RoadRunner 4.1">
   <img src="https://img.shields.io/badge/Architecture-Hexagonal-38bdf8?style=for-the-badge" alt="Hexagonal">
   <br>
-  <img src="https://img.shields.io/badge/Kelas%20PSR--4-1145-818cf8?style=for-the-badge" alt="1145 kelas">
-  <img src="https://img.shields.io/badge/Test%20PHPUnit-3699-c084fc?style=for-the-badge" alt="3699 test">
+  <img src="https://img.shields.io/badge/Kelas%20PSR--4-1146-818cf8?style=for-the-badge" alt="1146 kelas">
+  <img src="https://img.shields.io/badge/Test%20PHPUnit-3721-c084fc?style=for-the-badge" alt="3721 test">
   <img src="https://img.shields.io/badge/Coverage%20gate-%E2%89%A5%2090%25-22c55e?style=for-the-badge" alt="Coverage gate 90%">
   <img src="https://img.shields.io/badge/Mutation%20gate-MSI%20%E2%89%A5%2085-f59e0b?style=for-the-badge" alt="Mutation gate MSI 85">
   <br>
@@ -451,8 +451,8 @@ Sebuah perubahan tidak dianggap selesai sebelum **gerbang independen** hijau. "T
 
 <table width="100%">
   <tr><th align="left">#</th><th align="left">Gerbang</th><th align="left">Perintah</th><th align="left">Ambang / bukti</th></tr>
-  <tr><td>1</td><td>Syntax</td><td><kbd>composer lint</kbd></td><td><code>876</code> berkas first-party, 0 kegagalan</td></tr>
-  <tr><td>2</td><td>Suite PHPUnit native</td><td><kbd>composer test</kbd></td><td><code>3699</code> test · <code>140822</code> assertion · 6 skipped</td></tr>
+  <tr><td>1</td><td>Syntax</td><td><kbd>composer lint</kbd></td><td><code>879</code> berkas first-party, 0 kegagalan</td></tr>
+  <tr><td>2</td><td>Suite PHPUnit native</td><td><kbd>composer test</kbd></td><td><code>3721</code> test · <code>140860</code> assertion · 6 skipped</td></tr>
   <tr><td>3</td><td>Coverage</td><td><kbd>composer coverage:gate</kbd></td><td>ambang statement <b>90%</b> (diukur Xdebug)</td></tr>
   <tr><td>4</td><td>Mutation testing</td><td><kbd>composer mutation</kbd></td><td><code>--min-msi=85 --min-covered-msi=90</code></td></tr>
   <tr><td>5</td><td>Analisis statis</td><td><kbd>composer stan</kbd></td><td>PHPStan level <b>max</b> + strict-rules, baseline ter-ratchet</td></tr>
@@ -461,8 +461,8 @@ Sebuah perubahan tidak dianggap selesai sebelum **gerbang independen** hijau. "T
 </table>
 
 ```bash
-composer lint            # Linted 876 PHP files — 0 failure(s).
-composer test            # Tests: 3699, Assertions: 140822, Skipped: 6
+composer lint            # Linted 879 PHP files — 0 failure(s).
+composer test            # Tests: 3721, Assertions: 140860, Skipped: 6
 php bin/zef --self-test  # PASSED: 501  FAILED: 0
 ```
 
