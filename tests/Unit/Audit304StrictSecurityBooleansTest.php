@@ -115,6 +115,26 @@ final class Audit304StrictSecurityBooleansTest extends TestCase
         ]));
     }
 
+    public function testProductionRefusesToSilentlyDisableCsrfWhenSecretIsMissing(): void
+    {
+        $this->expectException(SecurityPolicyException::class);
+        $this->expectExceptionMessage('ZEF_SECURITY_CSRF_SECRET must be set');
+
+        SecurityPolicy::fromEnvironment(env: new Audit304Env([
+            'ZEF_ENV' => 'production',
+        ]));
+    }
+
+    public function testProductionMayExplicitlyDisableCsrfForNonBrowserApi(): void
+    {
+        $policy = SecurityPolicy::fromEnvironment(env: new Audit304Env([
+            'ZEF_ENV' => 'production',
+            'ZEF_SECURITY_CSRF' => '0',
+        ]));
+
+        self::assertFalse($policy->csrfEnabled);
+    }
+
     // ------------------------------------------------------------------
     // Live middleware wiring — src/Middleware/ConfigProvider (the app/
     // copy is dead: classmap + PSR-4 both resolve Zef\Middleware\* to src/)

@@ -18,6 +18,7 @@ berarsitektur *Hexagonal (Ports & Adapters)* dengan worker RoadRunner.
 | [`PLUGINS.md`](PLUGINS.md) | **v2.29.0** — kontrak manifest plugin, registrasi composition root, kriteria registry index, distribusi | Author plugin, maintainer |
 | [`INTEGRATIONS.md`](INTEGRATIONS.md) | **v2.30.0** — peta port × adapter ekosistem (object storage S3/Local, transport pesan, job queue PDO), resep kontributor adapter broker, jembatan Cycle ORM, matriks kompatibilitas | Integrator, kontributor adapter |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Pemecahan monolith → layer hexagonal, aturan arah dependensi, peta namespace → layer, autoloading ganda, evolusi v2.12.0–v2.34.1 | Arsitek, reviewer |
+| [`TARGET-ARCHITECTURE.md`](TARGET-ARCHITECTURE.md) | Rancangan target **config-driven HMVC**, katalog modul, plugin lifecycle, enterprise cross-cutting controls, dan roadmap migrasi bertahap | Enterprise architect, platform team |
 | [`QUALITY.md`](QUALITY.md) | Seluruh gerbang kualitas: PHPUnit, coverage, **mutation testing (MSI per area)**, PHPStan, PHPCS, cs-fixer, Rector, Deptrac | Kontributor, release manager |
 | [`GOVERNANCE.md`](GOVERNANCE.md) | **v2.31.0+** — tabel kanonik 13 konteks gate, jumlah required checks, protokol rilis & sinkronisasi dokumen | Maintainer, release manager |
 | [`DEPLOYMENT.md`](DEPLOYMENT.md) | Pola produksi: RoadRunner (persistent worker), graceful shutdown, observabilitas, health probe, keamanan | SRE, DevOps |
@@ -56,6 +57,7 @@ docs/
 ├── PLUGINS.md
 ├── INTEGRATIONS.md
 ├── ARCHITECTURE.md
+├── TARGET-ARCHITECTURE.md
 ├── QUALITY.md
 ├── GOVERNANCE.md
 ├── DEPLOYMENT.md
