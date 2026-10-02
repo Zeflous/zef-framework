@@ -19,12 +19,9 @@ namespace Zef\Framework\Cache;
  * - Acquisition is `SET key owner PX ttl NX` executed inside a Lua script,
  *   so the existence check and the write are one atomic server-side step.
  * - Re-acquiring while still holding the lock EXTENDS the lease and
- *   returns true — deliberate lease-renewal semantics: the sticky cluster
- *   scheduler and leader election depend on a holder's repeated acquire()
- *   calls keeping the lease alive. This intentionally diverges from
- *   InMemoryLockStore, whose re-entrant acquire() merely returns true
- *   without extending the expiry; the difference is pinned by
- *   testReacquireBySameOwnerRefreshesLease(). Use refresh() when the
+ *   returns true — deliberate lease-renewal semantics shared by both lock
+ *   stores: the sticky cluster scheduler depends on a holder's repeated
+ *   acquire() calls keeping the lease alive. Use refresh() when the
  *   extension should be explicit rather than a side effect of acquiring.
  * - Release and refresh are compare-and-act Lua scripts: the lock is only
  *   deleted/extended when its current value equals the caller's owner
