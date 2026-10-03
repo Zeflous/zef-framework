@@ -15,7 +15,7 @@ menjatuhkan satu folder modul untuk menginstal fitur. Prinsip zero-composer yang
 berjalan (`autoload/zef_autoload.php`) diperluas menjadi janji distribusi penuh:
 **drop folder = install**.
 
-Delapan keputusan inti:
+Sembilan keputusan inti:
 
 | # | Keputusan | Inti |
 |:--|:----------|:-----|
@@ -27,6 +27,7 @@ Delapan keputusan inti:
 | **D6** | `generator/` + sandbox | Mesin codegen di-shipped sebagai kode rilis; output `make:*` ditampung di `temp/generator/`, di-*promote* bila dipakai, di-GC bila tidak |
 | **D7** | Views dua tingkat | View internal kernel (error/exception/maintenance) + view modul privat berdasarkan lokasi — file view tidak pernah web-readable |
 | **D8** | `public/` docroot murni | Aset & upload publik + publish aset modul via symlink `public/modules/<x>/` |
+| **D9** | AOT dua-perilaku | `EnvironmentMode` resolver tunggal, dikunci sekali saat boot worker; komposisi *Production Wins* (global × manifest); mismatch di production = `exit(1)` tanpa fallback diam-diam |
 
 Semua keputusan dirancang **aditif**: tidak ada perilaku v2 yang berubah, dan setiap fase
 implementasi harus tetap melewati gerbang CI yang sama (§6).
@@ -106,7 +107,8 @@ aplikasi (seluruh direktori **plural**, konsisten):
 ```
 Modules/
 └── Blog/
-    ├── module.php            # manifest: id, versi, requires, provides, namespace, enabled
+    ├── module.php            # manifest: id, versi, requires, provides, namespace,
+    │                          # mode (dev|production), enabled
     ├── Configs/              # routes.php, view.php, database.php, languages.php, …
     ├── Controllers/          # target dispatch; titik HMVC ModuleDispatcher
     ├── Models/               # bebas membungkus query builder / repository kernel
@@ -256,7 +258,8 @@ semuanya memetakan ke mesin yang sudah ada:
 
 - `temp/cache/` — rumah `FileCacheStore` (adapter baru dari `CacheStoreInterface` yang ada)
 - `temp/aot/` — `CompiledContainerPlan` + `ContainerCompiler` + `RouteCache` +
-  `ConfigurationSnapshot` (mesin AOT sudah berjalan; `temp/` hanya merumahkan)
+  `ConfigurationSnapshot` (mesin AOT sudah berjalan; `temp/` hanya merumahkan) +
+  artefak AOT per-modul produksi (D9)
 - `temp/view/` — cache view ter-compile (pasca D7)
 - `temp/cache/i18n/` — katalog cascade D4
 - `temp/sessions/` — session berbasis berkas (*semi-derived*: wipe = force logout semua —
@@ -334,6 +337,70 @@ Docroot hanya berisi domain publik: `index.php`, `assets/`, `uploads/`, dan
 (pola package-publish). Skenario deploy yang menyajikan docroot ter-isolasi tetap aman:
 symlink dibuat ulang oleh proses aktivasi, bukan dikerjakan manual oleh operator.
 
+### D9 — AOT dua-perilaku: resolusi mode sekali di boot, *Production Wins*
+
+AOT tidak lagi satu-perilaku: modul `dev` dimuat dinamis demi kecepatan iterasi, modul
+`production` dibekukan demi performa worker persisten. Seluruh keputusan mode diturunkan
+dari resolusi yang tunggal, deterministik, dan dikunci saat boot.
+
+**Sumber & normalisasi — satu resolver.** Pembacaan `ZEF_ENV` wajib lewat kontrak
+`EnvInterface::readString('ZEF_ENV', 'development')` (jalur pasca-deprecasi facade statis
+v2.28.0), bukan `getenv()`/`$_ENV` yang tersebar. Normalisasi alias (`production`, `prod`)
+didefinisikan **tepat satu kali** di value object `EnvironmentMode` (kernel), lalu seluruh
+pengecek env menjadi konsumennya. Saat ini dua guard membaca env dengan sumber berbeda —
+`bin/zef` (tinker) lewat `getenv()`, `ConfigShower` lewat `EnvInterface` — keduanya inline
+`strcasecmp`. Tanpa konsolidasi, `ZEF_ENV=prod` akan berarti "production" bagi AOT tetapi
+bukan bagi penolakan tinker: inkonsistensi dua-perilaku dari kelas yang sama dengan drift
+dokumen yang ditegakkan ratchet release-docs.
+
+**Invariant boot worker persisten.** Mode dibaca **sekali** saat worker boot
+(`Bootstrap::createApp()`), dikunci immutable — properti `Application` atau argumen
+konstruktor engine AOT — dan tidak pernah dibaca ulang di tengah lifecycle request:
+proses PHP hidup lama, membaca ulang env per request berarti overhead sekaligus
+non-determinisme state lintas-request (aturan emas runtime persisten ZEF).
+
+**Matriks komposisi — *Production Wins* (yang paling ketat menang):**
+
+| `ZEF_ENV` global ↓ · manifest `mode` → | `dev` | `production` |
+|:---|:---|:---|
+| `development` | dinamis: scoped autoloader + cache volatil; checkpoint invalidasi = **worker boot** — di `php bin/zef --serve` yang boot per-request, hot-reload gratis | AOT beku per-modul; mismatch fingerprint (hotfix atas modul beku saat develop) → recompile + telemetry warn |
+| `production` | **dipaksa perlakuan production** — materialisasi via tooling deploy (warm-up `doctor`: regen classmap + kompilasi + seal); boot memvalidasi fingerprint | AOT immutable; mismatch fingerprint / artefak korup → worker mati `exit(1)` + `AotMismatchException` ke log — **tanpa fallback diam-diam ke dinamis** |
+
+**Autoloader ter-scope untuk zona dev.** Kelas baru yang dijatuhkan di modul `dev`
+tidak terdaftar di classmap statis — dan memang seharusnya tidak: classmap hanya
+berubah lewat tooling (D6). Selama sebuah modul ber-mode `dev` aktif, kernel memasang
+autoloader dinamis ter-scope untuk prefix `Modules\<X>\` saja — memanfaatkan preseden
+dua-jalur autoloading (Composer PSR-4 berdampingan classmap statis) yang sudah berjalan
+hari ini. Determinisme zero-composer tetap utuh untuk kernel dan seluruh modul
+production: keduanya tetap 100% classmap statis.
+
+Sel `production` global + modul `dev` dibaca hati-hati: "dipaksa" berarti kebijakan
+kompilasi, bukan sihir — kelas modul `dev` tidak terdaftar di classmap statis, jadi
+materialisasinya adalah tanggung jawab tooling deploy (regen classmap + kompilasi +
+seal fingerprint). Deploy yang melewatkan tooling akan gagal boot — fail-closed, bukan
+degradasi diam-diam. Crash deterministik itu memang permukaan yang diinginkan; `doctor`
+ada justru untuk menangkapnya sebelum naik server.
+
+**Komposisi ketat.** Manifest `requires:` yang menunjuk modul ber-mode `dev`, dalam
+konteks `ZEF_ENV=production`, melempar `AotCompositionException` saat boot (keluarga
+semantik `ModuleDependencyViolationException` yang sudah ada): dependensi eksplisit pada
+kode yang penulisnya sendiri menandai belum-stabil adalah kesalahan komposisi, bukan
+sekadar masalah artefak deploy — materialisasi bisa saja, tetapi tidak dipercayakan
+diam-diam.
+
+**Warm-up deploy.** `bin/zef doctor` / `bin/zef rr:init` memicu kompilasi AOT seluruh
+modul enabled + boot smoke: manifest korup, toposort gagal, atau fingerprint tak cocok →
+`exit 1` sebelum kode naik server (perluasan langsung perilaku doctor hari ini: "exit 1
+hanya bila FAIL").
+
+**Output opcache-friendly.** Artefak `temp/aot/` berbentuk array-return murni / PHP
+prosedural ter-wire — pola rumah `RouteCache`, `RadixTreeCache`, `CompiledConfigSource` —
+sehingga OPcache PHP 8.4+ menguncinya di memori bersama worker RoadRunner: tanpa I/O
+scanning manifest atau parsing atribut per lifecycle aplikasi.
+
+Catatan penamaan: field manifest memakai `mode` (bukan `status`) agar tidak bentrok
+semantik dengan `enabled`.
+
 ---
 
 ## 4. Pohon direktori target
@@ -376,6 +443,7 @@ sebagai modul contoh.
 | 3 | Modul internal `src/Module/{Core,Health}` ikut struktur MVC atau tetap hexagonal kecil? | hexagonal kecil — asimetri OK karena audiensnya berbeda (D1) |
 | 4 | Sandbox scaffold: preview-only atau bootable via dynamic loader debug? | preview-only — classmap statis = determinisme; uji sungguhan lewat `make:app` |
 | 5 | `temp/sessions/` semi-derived (wipe = force logout semua) — diterima atau dipindah kelas? | diterima dengan caveat terdokumentasi; catat di runbook deploy |
+| 6 | `ZEF_ENV` kosong: default `development` (mengikuti perilaku guard hari ini yang memperlakukan unset = non-production), atau deployment ketit mewajibkan env eksplisit? | default `development` + knob fail-closed `ZEF_REQUIRE_EXPLICIT_ENV` untuk deployment ketat |
 
 ---
 
@@ -387,7 +455,7 @@ Urutan disusun supaya wart ditutup paling awal dengan risiko terkecil:
 | Fase | Isi | Nilai yang tercapai |
 |:-----|:----|:--------------------|
 | **1. Fondasi non-breaking** | Taksonomi 3 kelas + kontrak `temp/` (`ZEF_TEMP_PATH`, gitignore, chmod 0700, di luar docroot) + konsolidasi `generator/` (engine + classmap tool) | wart classmap yatim & instruksi dump-autoload tertutup; rumah siap |
-| **2. Zona modul** | `Modules/` + manifest `module.php` + discovery topologis + enable/disable + i18n cascade D4 + harness contract-test + profil `deptrac.modules.yaml` | janji drop-folder-equals-install hidup; migrasi `plugins/Toko` sebagai modul contoh |
+| **2. Zona modul** | `Modules/` + manifest `module.php` + discovery topologis + enable/disable + i18n cascade D4 + harness contract-test + profil `deptrac.modules.yaml` + resolusi mode D9 (`EnvironmentMode`, warm-up `doctor`) | janji drop-folder-equals-install hidup; migrasi `plugins/Toko` sebagai modul contoh |
 | **3. Sandbox scaffold** | `temp/generator/` + command promote (move + regen classmap + collision guard + hint) + GC age-based | wart dead-path & classmap manual tertutup penuh |
 | **4. Permukaan presentasi** | view internal kernel (error/exception/maintenance, escape-by-default) + publish aset modul (symlink) + i18n halaman error | audit exception-mentah tertutup; docroot murni tercapai |
 
@@ -447,4 +515,5 @@ kernel 2026; v3 mengembalikan sistem modul 2020 di atas kernel yang matang — *
 | `Plugins/` | kontrak manifest plugin (docs/PLUGINS.md) + scope registrasi parent-aktif |
 | `public/` | symlink publish saat aktivasi (D8) + `ETagMiddleware` untuk aset |
 | `module.php` | `ModuleDefinition` + `ModuleRegistrar` + `ModuleRegistry` (src/Domain/Config, src/Infrastructure/Config) |
+| manifest `mode` + `ZEF_ENV` | `EnvironmentMode` (baru — konsolidasi guard `bin/zef` tinker & `ConfigShower`) + mesin fingerprint existing: `RadixTreeCache` / `RouteCache` / `SpecificationCache` / `CompiledConfigSource` |
 | `tests/` | harness contract-test baru (D3) — PHPUnit native |
