@@ -89,8 +89,7 @@ final readonly class SecurityPolicy
                     : 'ZEF_SECURITY_CSRF_SECRET must be set (>= 32 bytes) when CSRF is enabled in production.');
             }
             $csrfEnabled = false;
-            $msg = '[ZEF][security] ZEF_SECURITY_CSRF_SECRET is not set; CSRF protection disabled. '
-                . 'Set a secret of at least 32 bytes in production.';
+            $msg = '[ZEF][security] ZEF_SECURITY_CSRF_SECRET is not set; CSRF protection disabled. Set a secret of at least 32 bytes in production.';
             if ($logger instanceof LoggerInterface) {
                 $logger->warning($msg);
             } else {
