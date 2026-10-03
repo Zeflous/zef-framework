@@ -498,7 +498,7 @@ Sebuah perubahan tidak dianggap selesai sebelum **gerbang independen** hijau. "T
 <table width="100%">
   <tr><th align="left">#</th><th align="left">Gerbang</th><th align="left">Perintah</th><th align="left">Ambang / bukti</th></tr>
   <tr><td>1</td><td>Syntax</td><td><kbd>composer lint</kbd></td><td><code>879</code> berkas first-party, 0 kegagalan</td></tr>
-  <tr><td>2</td><td>Suite PHPUnit native</td><td><kbd>composer test</kbd></td><td><code>3806</code> test · <code>141096</code> assertion · 6 skipped</td></tr>
+  <tr><td>2</td><td>Suite PHPUnit native</td><td><kbd>composer test</kbd></td><td><code>3806</code> test · <code>141097</code> assertion · 6 skipped</td></tr>
   <tr><td>3</td><td>Coverage</td><td><kbd>composer coverage:gate</kbd></td><td>ambang statement <b>90%</b> (diukur Xdebug)</td></tr>
   <tr><td>4</td><td>Mutation testing</td><td><kbd>composer mutation</kbd></td><td><code>--min-msi=85 --min-covered-msi=90</code></td></tr>
   <tr><td>5</td><td>Analisis statis</td><td><kbd>composer stan</kbd></td><td>PHPStan level <b>max</b> + strict-rules, baseline ter-ratchet</td></tr>
@@ -508,7 +508,7 @@ Sebuah perubahan tidak dianggap selesai sebelum **gerbang independen** hijau. "T
 
 ```bash
 composer lint            # Linted 879 PHP files — 0 failure(s).
-composer test            # Tests: 3806, Assertions: 141096, Skipped: 6
+composer test            # Tests: 3806, Assertions: 141097, Skipped: 6
 php bin/zef --self-test  # PASSED: 501  FAILED: 0
 ```
 
