@@ -71,6 +71,11 @@ diregenerasi, aman di-wipe kapan pun (cache, AOT, i18n ter-compile, sandbox code
 ditampung di sandbox `temp/generator/`: dipakai = **PROMOTE** (move + regen classmap),
 tidak dipakai = auto-GC. Editing classmap manual menjadi mustahil secara desain.
 
+AOT berperilaku ganda mengikuti mode: modul **`dev`** dimuat dinamis (checkpoint
+invalidasi = worker boot — hot-reload gratis di `bin/zef --serve`), modul **`production`**
+dibekukan menjadi artefak `temp/aot/` tervalidasi fingerprint — mismatch di lingkungan
+produksi mematikan worker, bukan fallback diam-diam (*Production Wins*).
+
 | Keputusan inti | Ringkas |
 |:---------------|:--------|
 | **D1** Dua zona modul | `src/Module/` internal (governance penuh) vs `Modules/` eksternal (drop zone) |
@@ -81,6 +86,7 @@ tidak dipakai = auto-GC. Editing classmap manual menjadi mustahil secara desain.
 | **D6** `generator/` + sandbox | engine di-shipped; output scaffold di-promote atau di-GC |
 | **D7** Views dua tingkat | view internal kernel (error/exception) + view modul privat by-location — tidak pernah web-readable |
 | **D8** `public/` docroot murni | aset + upload + symlink `public/modules/<x>/` saat modul aktif |
+| **D9** AOT dua-perilaku | modul `dev` dinamis, modul `production` beku (`temp/aot/` + fingerprint); *Production Wins*; mismatch prod = `exit(1)` |
 
 <br>
 

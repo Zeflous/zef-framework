@@ -22,7 +22,7 @@ berarsitektur *Hexagonal (Ports & Adapters)* dengan worker RoadRunner.
 | [`GOVERNANCE.md`](GOVERNANCE.md) | **v2.31.0+** — tabel kanonik 13 konteks gate, jumlah required checks, protokol rilis & sinkronisasi dokumen | Maintainer, release manager |
 | [`DEPLOYMENT.md`](DEPLOYMENT.md) | Pola produksi: RoadRunner (persistent worker), graceful shutdown, observabilitas, health probe, keamanan | SRE, DevOps |
 | [`ROADMAP.md`](ROADMAP.md) | Rencana kerja dan status fitur | Product, kontributor |
-| [`RFC-0001-module-layout.md`](RFC-0001-module-layout.md) | **DRAFT — fokus berjalan** — layout target v3 & sistem modul plug-n-play: dua zona modul, MVC klasik, firewall governance, i18n cascade 5 tingkat, kontrak `temp/`, `generator/` + sandbox promote/GC, views dua tingkat | Arsitek, kontributor, penulis modul |
+| [`RFC-0001-module-layout.md`](RFC-0001-module-layout.md) | **DRAFT — fokus berjalan** — layout target v3 & sistem modul plug-n-play: dua zona modul, MVC klasik, firewall governance, i18n cascade 5 tingkat, kontrak `temp/`, `generator/` + sandbox promote/GC, views dua tingkat, AOT dua-perilaku dev/production | Arsitek, kontributor, penulis modul |
 | [`EDGE-CASE-MATRIX.md`](EDGE-CASE-MATRIX.md) | Kurikulum uji edge-case per fase kampanye mutasi | QA, kontributor |
 | [`OPENAPI-GATE-PARITY.md`](OPENAPI-GATE-PARITY.md) | **v2.33.0** — kontrak paritas 12 batas runtime gate OpenAPI (B1–B12) + wire-up + non-goals | Kontributor API, QA |
 | [`TRANSACTION-HOOKS.md`](TRANSACTION-HOOKS.md) | **v2.22.0** — orkestrasi transaksi & UoW-lite: scope terkelola, hook after-commit, command bus transaksional | Developer aplikasi |
