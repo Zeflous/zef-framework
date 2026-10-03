@@ -132,6 +132,11 @@ if ($asJson) {
         ],
     ]), PHP_EOL;
 } else {
-    echo 'DOC_COUNT_RATCHET_OK: README.md layout counts match the repo '
-        . "(src {$srcCount}, tests {$testCount}, changelog {$changelogCount}, workflows {$workflowCount})", PHP_EOL;
+    echo sprintf(
+        'DOC_COUNT_RATCHET_OK: README.md layout counts match the repo (src %d, tests %d, changelog %d, workflows %d)',
+        $srcCount,
+        $testCount,
+        $changelogCount,
+        $workflowCount,
+    ), PHP_EOL;
 }
