@@ -245,6 +245,14 @@ jobs:
         # never the other way round.
         run: php scripts/ci/assert-release-docs.php
 
+      - name: Documentation count ratchet (README layout vs repo)
+        # Pins the README "Struktur Proyek" tree and CI/CD prose counters to the
+        # working tree (src/tests file counts, CHANGELOG files, workflow files)
+        # — the drift class audit v24 found (src 360 vs 640, changelog 25 vs 42,
+        # workflows 13 vs 20). Version/class/test counts stay with
+        # assert-release-docs.php; this gate covers the layout counts.
+        run: php scripts/ci/assert-doc-counts.php
+
       - name: Rector (dry-run)
         run: vendor/bin/rector process --dry-run --no-progress-bar
 
