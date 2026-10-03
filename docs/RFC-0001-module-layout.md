@@ -20,7 +20,7 @@ Delapan keputusan inti:
 | # | Keputusan | Inti |
 |:--|:----------|:-----|
 | **D1** | Dua zona modul | `src/Module/` internal (release bareng kernel, governance penuh) vs `Modules/` eksternal (drop zone plug-n-play) |
-| **D2** | Anatomi modul eksternal | MVC klasik ala Kohana: manifest + `Controllers/`, `Models/`, `Views/`, `Configs/`, `Languages/`, `Middleware/`, `Plugins/`, `Migrations/`, `public/`, `tests/` |
+| **D2** | Anatomi modul eksternal | MVC klasik ala Kohana: manifest + `Controllers/`, `Models/`, `Views/`, `Configs/`, `Languages/`, `Middleware/`, `Plugins/`, `Migrations/`, `public/`, `tests/`; blueprint DDD opsional (`Domain/` + `Application/` bawaan modul); komposisi antar-modul lewat widget sub-request |
 | **D3** | Firewall governance | Kernel tetap hexagonal; `Modules/` berada di luar graf deptrac; mutu modul ditegakkan contract-test, bukan baseline kernel |
 | **D4** | i18n cascade 5 tingkat | *nearest-wins*: locale modul → default modul → locale sistem → default sistem → kembalikan kunci + telemetri |
 | **D5** | Kontrak `temp/` | Hanya artefak turunan runtime; apa yang tak bisa diregenerasi dilarang tinggal di `temp/`; aman di-wipe kapan pun |
@@ -124,6 +124,50 @@ cache) tanpa dipaksa upacara hexagonal. Konsekuensinya jelas dan disengaja: kode
 tidak menerima perlindungan baseline kernel, melainkan perlindungan kontrak (D3).
 Pemetaan setiap direktori ke mesin ZEF yang sudah berjalan ada di Lampiran B.
 
+#### Komposisi antar-modul: widget sebagai primitive HMVC
+
+HMVC tidak diimplementasikan sebagai panggilan method lintas modul, melainkan lewat
+**sub-request ter-bound** yang diserve `ModuleDispatcher`: controller induk (mis.
+`Dashboard`) mengomposisi **widget** — triad MVC kecil milik modul lain (mis.
+`CatalogProductWidget`) — lalu menyisipkan fragmen hasil render-nya ke view induk.
+Aturan mainnya:
+
+- Sub-request adalah satu-satunya jalur komposisi — tidak ada import kelas controller
+  modul lain secara langsung; dependensi antar-modul dideklarasikan di manifest
+  (`requires`/`provides`) dan tervalidasi saat discovery (D3).
+- Widget dirender lewat renderer kernel yang sama (escape-by-default, D7) — bukan
+  `extract()` + `include()` ad-hoc, yang merupakan hazard injeksi variabel.
+- Render bersifat **query-only**: widget boleh mengirim `Query` ke bus, tidak boleh
+  mengirim `Command` (side effect) sebagai bagian dari rendering.
+- Kegagalan satu widget **fail-soft**: halaman tetap ter-render dengan placeholder,
+  kegagalan di-log + counter telemetry (`widgets.failed{module}`) — pola resilience
+  halaman, bukan exception yang membatalkan seluruh halaman.
+
+#### Blueprint opsional: bounded context DDD bawaan modul
+
+Modul dengan logika bisnis berat boleh membawa *bounded context*-nya sendiri di dalam
+pohon modul — **bukan** di `src/`, yang beku bersama kernel:
+
+```
+Modules/Catalog/
+├── module.php              # manifest juga mendaftarkan handler ke bus
+├── Domain/                 # Entity, Aggregate, Value Object, Domain Event
+├── Application/            # Commands/, Queries/, Handlers/ (orkestrasi)
+├── Controllers/            # konsumen bus — kirim Command/Query, terima DTO
+├── Views/                  # menerima DTO / hasil render, bukan entity
+└── …
+```
+
+Aliran data: Controller → bus (`CommandBusInterface::dispatch()` /
+`QueryBusInterface::ask()`) → Handler → Repository port → **DTO kembali ke
+presentation** — entity tidak pernah bocor ke view. Mesinnya seluruhnya milik kernel
+yang sudah berjalan: bus CQRS dengan `register()`/`freeze()`, base `Repository`,
+Event Sourcing; modul hanya membawa aturan bisnisnya sendiri. Blueprint ini opsional
+(`make:module --style=ddd`); **MVC klasik tetap default** — dua-duanya legal di balik
+firewall karena yang dijaga adalah kontrak manifest + contract-test, bukan gaya
+internal modul (D3). Modul lain yang butuh data `Catalog` memanggil kontrak publiknya
+lewat dependensi manifest — bukan mengimpor `Modules\Catalog\Domain\…` langsung.
+
 ### D3 — Firewall governance: kernel hexagonal, modul MVC
 
 deptrac kernel **tidak** meng-graph `Modules/` — folder itu berada di luar peta layer.
@@ -132,8 +176,41 @@ Sebagai gantinya, mutu modul ditegakkan tiga lapis: (1) validasi manifest saat d
 ditolak); (2) contract-test yang dijalankan terhadap modul aktif — modul yang gagal kontrak
 tidak dimuat di produksi; (3) modul hanya boleh bergantung pada **permukaan publik kernel**
 (namespace kontrak), bukan detail internal. Sebuah modul boleh menyentuh `Domain\…Interface`,
-tidak boleh menyentuh `Infrastructure\…` milik kernel langsung. Aturan ini kelak ditegakkan
-statis oleh deptrac profil terpisah milik zona modul.
+tidak boleh menyentuh `Infrastructure\…` milik kernel langsung.
+
+Profil deptrac zona modul hidup di **berkas terpisah** (mis. `deptrac.modules.yaml`) —
+menggabungkannya ke `deptrac.yaml` kernel justru menjebol firewall: `--fail-on-uncovered`
+akan menarik seluruh `Modules/` ke graf layer kernel. Sketsa ruleset-nya (nama layer
+dan collector persisnya = detail implementasi PR yang membawa profil ini):
+
+```yaml
+# deptrac.modules.yaml — profil ZONA MODULE (terpisah dari deptrac.yaml kernel)
+deptrac:
+  paths: [Modules]
+  layers:
+    - name: Module_Presentation   # Controllers/, Views/, Middleware/
+      collectors: [{ type: className, regex: '^Modules\\[^\\]+\\(Controllers|Views|Middleware)\\' }]
+    - name: Module_Application    # Application/ (blueprint DDD) + Models/ (MVC default, tier data-access)
+      collectors: [{ type: className, regex: '^Modules\\[^\\]+\\(Application|Models)\\' }]
+    - name: Module_Domain         # Domain/ (blueprint DDD)
+      collectors: [{ type: className, regex: '^Modules\\[^\\]+\\Domain\\' }]
+    - name: Kernel_Public         # permukaan publik kernel — allowlist eksplisit
+      collectors:
+        - { type: className, regex: '^Zef\\Framework\\(Domain|Application)\\' }
+        - { type: className, regex: '^Zef\\Framework\\Infrastructure\\Database\\' }  # query builder + base repository
+  ruleset:
+    Module_Presentation: [Module_Application, Kernel_Public]  # TIDAK Module_Domain — entity tidak bocor ke view
+    Module_Application:    [Module_Domain, Kernel_Public]
+    Module_Domain:         [Kernel_Public]                    # murni: kontrak & VO kernel saja
+```
+
+`Kernel_Public` adalah **allowlist eksplisit**: kontrak `Domain/**` + `Application/**`
+(interface bus, port cache/job/message, value object) ditambah elemen Infrastructure
+yang memang dirancang untuk konsumsi aplikasi (query builder, base `Repository`).
+Daftar ini hanya diperluas lewat keputusan tertulis — bukan diam-diam — dan adapter
+internal kernel (crypto, Redis, OTLP, Prometheus) tetap di luar jangkauan modul.
+Arah layering di dalam modul mengikuti proposal klasik DDD: presentation →
+application → domain, domain tidak bergantung pada apa pun di atasnya.
 
 ### D4 — i18n: cascade 5 tingkat, nearest-wins
 
@@ -310,7 +387,7 @@ Urutan disusun supaya wart ditutup paling awal dengan risiko terkecil:
 | Fase | Isi | Nilai yang tercapai |
 |:-----|:----|:--------------------|
 | **1. Fondasi non-breaking** | Taksonomi 3 kelas + kontrak `temp/` (`ZEF_TEMP_PATH`, gitignore, chmod 0700, di luar docroot) + konsolidasi `generator/` (engine + classmap tool) | wart classmap yatim & instruksi dump-autoload tertutup; rumah siap |
-| **2. Zona modul** | `Modules/` + manifest `module.php` + discovery topologis + enable/disable + i18n cascade D4 + harness contract-test | janji drop-folder-equals-install hidup; migrasi `plugins/Toko` sebagai modul contoh |
+| **2. Zona modul** | `Modules/` + manifest `module.php` + discovery topologis + enable/disable + i18n cascade D4 + harness contract-test + profil `deptrac.modules.yaml` | janji drop-folder-equals-install hidup; migrasi `plugins/Toko` sebagai modul contoh |
 | **3. Sandbox scaffold** | `temp/generator/` + command promote (move + regen classmap + collision guard + hint) + GC age-based | wart dead-path & classmap manual tertutup penuh |
 | **4. Permukaan presentasi** | view internal kernel (error/exception/maintenance, escape-by-default) + publish aset modul (symlink) + i18n halaman error | audit exception-mentah tertutup; docroot murni tercapai |
 
@@ -365,6 +442,8 @@ kernel 2026; v3 mengembalikan sistem modul 2020 di atas kernel yang matang — *
 | `Middleware/` | assignmen metadata per-route + eksekusi sub-pipeline |
 | `Languages/` | `LocaleNegotiator` (src/Adapters/Router) + port translation store baru (D4) |
 | `Models/` | Query Builder + base Repository + PDO adapter |
+| `Controllers/` (komposisi widget) | sub-request `ModuleDispatcher` (HMVC) — widget antar-modul, bukan import langsung |
+| `Domain/` + `Application/` (blueprint DDD) | `CommandBusInterface`/`QueryBusInterface` (`register()`/`freeze()`) + base `Repository` + Event Sourcing |
 | `Plugins/` | kontrak manifest plugin (docs/PLUGINS.md) + scope registrasi parent-aktif |
 | `public/` | symlink publish saat aktivasi (D8) + `ETagMiddleware` untuk aset |
 | `module.php` | `ModuleDefinition` + `ModuleRegistrar` + `ModuleRegistry` (src/Domain/Config, src/Infrastructure/Config) |

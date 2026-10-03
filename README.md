@@ -61,7 +61,9 @@ Sistem modul eksternal **plug-n-play** — `Modules/` sebagai drop zone tempat *
 di atas kernel hexagonal yang tetap terkunci gerbangnya. Modul memakai anatomi **MVC klasik ala Kohana**
 (`module.php` + `Controllers/`, `Models/`, `Views/`, `Configs/`, `Languages/`, `Middleware/`,
 `Plugins/`, `Migrations/`, `public/`, `tests/`), dipisahkan dari kernel oleh **firewall governance**:
-`Modules/` berada di luar graf deptrac, mutu ditegakkan contract-test.
+`Modules/` berada di luar graf deptrac, mutu ditegakkan contract-test. Modul logika berat boleh membawa
+*bounded context* DDD sendiri (blueprint opsional `Domain/` + `Application/`, konsumen bus CQRS),
+dan antar-modul dikomposisi lewat **widget sub-request HMVC**.
 
 Dua kontrak direktori baru menyertainya: **`temp/`** — hanya menampung artefak runtime yang bisa
 diregenerasi, aman di-wipe kapan pun (cache, AOT, i18n ter-compile, sandbox codegen) — dan
@@ -72,7 +74,7 @@ tidak dipakai = auto-GC. Editing classmap manual menjadi mustahil secara desain.
 | Keputusan inti | Ringkas |
 |:---------------|:--------|
 | **D1** Dua zona modul | `src/Module/` internal (governance penuh) vs `Modules/` eksternal (drop zone) |
-| **D2** Anatomi modul MVC klasik | manifest + `Controllers/`, `Models/`, `Views/`, `Configs/`, `Languages/`, `Plugins/`, `Migrations/`, `public/`, `tests/` |
+| **D2** Anatomi modul MVC klasik | manifest + `Controllers/`, `Models/`, `Views/`, `Configs/`, `Languages/`, `Plugins/`, `Migrations/`, `public/`, `tests/` · blueprint DDD opsional per modul |
 | **D3** Firewall governance | kernel tetap hexagonal; mutu modul via manifest-validasi + contract-test |
 | **D4** i18n cascade 5 tingkat | *nearest-wins*: locale modul → default modul → locale sistem → default sistem → kunci + telemetri miss |
 | **D5** Kontrak `temp/` | taksonomi 3 kelas berkas; yang tak bisa diregenerasi dilarang di `temp/` |
