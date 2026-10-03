@@ -24,7 +24,7 @@
 | Lint first-party | **893** | `php scripts/lint.php` → `Linted 893 PHP files — 0 failure(s).` |
 | Entri classmap statis | **1154** | `grep -c "=>" autoload/zef_autoload.php` |
 | Self-test | **501** | `php bin/zef --self-test` → `PASSED: 501  FAILED: 0` |
-| Suite PHPUnit | **3800 / 140881 / 59** | `build/junit.xml` (evidence CI) |
+| Suite PHPUnit | **3806 / 141097 / 6** | `build/junit.xml` (evidence CI) |
 
 ---
 
@@ -62,7 +62,7 @@
 | 4 | baris 107 | Infrastructure (115 file) | **116** |
 | 5 | baris 118 | Adapters (60 file) | **64** |
 | 6 | baris 182 | classmap 250 FQCN | **1154** |
-| 7 | baris 189–191 | v2.34.1 · 630 file · lint 861 · suite 3.539/140.435/6 | **v2.36.0 · 640 · lint 893 · suite 3.800/140.881/59** |
+| 7 | baris 189–191 | v2.34.1 · 630 file · lint 861 · suite 3.539/140.435/6 | **v2.36.0 · 640 · lint 893 · suite 3.806/141.097/6** |
 
 ### 2.3 `docs/CLI.md`
 

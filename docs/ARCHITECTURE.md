@@ -188,7 +188,7 @@ perilaku monolith; guard membuatnya no-op ketika paket `psr/*` resmi terpasang.
 Angka pada tabel di bawah adalah hasil verifikasi **saat pemecahan monolith** (v2.7.0).
 Keadaan v2.36.0: 640 file PHP di `src/` (Domain 290 · Application 138 · Infrastructure 116 ·
 Adapters 64 · Compat 23), lint first-party **893 file / 0 gagal**, self-test **501/501**,
-suite PHPUnit **3.800 test / 140.881 asersi / 59 skipped** (evidence junit CI), gate mutasi
+suite PHPUnit **3.806 test / 141.097 asersi / 6 skipped** (evidence junit CI), gate mutasi
 agregat **85/90** tercapai sejak v2.15.0 (lihat `docs/QUALITY.md`).
 
 | Pengujian                                  | Monolith | Hasil refactor |
