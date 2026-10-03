@@ -497,7 +497,7 @@ Sebuah perubahan tidak dianggap selesai sebelum **gerbang independen** hijau. "T
 
 <table width="100%">
   <tr><th align="left">#</th><th align="left">Gerbang</th><th align="left">Perintah</th><th align="left">Ambang / bukti</th></tr>
-  <tr><td>1</td><td>Syntax</td><td><kbd>composer lint</kbd></td><td><code>895</code> berkas first-party, 0 kegagalan</td></tr>
+  <tr><td>1</td><td>Syntax</td><td><kbd>composer lint</kbd></td><td><code>896</code> berkas first-party, 0 kegagalan</td></tr>
   <tr><td>2</td><td>Suite PHPUnit native</td><td><kbd>composer test</kbd></td><td><code>3808</code> test · <code>141105</code> assertion · 5 skipped</td></tr>
   <tr><td>3</td><td>Coverage</td><td><kbd>composer coverage:gate</kbd></td><td>ambang statement <b>90%</b> (diukur Xdebug)</td></tr>
   <tr><td>4</td><td>Mutation testing</td><td><kbd>composer mutation</kbd></td><td><code>--min-msi=85 --min-covered-msi=90</code></td></tr>
@@ -507,7 +507,7 @@ Sebuah perubahan tidak dianggap selesai sebelum **gerbang independen** hijau. "T
 </table>
 
 ```bash
-composer lint            # Linted 895 PHP files — 0 failure(s).
+composer lint            # Linted 896 PHP files — 0 failure(s).
 composer test            # Tests: 3808, Assertions: 141105, Skipped: 5
 php bin/zef --self-test  # PASSED: 501  FAILED: 0
 ```
@@ -525,7 +525,7 @@ php bin/zef --self-test  # PASSED: 501  FAILED: 0
 | **Covered MSI** | mutan terdeteksi ÷ mutan yang tercakup test |
 | **Mutation Code Coverage** | mutan tercakup ÷ seluruh mutan — *reachability* test, bukan ketajaman asersi |
 
-Kampanye mutasi dijalankan per **zona kanonik** (`scripts/f16_zones.tsv`, 27 zona) dengan `--filter`, sehingga setiap area punya angka MSI-nya sendiri. Ratchet per-zona berjalan di `ci.yml` pada setiap push/PR, sedangkan suite agregat dijalankan `mutation.yml` dan **dituntut** `release.yml` sebelum rilis dipublikasikan.
+Kampanye mutasi dijalankan per **zona kanonik** (`scripts/f16_zones.tsv`, 36 zona) dengan `--filter`, sehingga setiap area punya angka MSI-nya sendiri. Ratchet per-zona berjalan di `ci.yml` pada setiap push/PR, sedangkan suite agregat dijalankan `mutation.yml` dan **dituntut** `release.yml` sebelum rilis dipublikasikan.
 
 </details>
 

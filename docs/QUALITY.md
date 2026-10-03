@@ -22,7 +22,7 @@ composer format:check && composer phpcs && composer rector:check   # 7. gaya & m
 alat sengaja dilewati agar gerbang mencerminkan kode yang dimiliki proyek ini.
 
 ```
-Linted 861 PHP files — 0 failure(s).
+Linted 896 PHP files — 0 failure(s).
 ```
 
 ## 2. Suite PHPUnit — `composer test`
@@ -32,7 +32,7 @@ Cakupan sumber: `src/`, `modules/`, `plugins/` (kecuali `src/Compat`, yang merup
 artefak byte-stabil hasil ekstraksi v2.7.0).
 
 ```
-Tests: 3636, Assertions: 140643, Skipped: 6
+Tests: 3808, Assertions: 141101, Skipped: 6
 ```
 
 Suite self-test internal (`bin/zef --self-test`) berdiri **terpisah** dan tidak
@@ -87,7 +87,7 @@ tidak bisa menaikkan skor.
 
 ### 4.2 Zona kampanye (dinormalisasi)
 
-Zona = daftar berkas/direktori pada `scripts/f16_zones.tsv` (27 zona kanonik),
+Zona = daftar berkas/direktori pada `scripts/f16_zones.tsv` (36 zona kanonik),
 dijalankan satu per satu dengan `--filter` sehingga setiap area punya angka MSI-nya
 sendiri. Zona kecil yang digabung kecuali berkasnya diuji terpisah:
 
@@ -96,7 +96,9 @@ sendiri. Zona kecil yang digabung kecuali berkasnya diuji terpisah:
 `app-msg-evt-sec`, `infra-a`, `ad-http-a`, `ad-http-b`, `ad-http-c2`,
 `ad-kernel-app`, `ad-kernel-dispatch`, `ad-kernel-mid`, `ad-router`,
 `ad-runtime-sec`, `infra-obs`, `infra-sec-fnd`, `middleware`,
-`app-obs-a`, `app-obs-b`, `app-obs-c`.
+`app-obs-a`, `app-obs-b`, `app-obs-c`, `app-db-tx`, `es-hardening`,
+`app-rate-limit`, `app-runtime-async`, `app-rules`, `d-storage`,
+`infra-storage`, `infra-job-pdo`, `infra-job-redis`, `openapi-gate`.
 
 ### 4.3 Cara menjalankan satu zona
 
@@ -167,7 +169,7 @@ diregenerasi dengan sengaja, dan CI gagal pada setiap error di luar baseline.
 composer deptrac   # deptrac analyse --config-file=deptrac.yaml --fail-on-uncovered
 ```
 
-`depfrac.yaml` menetapkan lima layer hexagonal (`Domain`, `Application`,
+`deptrac.yaml` menetapkan lima layer hexagonal (`Domain`, `Application`,
 `Infrastructure`, `Adapters`, `Compat`) plus layer aplikasi (`App`, `Module`,
 `Plugin`) dan sejumlah *exception layer* terdokumentasi untuk deviasi yang disengaja.
 `--fail-on-uncovered` menjadikan berkas yang tak ternaungi layer sebagai **kegagalan**,
