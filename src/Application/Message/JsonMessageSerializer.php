@@ -85,7 +85,10 @@ final class JsonMessageSerializer implements MessageSerializerInterface
             if (!is_array($current)) {
                 continue;
             }
-            if ($depth >= self::MAX_PAYLOAD_DEPTH || ++$visited > self::MAX_PAYLOAD_NODES) {
+            // Count this node before the limit check: the increment is a
+            // dedicated statement so the guard reads as a pure comparison.
+            $visited++;
+            if ($depth >= self::MAX_PAYLOAD_DEPTH || $visited > self::MAX_PAYLOAD_NODES) {
                 throw new \InvalidArgumentException('Message payload structure exceeds the safety limit.');
             }
 
