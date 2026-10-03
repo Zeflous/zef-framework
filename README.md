@@ -52,6 +52,36 @@
 
 <br>
 
+## 🎯 Fokus Berjalan — RFC-0001: Layout Target v3 & Sistem Modul
+
+> **Draf terbuka — menunggu umpan balik sebelum implementasi dimulai.**
+> Baca & tanggapi di [`docs/RFC-0001-module-layout.md`](docs/RFC-0001-module-layout.md).
+
+Sistem modul eksternal **plug-n-play** — `Modules/` sebagai drop zone tempat *drop folder = install* —
+di atas kernel hexagonal yang tetap terkunci gerbangnya. Modul memakai anatomi **MVC klasik ala Kohana**
+(`module.php` + `Controllers/`, `Models/`, `Views/`, `Configs/`, `Languages/`, `Middleware/`,
+`Plugins/`, `Migrations/`, `public/`, `tests/`), dipisahkan dari kernel oleh **firewall governance**:
+`Modules/` berada di luar graf deptrac, mutu ditegakkan contract-test.
+
+Dua kontrak direktori baru menyertainya: **`temp/`** — hanya menampung artefak runtime yang bisa
+diregenerasi, aman di-wipe kapan pun (cache, AOT, i18n ter-compile, sandbox codegen) — dan
+**`generator/`** — mesin codegen yang di-shipped sebagai kode rilis, dengan output `make:*`
+ditampung di sandbox `temp/generator/`: dipakai = **PROMOTE** (move + regen classmap),
+tidak dipakai = auto-GC. Editing classmap manual menjadi mustahil secara desain.
+
+| Keputusan inti | Ringkas |
+|:---------------|:--------|
+| **D1** Dua zona modul | `src/Module/` internal (governance penuh) vs `Modules/` eksternal (drop zone) |
+| **D2** Anatomi modul MVC klasik | manifest + `Controllers/`, `Models/`, `Views/`, `Configs/`, `Languages/`, `Plugins/`, `Migrations/`, `public/`, `tests/` |
+| **D3** Firewall governance | kernel tetap hexagonal; mutu modul via manifest-validasi + contract-test |
+| **D4** i18n cascade 5 tingkat | *nearest-wins*: locale modul → default modul → locale sistem → default sistem → kunci + telemetri miss |
+| **D5** Kontrak `temp/` | taksonomi 3 kelas berkas; yang tak bisa diregenerasi dilarang di `temp/` |
+| **D6** `generator/` + sandbox | engine di-shipped; output scaffold di-promote atau di-GC |
+| **D7** Views dua tingkat | view internal kernel (error/exception) + view modul privat by-location — tidak pernah web-readable |
+| **D8** `public/` docroot murni | aset + upload + symlink `public/modules/<x>/` saat modul aktif |
+
+<br>
+
 ## <img src="https://img.shields.io/badge/-%20-0b1220" width="6" height="20" alt=""> Kenapa ZEF
 
 Banyak framework PHP tumbuh dari kenyamanan. ZEF tumbuh dari pembongkaran: satu berkas raksasa 12.639 baris dipindahkan **verbatim** ke struktur multi-berkas, lalu dijaga ketat oleh gerbang otomatis.
@@ -522,6 +552,7 @@ Situs dokumentasi diterbitkan otomatis ke GitHub Pages pada setiap push ke `main
 | [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Worker persisten RoadRunner, state lintas-request, observabilitas |
 | [`docs/GOVERNANCE.md`](docs/GOVERNANCE.md) | Kebijakan gerbang rilis &amp; ratchet |
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) | Rencana &amp; status fitur |
+| [`docs/RFC-0001-module-layout.md`](docs/RFC-0001-module-layout.md) | **DRAFT — fokus berjalan** — layout target v3 &amp; sistem modul plug-n-play (D1–D8) |
 | [`docs/EDGE-CASE-MATRIX.md`](docs/EDGE-CASE-MATRIX.md) | Kurikulum uji edge-case per fase kampanye mutasi |
 | [`docs/security/php-sast.md`](docs/security/php-sast.md) | Panduan SAST PHP |
 | [`docs/security/stub-prescan.md`](docs/security/stub-prescan.md) | Matriks paritas pre-scan korpus fixture `tests/` (12 dimensi INCLUDED/EXCLUDED) |
