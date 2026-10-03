@@ -79,8 +79,9 @@ produksi mematikan worker, bukan fallback diam-diam (*Production Wins*).
 Lanjutan aktif: **RFC-0002 — Async Widget Resolver**
 ([`docs/RFC-0002-async-widget-resolver.md`](docs/RFC-0002-async-widget-resolver.md)) — fan-out widget HMVC
 **konkuren** di atas async runtime native (`FiberScheduler` v2.26.0): hasil tetap deterministik mengikuti
-urutan manifest, deadline kooperatif per widget, guard **query-only** ditegakkan runtime, kegagalan tetap
-fail-soft placeholder — matriks paritas sekuensial-konkuren dikunci eksplisit.
+urutan manifest, deadline kooperatif per widget, guard **query-only** ditegakkan runtime dengan propagasi
+rekursif ke sub-tree korutin widget, kegagalan tetap fail-soft placeholder — matriks paritas
+sekuensial-konkuren dikunci eksplisit.
 
 | Keputusan inti | Ringkas |
 |:---------------|:--------|

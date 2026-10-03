@@ -30,7 +30,7 @@ Sembilan keputusan inti:
 | **W3** | Struktur body / inner / guard per widget | body total yang mengonversi semua outcome menjadi tepat satu verdict; guard timer membatalkan inner saat deadline menang — persis pemetaan `TaskCancelledException` milik `AsyncRuleEngine` |
 | **W4** | Deadline kooperatif per widget | `timeoutMs` per task, default dari opsi; tanpa titik suspend tidak ada interupsi — keterbatasan ini didokumentasikan terbuka, bukan disembunyikan |
 | **W5** | Cap konkurensi via `Semaphore` | default = satu permit per widget (pola rumah `AsyncRuleEngine`); widget kelebihan park di antrian permit — bukan spawn liar |
-| **W6** | Guard query-only ditegakkan runtime | scope fiber-lokal (`CoroutineLocal`) dipasang resolver + middleware `CommandBus` melempar `QueryOnlyViolationException` — aturan D2 naik kelas dari konvensi review menjadi kontrak mesin |
+| **W6** | Guard query-only ditegakkan runtime | scope fiber-lokal (`CoroutineLocal`) dipasang resolver + middleware `CommandBus` melempar `QueryOnlyViolationException`; flag diturunkan **rekursif** ke korutin anak lewat `QueryOnlyScope::spawn()` — scope menjadi sub-tree tracker — aturan D2 naik kelas dari konvensi review menjadi kontrak mesin |
 | **W7** | Pre-resolve dependensi request-scoped | controller widget + dependensinya dimaterialisasi di fiber induk SEBELUM fan-out; pelanggaran lazy-init konkuren → `ConcurrentServiceInitializationException` → outcome Failed (fail-soft, halaman tetap hidup) |
 | **W8** | Telemetri paritas | `zef.widgets.failed` + atribut `reason`, `zef.widgets.duration` — konkretisasi shorthand `widgets.failed{module}` dari D2 ke konvensi metric `zef.*` yang sudah berjalan |
 | **W9** | Kejujuran wall-clock | overlap nyata hanya terjadi saat render men-suspend (await/timer/adapter async); I/O blocking murni = wall time sekuensial — resolver tetap memberi deadline, cap, ordering, fail-soft |
@@ -267,6 +267,15 @@ interface QueryOnlyGuardInterface
 interface QueryOnlyScope
 {
     public function exit(): void;   // idempotent; dipanggil di finally
+
+    /**
+     * Spawn korutin anak DI DALAM sub-tree widget ini: wrapper memasang scope pada
+     * fiber anak sebelum $fn berjalan (dan melepasnya di finally) — flag query-only
+     * turun rekursif ke seluruh keturunan yang lahir lewat handle ini.
+     *
+     * @param callable(): mixed $fn
+     */
+    public function spawn(callable $fn, string $name = ''): \Zef\Framework\Runtime\Async\TaskInterface;
 }
 ```
 
@@ -293,10 +302,18 @@ final class QueryOnlyGuardMiddleware implements \Zef\Framework\CQRS\CqrsMiddlewa
 Mekanismenya fiber-lokal: resolver memasang scope lewat `CoroutineLocal` di dalam korutin widget
 (`enter()` sebelum render, `exit()` di `finally`), sehingga `CommandBusInterface::dispatch()` yang dipanggil
 dari render widget melempar `QueryOnlyViolationException` — sementara command yang sah dari controller induk
-di fiber lain tidak terpengaruh sama sekali. **Batasan yang dinyatakan terbuka:** scope bersifat per-fiber
-("never shared" menurut kontrak `CoroutineLocal`); widget yang sengaja men-spawn korutin tambahan lalu
-melempar Command dari sana lolos dari guard fiber-lokal — kasus ini ditangkap contract-test modul (fase C),
-bukan oleh runtime, dan dicatat sebagai wart yang disengaja diterima.
+di fiber lain tidak terpengaruh sama sekali.
+
+**Propagasi rekursif ke sub-tree korutin.** PHP Fiber tidak punya relasi parent-child dan `CoroutineLocal`
+bersifat per-fiber ("never shared"), jadi flag query-only **tidak turun otomatis** ke korutin yang di-spawn
+dari dalam widget. Sub-tree tracker-nya adalah handle scope itu sendiri: `QueryOnlyScope::spawn()` membungkus
+callable dengan wrapper yang memasang scope pada fiber anak sebelum eksekusi dan melepasnya di `finally` —
+flag diturunkan rekursif ke seluruh keturunan yang lahir lewat jalur tersanksi ini, sehingga Command dari
+kedalaman sub-tree mana pun tetap melempar `QueryOnlyViolationException`. Mekanisme ini berdiri di atas mesin
+hari ini tanpa menyentuh kernel: `spawn()` scope hanyalah `FiberScheduler::spawn()` yang dibungkus enter/exit.
+Wart yang tersisa kini menyempit: korutin yang di-spawn **langsung ke scheduler** — di luar handle scope —
+tetap lolos; pola itu ditolak contract-test modul (fase C: widget hanya boleh spawn lewat scope yang
+ter-injeksi), dan penutupan penuhnya adalah pelacakan parentage task di engine (pertanyaan terbuka #7).
 
 ### 5.6 `ModuleDispatcher` dua-fase: kontrak D2 yang dikonkretkan
 
@@ -388,7 +405,7 @@ query tidak ber-idempotensi.
 |:--------|:------------------------------------------|:------------------------------------------|:--------|
 | Urutan hasil | urutan pemanggilan | urutan manifest (bukan urutan selesai) | ✅ identik untuk konsumen view |
 | Kegagalan 1 widget | placeholder + `widgets.failed{module}` | placeholder + `zef.widgets.failed{module,widget,reason}` | ✅ superset atribut |
-| Query-only | konvensi review (D2) | ditegakkan runtime: middleware CommandBus + scope fiber | ⬆️ lebih ketat |
+| Query-only | konvensi review (D2) | ditegakkan runtime: middleware CommandBus + scope fiber + propagasi rekursif `scope.spawn()` ke sub-tree | ⬆️ lebih ketat |
 | Deadline per widget | tidak ada (mengikuti budget HTTP global) | guard kooperatif per task, default opsi | ➕ baru |
 | Wall time | Σ durasi widget | maksimum durasi widget yang overlap + park antrian semaphore | tergantung profil I/O (§8.2) |
 | Dependensi request-scoped | lazy bebas | wajib pre-resolve; pelanggaran → verdict Failed | ⬆️ lebih ketat |
@@ -452,7 +469,7 @@ API mesin nyata:
 | `$fiber->getResult()` | `$task->result(): mixed` — rethrow untuk Failed/Cancelled | `TaskInterface::result()` bukan getter polos |
 | try/catch di dalam closure widget | dipertahankan sebagai **pola body-total**, tetapi konversi outcome pindah ke body resolver; inner tetap murni | menyalin disiplin `AsyncRuleEngine` (satu verdict per widget, body tak pernah melempar) |
 | `$meter->increment("widgets.failed", ["module" => …])` | `$meter->increment('zef.widgets.failed', 1, ['module' => …, 'widget' => …, 'reason' => …])` | `MeterInterface::increment(string, float\|int, array)` — atribut argumen ketiga; konvensi prefix `zef.*` |
-| `assertQueryOnlyContext($task)` (stub) | `QueryOnlyGuardInterface` + scope fiber-lokal + `QueryOnlyGuardMiddleware` di CommandBus | kontrak `CoroutineLocal` + `CqrsMiddlewareInterface` (§5.5) |
+| `assertQueryOnlyContext($task)` (stub) | `QueryOnlyGuardInterface` + scope fiber-lokal dengan `spawn()` propagasi rekursif + `QueryOnlyGuardMiddleware` di CommandBus | kontrak `CoroutineLocal` + `CqrsMiddlewareInterface` (§5.5) |
 | `"<div … data-widget='{$key}'>…"` interpolasi mentah | placeholder dari renderer kernel D7, escape-by-default | interpolasi atribut mentah = hazard injeksi |
 | `QueryBusInterface` di `Application\CQRS` | `Zef\Framework\CQRS` (`src/Domain/CQRS`); mutasi lewat `CommandBusInterface::dispatch()` | namespace aktual; nama metode dispatch |
 | `$dispatcher->dispatchSubRequest(...)` langsung di korutin | jalur async = `prepare()` di fiber induk + `render()` di korutin widget | aturan pre-resolve W7; `dispatchSubRequest()` tetap wajah sekuensial (§5.6) |
@@ -496,7 +513,7 @@ Setiap fase aditif, nol perubahan perilaku lama, melewati seluruh gerbang CI:
 |:-----|:----|:----------|
 | **A. ModuleDispatcher sekuensial** (milik fase 2 RFC-0001) | `dispatchSubRequest()` + `prepare()`/`render()` internal + renderer D7 | D2 |
 | **B. Resolver + guard + telemetry** | kontrak `Zef\Framework\Widget` (Domain) + `AsyncWidgetResolver` (Application) + `QueryOnlyGuardMiddleware` wiring + metric `zef.widgets.*` + opsi | A |
-| **C. Contract-test + doctor + docs parity** | harness modul D3: widget query-only, placeholder parity sekuensial-konkuren, deadline deterministik; cek doctor; matriks paritas §7 jadi assertion | B |
+| **C. Contract-test + doctor + docs parity** | harness modul D3: widget query-only (termasuk disiplin spawn-via-scope), placeholder parity sekuensial-konkuren, deadline deterministik via jam virtual; cek doctor; matriks paritas §7 jadi assertion | B |
 
 ---
 
@@ -510,6 +527,7 @@ Setiap fase aditif, nol perubahan perilaku lama, melewati seluruh gerbang CI:
 | 4 | Budget induk (overall timeout seluruh komposisi) di v1? | tidak — cukup `FiberScheduler::timeout()` oleh caller; komposisi eksplisit lebih jujur daripada knob kedua |
 | 5 | Placeholder per modul (view fallback milik modul)? | kernel dulu (satu template, escape-by-default); override belakangan lewat konfigurasi modul |
 | 6 | `zef.widgets.duration` dalam ms atau detik? | ms — sisi konsumen alarm berpikir dalam ms; konversi ke detik hanya di batas engine scheduler |
+| 7 | Penutupan penuh wart scope: catat parentage task di engine (`FiberTaskTable` mencatat task induk saat `spawn()` dipanggil dari dalam korutin — informasi itu sudah dimiliki runner saat men-step task) sehingga guard dapat memeriksa rantai leluhur, menggantikan disiplin spawn-via-scope? | ditunda — `scope.spawn()` + contract-test menutup jalur tersanksi tanpa menyentuh zona mutasi `app-runtime-async` (MSI 96.64%); parentage engine diambil saat ada widget nyata yang benar-benar butuh spawn bebas |
 
 ---
 
@@ -609,7 +627,9 @@ try {
 ## Lampiran B — Matriks uji
 
 Deterministik tanpa real wait: scheduler di-inject `MonotonicClockInterface` + `SleeperInterface` test double
-yang memajukan waktu — properti yang sudah dipakai suite async runtime.
+yang memajukan waktu — properti yang sudah dipakai suite async runtime. Khusus uji deadline, jam virtual
+dimajukan **tepat ke titik budget**: `DeadlineExceeded` terjadi secara deterministik di gate CI — nol
+real-wait, nol flaky akibat fluktuasi wall-clock CPU saat runner sedang padat.
 
 | Kasus | Assertion kunci |
 |:------|:----------------|
@@ -624,6 +644,8 @@ yang memajukan waktu — properti yang sudah dipakai suite async runtime.
 | Kunci manifest ganda / field kosong | `InvalidArgumentException` sebelum spawn pertama |
 | `resolve()` di luar korutin | `LogicException` (mirror `AsyncRuleEngine::evaluate()`) |
 | Paritas sekuensial-konkuren | `htmlMap()` identik untuk manifest sama pada jalur `dispatchSubRequest()` vs `run()` |
-| Coroutines bersarang (widget spawn korutin lalu Command) | **lolos guard** — wart diterima; contract-test fase C yang menangkap |
+| Korutin anak via `QueryOnlyScope::spawn()` lalu Command | **terblok** — flag turun rekursif: wrapper memasang scope pada fiber anak sebelum callable berjalan |
+| Korutin anak di-spawn langsung ke scheduler (di luar scope) | lolos — wart tersisa; contract-test fase C menolak pola ini pada modul |
+| Uji `DeadlineExceeded` di gate CI | jam virtual dimajukan tepat ke budget → 100% stabil, nol ketergantungan wall-clock CPU |
 | Telemetry | `zef.widgets.failed` + `zef.widgets.duration` terpancar dengan atribut penuh |
 
