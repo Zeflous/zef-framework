@@ -145,6 +145,11 @@ Aturan mainnya:
   kegagalan di-log + counter telemetry (`widgets.failed{module}`) — pola resilience
   halaman, bukan exception yang membatalkan seluruh halaman.
 
+Jalur konkuren — fan-out seluruh widget satu komposisi di atas async runtime native,
+dengan deadline per widget dan penegakan query-only di runtime — di-spec terpisah di
+[RFC-0002](RFC-0002-async-widget-resolver.md); paritas perilaku jalur sekuensial dan
+konkuren dikunci di matriks paritas dokumen tersebut.
+
 #### Blueprint opsional: bounded context DDD bawaan modul
 
 Modul dengan logika bisnis berat boleh membawa *bounded context*-nya sendiri di dalam
