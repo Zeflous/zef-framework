@@ -408,10 +408,10 @@ zef-framework/
 │   ├── worker.php               # worker RoadRunner
 │   └── rr                       # binary RoadRunner
 ├── public/index.php             # entrypoint HTTP (web SAPI)
-├── src/                         # 641 berkas PHP — inti framework
+├── src/                         # 640 berkas PHP — inti framework
 │   ├── Bootstrap.php
 │   ├── Compat/Psr/              # 23 shim PSR kondisional
-│   ├── Domain/                  # 291 — port, kontrak, value object, validator
+│   ├── Domain/                  # 290 — port, kontrak, value object, validator
 │   ├── Application/             # 138 — mesin orkestrasi in-process (CQRS, jobs, observability)
 │   ├── Infrastructure/          # 116 — adapter outbound: cache, redis, otlp, crypto, prometheus
 │   ├── Adapters/                #  64 — adapter inbound: http, router, kernel, runtime
@@ -419,7 +419,7 @@ zef-framework/
 ├── app/Bootstrap.php            # aplikasi demo (createApp + provider)
 ├── modules/                     # modul: Core, Health
 ├── plugins/                     # plugin contoh: Toko
-├── tests/                       # 221 berkas PHP — suite PHPUnit native + self-test
+├── tests/                       # 222 berkas PHP — suite PHPUnit native + self-test
 ├── benchmarks/ContainerBench.php
 ├── deploy/                      # Dockerfile · docker-compose.yml · k8s/
 ├── docs/                        # 42 CHANGELOG + panduan (lihat bagian Dokumentasi)
@@ -427,7 +427,7 @@ zef-framework/
 │   ├── lint.php                 # lint seluruh berkas PHP
 │   ├── build_docs.php           # Markdown → situs HTML statis
 │   └── ci/                      # gate: coverage, phpstan-baseline, zone-coverage, abandoned-policy
-└── .github/workflows/           # 21 workflow
+└── .github/workflows/           # 20 workflow
 ```
 
 <br>
@@ -533,7 +533,7 @@ Kampanye mutasi dijalankan per **zona kanonik** (`scripts/f16_zones.tsv`, 27 zon
 
 ## CI/CD
 
-21 workflow pada `.github/workflows/`. `main` dilindungi: 13 check wajib efektif — union proteksi classic BP (12 konteks) + ruleset `main` (6 konteks, 5 tumpang tindih; tabel kanonik di [`docs/GOVERNANCE.md`](docs/GOVERNANCE.md) §1.1) — PR wajib, dan aturan berlaku juga untuk admin.
+20 workflow pada `.github/workflows/`. `main` dilindungi: 13 check wajib efektif — union proteksi classic BP (12 konteks) + ruleset `main` (6 konteks, 5 tumpang tindih; tabel kanonik di [`docs/GOVERNANCE.md`](docs/GOVERNANCE.md) §1.1) — PR wajib, dan aturan berlaku juga untuk admin.
 
 | Workflow | Peran |
 |:---------|:------|
