@@ -4,9 +4,9 @@ Dokumen ini menjelaskan bagaimana monolith `zef_framework_v2.7.0.php` dipecah me
 struktur hexagonal (Ports & Adapters), aturan arah dependensi antar-layer, dan peta
 pemindahan setiap subsistem.
 
-> **Snapshot struktur: v2.34.1.** Section 1–7 menggambarkan prinsip dan keadaan
-> terkini pohon `src/` (630 file PHP: Domain 287 · Application 136 · Infrastructure 115 ·
-> Adapters 60 · Compat 23). Section 8–11 adalah catatan historis per rilis
+> **Snapshot struktur: v2.36.0.** Section 1–7 menggambarkan prinsip dan keadaan
+> terkini pohon `src/` (640 file PHP: Domain 290 · Application 138 · Infrastructure 116 ·
+> Adapters 64 · Compat 23). Section 8–11 adalah catatan historis per rilis
 > (v2.8.0–v2.11.0) yang dipertahankan sebagai rekam jejak refactor; evolusi lanjutan
 > v2.12.0–v2.34.1 diringkas di section 12. Rincian per rilis: `docs/CHANGELOG-v*.md`.
 
@@ -81,7 +81,7 @@ Aturan arah dependensi (diberlakukan secara dokumentatif; bisa diperiksa dengan 
 
 ## 3. Definisi Layer
 
-### `src/Domain` — Port, Kontrak, Value Object (287 file)
+### `src/Domain` — Port, Kontrak, Value Object (290 file)
 Lapisan terdalam. Berisi **semua interface port** (Cache, CQRS, Message, Job, Security,
 Observability, Resource, Runtime, Database, EventSourcing, OpenApi, Storage, Rules),
 **value object murni** (`JobEnvelope`, `MessageEnvelope`, `SpanContext`, `CqrsContext`,
@@ -92,7 +92,7 @@ keputusan (`SecurityVerdict`, `ReplayDecision`, `AuthenticationStatus`, `Service
 (`HttpReasonPhrases`) dan kebijakan arsitektur (`ArchitecturePolicy`).
 **Ciri layer:** tidak ada I/O, tidak ada global state, tidak tahu HTTP/Redis/PDO/dll.
 
-### `src/Application` — Mesin Orkestrasi In-Process (136 file)
+### `src/Application` — Mesin Orkestrasi In-Process (138 file)
 Implementasi alur kerja framework yang berjalan dalam satu proses:
 `Container` (auto-wiring, compiler, registry, scope, radix-tree namespace), bus `CQRS`
 (Command/Query + idempotency), `InProcessMessageBus` + serializer, `InProcessJobWorker` +
@@ -104,7 +104,7 @@ CSRF manager, origin policy, rate limiter in-memory, replay protector), orkestra
 dan `Runtime` async fiber-native (v2.26.0).
 **Ciri layer:** mengorkestrasi port dari Domain; tidak menyentuh jaringan/disk secara langsung.
 
-### `src/Infrastructure` — Adapter Outbound (115 file)
+### `src/Infrastructure` — Adapter Outbound (116 file)
 Semua titik sentuh teknologi eksternal: `ConfigAggregator` + modul registry (I/O konfigurasi),
 `EnvironmentSecretProvider`, `Env` (getenv), cache store in-memory + clock + normalizer,
 `RedisRateLimiter` & `RedisSharedRateLimitStore` (script Lua), `ApcuRateLimiter`,
@@ -115,7 +115,7 @@ failed-storage), `Message` (transport in-memory), `OpenApi` (serializer JSON/YAM
 dan `Console` (mesin generator ZEF Maker, 22 kelas, v2.16.0).
 **Ciri layer:** satu-satunya tempat yang tahu Redis/APCu/OTLP/PDO/S3/getenv.
 
-### `src/Adapters` — Adapter Inbound (60 file)
+### `src/Adapters` — Adapter Inbound (64 file)
 Semua cara dunia luar **masuk** ke framework:
 - `Adapters/Http` — implementasi PSR-7/17 (`Request`, `Response`, `Stream`, `Uri`,
   `UploadedFile`, `RequestFactory`, `Psr17Factory`, `RequestBodyPolicy`, …).
@@ -179,16 +179,16 @@ perilaku monolith; guard membuatnya no-op ketika paket `psr/*` resmi terpasang.
    `Zef\Middleware\` → `app/Middleware/`, dst. Jalankan `composer dump-autoload` bila
    menambah kelas baru.
 2. **Classmap statis zero-composer** — `autoload/zef_autoload.php` berisi peta eksplisit
-   250 FQCN → path, terdaftar via `spl_autoload_register`. Shim PSR dimuat eager (23 file)
+   1154 FQCN → path, terdaftar via `spl_autoload_register`. Shim PSR dimuat eager (23 file)
    meniru perilaku monolith. File ini juga didaftarkan di `autoload.files` Composer, jadi
    kedua mekanisme hidup berdampingan tanpa konflik.
 
 ## 6. Verifikasi Perilaku (hasil nyata)
 
 Angka pada tabel di bawah adalah hasil verifikasi **saat pemecahan monolith** (v2.7.0).
-Keadaan v2.34.1: 630 file PHP di `src/` (Domain 287 · Application 136 · Infrastructure 115 ·
-Adapters 60 · Compat 23), lint first-party **861 file / 0 gagal**, self-test **501/501**,
-suite PHPUnit **3.539 test / 140.435 asersi / 6 skipped** (evidence junit CI), gate mutasi
+Keadaan v2.36.0: 640 file PHP di `src/` (Domain 290 · Application 138 · Infrastructure 116 ·
+Adapters 64 · Compat 23), lint first-party **893 file / 0 gagal**, self-test **501/501**,
+suite PHPUnit **3.800 test / 140.881 asersi / 59 skipped** (evidence junit CI), gate mutasi
 agregat **85/90** tercapai sejak v2.15.0 (lihat `docs/QUALITY.md`).
 
 | Pengujian                                  | Monolith | Hasil refactor |

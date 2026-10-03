@@ -133,7 +133,7 @@ Banyak framework PHP tumbuh dari kenyamanan. ZEF tumbuh dari pembongkaran: satu 
   </tr>
   <tr>
     <td><b>HTTP &amp; Router</b></td>
-    <td>Radix-tree router · route group/prefix bersarang · route cache terkompilasi · conditional GET (ETag/304) · RFC 9457 Problem Details · negosiasi versi API · middleware PSR-15</td>
+    <td>Radix-tree router · route group/prefix bersarang · route cache terkompilasi · subdomain routing (multi-tenancy) · route model binding · localization routing (<code>/{locale}/...</code>) · content negotiation · conditional GET (ETag/304) · RFC 9457 Problem Details · negosiasi versi API · middleware PSR-15</td>
   </tr>
   <tr>
     <td><b>CQRS</b></td>
@@ -379,7 +379,7 @@ Respon `404`, `400` (pelanggaran constraint), dan `405` juga aktif.
   <tr><td><kbd>bin/zef list</kbd></td><td>Katalog seluruh command (mendukung <code>--json</code>)</td></tr>
   <tr><td><kbd>bin/zef --self-test</kbd></td><td>Menjalankan 501 assertion self-test</td></tr>
   <tr><td><kbd>bin/zef --serve 0.0.0.0:8080</kbd></td><td>Server HTTP pengembangan</td></tr>
-  <tr><td><kbd>bin/zef route:list</kbd></td><td>Inspeksi rute beserta namanya</td></tr>
+  <tr><td><kbd>bin/zef route:list</kbd></td><td>Inspeksi rute (METHOD, PATH, NAME, HANDLER, MODULE, PRIO, MIDDLEWARE, HOST) · mendukung <code>--json</code></td></tr>
   <tr><td><kbd>bin/zef module:list</kbd></td><td>Modul terdaftar (hasil boot nyata)</td></tr>
   <tr><td><kbd>bin/zef plugin:list</kbd></td><td>Plugin yang ditemukan di disk</td></tr>
   <tr><td><kbd>bin/zef config:show &lt;key&gt;</kbd></td><td>Dump konfigurasi teragregasi (JSON-safe)</td></tr>
@@ -408,26 +408,26 @@ zef-framework/
 │   ├── worker.php               # worker RoadRunner
 │   └── rr                       # binary RoadRunner
 ├── public/index.php             # entrypoint HTTP (web SAPI)
-├── src/                         # 360 berkas PHP — inti framework
+├── src/                         # 640 berkas PHP — inti framework
 │   ├── Bootstrap.php
 │   ├── Compat/Psr/              # 23 shim PSR kondisional
-│   ├── Domain/                  # 181 — port, kontrak, value object, validator
-│   ├── Application/             #  66 — mesin orkestrasi in-process (CQRS, jobs, observability)
-│   ├── Infrastructure/          #  47 — adapter outbound: cache, redis, otlp, crypto, prometheus
-│   ├── Adapters/                #  35 — adapter inbound: http, router, kernel, runtime
-│   └── Middleware/              #   7 — middleware PSR-15
+│   ├── Domain/                  # 290 — port, kontrak, value object, validator
+│   ├── Application/             # 138 — mesin orkestrasi in-process (CQRS, jobs, observability)
+│   ├── Infrastructure/          # 116 — adapter outbound: cache, redis, otlp, crypto, prometheus
+│   ├── Adapters/                #  64 — adapter inbound: http, router, kernel, runtime
+│   └── Middleware/              #   8 — middleware PSR-15
 ├── app/Bootstrap.php            # aplikasi demo (createApp + provider)
 ├── modules/                     # modul: Core, Health
 ├── plugins/                     # plugin contoh: Toko
-├── tests/                       # 90 berkas PHP — suite PHPUnit native + self-test
+├── tests/                       # 220 berkas PHP — suite PHPUnit native + self-test
 ├── benchmarks/ContainerBench.php
 ├── deploy/                      # Dockerfile · docker-compose.yml · k8s/
-├── docs/                        # 25 CHANGELOG + panduan (lihat bagian Dokumentasi)
+├── docs/                        # 42 CHANGELOG + panduan (lihat bagian Dokumentasi)
 ├── scripts/
 │   ├── lint.php                 # lint seluruh berkas PHP
 │   ├── build_docs.php           # Markdown → situs HTML statis
 │   └── ci/                      # gate: coverage, phpstan-baseline, zone-coverage, abandoned-policy
-└── .github/workflows/           # 13 workflow
+└── .github/workflows/           # 20 workflow
 ```
 
 <br>
@@ -497,7 +497,7 @@ Sebuah perubahan tidak dianggap selesai sebelum **gerbang independen** hijau. "T
 
 <table width="100%">
   <tr><th align="left">#</th><th align="left">Gerbang</th><th align="left">Perintah</th><th align="left">Ambang / bukti</th></tr>
-  <tr><td>1</td><td>Syntax</td><td><kbd>composer lint</kbd></td><td><code>879</code> berkas first-party, 0 kegagalan</td></tr>
+  <tr><td>1</td><td>Syntax</td><td><kbd>composer lint</kbd></td><td><code>893</code> berkas first-party, 0 kegagalan</td></tr>
   <tr><td>2</td><td>Suite PHPUnit native</td><td><kbd>composer test</kbd></td><td><code>3800</code> test · <code>140881</code> assertion · 59 skipped</td></tr>
   <tr><td>3</td><td>Coverage</td><td><kbd>composer coverage:gate</kbd></td><td>ambang statement <b>90%</b> (diukur Xdebug)</td></tr>
   <tr><td>4</td><td>Mutation testing</td><td><kbd>composer mutation</kbd></td><td><code>--min-msi=85 --min-covered-msi=90</code></td></tr>
@@ -507,7 +507,7 @@ Sebuah perubahan tidak dianggap selesai sebelum **gerbang independen** hijau. "T
 </table>
 
 ```bash
-composer lint            # Linted 879 PHP files — 0 failure(s).
+composer lint            # Linted 893 PHP files — 0 failure(s).
 composer test            # Tests: 3800, Assertions: 140881, Skipped: 59
 php bin/zef --self-test  # PASSED: 501  FAILED: 0
 ```
