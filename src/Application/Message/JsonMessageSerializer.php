@@ -12,6 +12,14 @@ namespace Zef\Framework\Message;
 
 final class JsonMessageSerializer implements MessageSerializerInterface
 {
+    /**
+     * A serializer runs on an ingress boundary. Keep this deliberately below
+     * the 1 MiB wire limit so validation itself cannot become a memory DoS.
+     */
+    private const int MAX_PAYLOAD_NODES = 100_000;
+
+    private const int MAX_PAYLOAD_DEPTH = 1_024;
+
     #[\Override]
     public function serialize(MessageEnvelope $message): string
     {
@@ -58,12 +66,40 @@ final class JsonMessageSerializer implements MessageSerializerInterface
 
     private function assertJsonSafe(mixed $value): void
     {
-        if (is_resource($value) || is_object($value)) {
-            throw new \InvalidArgumentException('Message payload must be JSON-safe data.');
-        }
-        if (is_array($value)) {
-            foreach ($value as $item) {
-                $this->assertJsonSafe($item);
+        // Do not recurse here. Message payloads are caller-controlled and a
+        // deeply nested (but otherwise valid) array must not consume the PHP
+        // call stack before json_encode() can report its documented depth
+        // error. The explicit stack also bounds cyclic references and very
+        // broad payloads before they can keep the worker busy indefinitely.
+        $stack = [[$value, 0]];
+        $visited = 0;
+
+        while ($stack !== []) {
+            /** @var array{mixed, int} $entry */
+            $entry = array_pop($stack);
+            [$current, $depth] = $entry;
+
+            if (is_resource($current) || is_object($current)) {
+                throw new \InvalidArgumentException('Message payload must be JSON-safe data.');
+            }
+            if (!is_array($current)) {
+                continue;
+            }
+            // Count this node before the limit check: the increment is a
+            // dedicated statement so the guard reads as a pure comparison.
+            ++$visited;
+            if ($depth >= self::MAX_PAYLOAD_DEPTH || $visited > self::MAX_PAYLOAD_NODES) {
+                throw new \InvalidArgumentException('Message payload structure exceeds the safety limit.');
+            }
+
+            // Check before growing the work queue. Counting only popped nodes
+            // would still permit one wide array to allocate an unbounded stack.
+            if (count($current) > self::MAX_PAYLOAD_NODES - count($stack)) {
+                throw new \InvalidArgumentException('Message payload structure exceeds the safety limit.');
+            }
+
+            foreach ($current as $item) {
+                $stack[] = [$item, $depth + 1];
             }
         }
     }
