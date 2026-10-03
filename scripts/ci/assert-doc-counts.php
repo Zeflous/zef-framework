@@ -26,9 +26,19 @@ declare(strict_types=1);
  *   - .github/workflows/*   <-> "└── .github/workflows/ ... # <n> workflow"
  *                               AND "<n> workflow pada" (CI/CD prose)
  *
- * It re-runs no test suite and reads no build artifact, so it is cheap enough
- * to run on every push. One-directional, like the sibling ratchets: the docs
- * follow the code, never the other way round.
+ * Audit v25 widened it to the counters restated in the other docs:
+ *   - scripts/f16_zones.tsv <-> "docs/QUALITY.md (n zona kanonik)" and the README
+ *                               canonical-zone count
+ *   - first-party php -l    <-> "Linted <n> PHP files" (README + docs/QUALITY.md)
+ *   - tests/fixtures.limit  <-> "fixture-count ratchet (<n> files)" (docs/GOVERNANCE.md)
+ *   - phpstan-baseline.neon <-> "suppresses **<n>** findings" (docs/GOVERNANCE.md)
+ *   - build/junit.xml       <-> "Tests: <n>," (docs/QUALITY.md) and "PHPUnit <n>"
+ *                               (docs/GOVERNANCE.md) — skipped only when the
+ *                               artifact is absent, like assert-release-docs.php
+ *
+ * It re-runs no test suite; it reads build/junit.xml only when present, so it is
+ * cheap enough to run on every push. One-directional, like the sibling ratchets:
+ * the docs follow the code, never the other way round.
  *
  * Usage: php scripts/ci/assert-doc-counts.php [--json]
  */
@@ -117,6 +127,119 @@ foreach ($checks as [$label, $expected, $pattern]) {
             'check' => $label,
             'README says' => $matches[1][0],
             'repo has' => $expected,
+        ]);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// v25: deeper documentation counters.
+// The layout tree above only covers README's src/tests/CHANGELOG/workflow
+// counts. The remaining restated numbers drifted the same way (audit v25):
+// QUALITY.md carried "Linted 861" against 896 real files, "Tests: 3636" against
+// the live suite and "27 zona kanonik" against 36; GOVERNANCE.md carried
+// "PHPUnit 3532", a "(191 files)" fixture ratchet and a "510 findings"
+// baseline. Each is now derived live and the doc must state it.
+$lintCount = (static function (string $rootDir): int {
+    $skip = ['vendor', 'build', '.phpunit.cache', '.php-cs-fixer.cache'];
+    $count = 0;
+    $stack = [$rootDir];
+    while (($dir = array_pop($stack)) !== null) {
+        $entries = scandir($dir);
+        if ($entries === false) {
+            continue;
+        }
+        foreach ($entries as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+            $path = $dir . '/' . $entry;
+            if (is_dir($path)) {
+                $rel = ltrim(substr($path, strlen($rootDir)), '/');
+                if (in_array(explode('/', $rel)[0], $skip, true)) {
+                    continue;
+                }
+                $stack[] = $path;
+            } elseif (str_ends_with($entry, '.php')) {
+                ++$count;
+            }
+        }
+    }
+
+    return $count;
+})($root);
+
+$zoneLines = file($root . '/scripts/f16_zones.tsv', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+$zoneCount = 0;
+foreach ($zoneLines === false ? [] : $zoneLines as $zoneLine) {
+    if (!str_starts_with(ltrim($zoneLine), '#')) {
+        ++$zoneCount;
+    }
+}
+
+$fixtureLimit = (int) trim((string) file_get_contents($root . '/tests/fixtures.limit'));
+
+$baselineText = (string) file_get_contents($root . '/phpstan-baseline.neon');
+$baselineLines = preg_split('/\R/', $baselineText);
+if ($baselineLines === false) {
+    $baselineLines = [];
+}
+$baselineEntries = 0;
+foreach ($baselineLines as $baselineLine) {
+    if (preg_match('/^\s*message:\s*\S/u', $baselineLine) === 1) {
+        ++$baselineEntries;
+    }
+}
+
+// The phpunit test count is restated in QUALITY.md and GOVERNANCE.md. It is a
+// build artifact, so those two checks are skipped when build/junit.xml is absent
+// — exactly like the sibling assert-release-docs.php gate.
+$junitTests = 0;
+$junitPath = $root . '/build/junit.xml';
+if (is_file($junitPath)) {
+    $junitXml = (string) file_get_contents($junitPath);
+    if (preg_match('/<testsuite\b[^>]*\btests="(\d+)"/', $junitXml, $junitMatch) === 1) {
+        $junitTests = (int) $junitMatch[1];
+    }
+}
+
+if ($lintCount < 1 || $zoneCount < 1 || $fixtureLimit < 1) {
+    $fail('A derived documentation count is zero — refusing to ratchet against an implausible layout.', [
+        'lint' => $lintCount,
+        'zones' => $zoneCount,
+        'fixture limit' => $fixtureLimit,
+    ]);
+}
+
+$docChecks = [
+    ['QUALITY lint count', $lintCount, 'docs/QUALITY.md', '/Linted (\d+) PHP files/u'],
+    ['QUALITY zone count', $zoneCount, 'docs/QUALITY.md', '/\((\d+) zona kanonik\)/u'],
+    ['GOVERNANCE fixture ratchet', $fixtureLimit, 'docs/GOVERNANCE.md', '/fixture-count ratchet \((\d+) files\)/u'],
+    ['GOVERNANCE phpstan baseline', $baselineEntries, 'docs/GOVERNANCE.md', '/suppresses \*\*(\d+)\*\* findings/u'],
+    ['README lint count', $lintCount, 'README.md', '/Linted (\d+) PHP files/u'],
+    ['README zone count', $zoneCount, 'README.md', '/f16_zones\.tsv`, (\d+) zona\)/u'],
+];
+if ($junitTests > 0) {
+    $docChecks[] = ['QUALITY test count', $junitTests, 'docs/QUALITY.md', '/Tests: (\d+), Assertions:/u'];
+    $docChecks[] = ['GOVERNANCE test count', $junitTests, 'docs/GOVERNANCE.md', '/PHPUnit (\d+) · PHPStan/u'];
+}
+
+foreach ($docChecks as [$docLabel, $docExpected, $docFile, $docPattern]) {
+    $docText = (string) file_get_contents($root . '/' . $docFile);
+    $docMatches = [];
+    $docHits = preg_match_all($docPattern, $docText, $docMatches);
+    if ($docHits !== 1) {
+        $fail('A documentation file does not state the expected count exactly once.', [
+            'check' => $docLabel,
+            'file' => $docFile,
+            'matches found' => $docHits,
+        ]);
+    }
+    if ((int) $docMatches[1][0] !== $docExpected) {
+        $fail('A documentation count drifted from the working tree.', [
+            'check' => $docLabel,
+            'file' => $docFile,
+            'doc says' => $docMatches[1][0],
+            'repo has' => $docExpected,
         ]);
     }
 }

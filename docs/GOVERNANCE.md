@@ -5,8 +5,12 @@ GitHub API and the workflow files — not as intended. Where an enforcement rule
 its configuration disagree, the disagreement is written down here rather than
 smoothed over.
 
-Measured against the protection API on `main` @ `e33bf155732a52401f8290255dfa1329f19177d8`
-(re-verified 2026-10-01, after the v2.34.1 merge).
+> **STALE SNAPSHOT (audit v25, 2026-10-03).** The measurements below were taken
+> against the protection API on `main` @ `e33bf155732a52401f8290255dfa1329f19177d8`
+> (re-verified 2026-10-01, after the v2.34.1 merge). `main` has advanced since
+> (latest audited head `249717fb`, after the #366 merge); re-verify the API
+> readings — the required-context union in particular — before treating any
+> setting as current.
 
 ## 1. Branch protection on `main`
 
@@ -34,7 +38,7 @@ measured on PR #274 and on the `main` push after it.
 
 | # | Context | Enforced by | Gate domain | Reports on |
 |---|---|---|---|---|
-| 1 | `PHP lint, audit, static analysis and style` | both | lint · self-test 501/501 · PHPUnit 3532 · PHPStan (max + strict-rules) · deptrac · cs-fixer · phpcs · coverage ≥ 90% · rector dry-run · zone mutation ratchet · release docs/cadence ratchets | PR + push |
+| 1 | `PHP lint, audit, static analysis and style` | both | lint · self-test 501/501 · PHPUnit 3808 · PHPStan (max + strict-rules) · deptrac · cs-fixer · phpcs · coverage ≥ 90% · rector dry-run · zone mutation ratchet · release docs/cadence ratchets | PR + push |
 | 2 | `dependency-review` | both | supply-chain diff of the lockfile | PR only |
 | 3 | `gitleaks` | both | whole-diff secret scan | PR + push |
 | 4 | `PHPBench` | both | performance budget against the committed baseline | PR + push |
@@ -46,7 +50,7 @@ measured on PR #274 and on the `main` push after it.
 | 10 | `snyk` | classic only | Snyk dependency & license security | PR + push |
 | 11 | `code/snyk (Zeflous)` | classic only | Snyk code analysis through the Zeflous app | PR only |
 | 12 | `Platform smoke (windows-latest)` | classic only | Windows platform parity (graceful Redis-skip profile, no `ext-redis`) | PR + push |
-| 13 | `Stub pre-scan (tests fixtures)` | classic only | quarantined SonarCloud scan of `tests/**` + fail-closed fixture-count ratchet (191 files) | PR + push |
+| 13 | `Stub pre-scan (tests fixtures)` | classic only | quarantined SonarCloud scan of `tests/**` + fail-closed fixture-count ratchet (222 files) | PR + push |
 
 Four contexts — `dependency-review`, `Build API documentation`, `CodeQL`,
 `code/snyk (Zeflous)` — report **only on pull requests**. A direct push to
@@ -161,8 +165,8 @@ is enforced, cheap, and cannot be relaxed without a visible edit.
 
 ### 2.2 PHPStan baseline
 
-`phpstan-baseline.neon` currently suppresses **510** findings. PHPStan runs at level max and
-passes *because* those 510 are held in the baseline.
+`phpstan-baseline.neon` currently suppresses **455** findings. PHPStan runs at level max and
+passes *because* those 455 are held in the baseline.
 
 Rule: **the baseline may not grow without an owner decision.** A pull request that adds
 entries must state, in its description, which findings it adds and why they cannot be fixed
