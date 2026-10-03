@@ -74,6 +74,7 @@ if (!function_exists('zef_framework_autoload')) {
                 "Zef\\Framework\\Console\\Inspector\\QueueFailedLister" => __DIR__ . '/../src/Infrastructure/Console/Inspector/QueueFailedLister.php',
                 "Zef\\Framework\\Console\\Inspector\\QueueFlush" => __DIR__ . '/../src/Infrastructure/Console/Inspector/QueueFlush.php',
                 "Zef\\Framework\\Console\\Inspector\\QueueRetry" => __DIR__ . '/../src/Infrastructure/Console/Inspector/QueueRetry.php',
+                "Zef\\Framework\\Console\\Inspector\\RouteLister" => __DIR__ . '/../src/Infrastructure/Console/Inspector/RouteLister.php',
                 "Zef\\Framework\\Console\\Inspector\\QueueWorker" => __DIR__ . '/../src/Infrastructure/Console/Inspector/QueueWorker.php',
                 "Zef\\Framework\\Container\\Autowiring\\AutowireArgumentResolver" => __DIR__ . '/../src/Application/Container/Autowiring/AutowireArgumentResolver.php',
                 "Zef\\Framework\\Container\\Autowiring\\AutowireCompilationState" => __DIR__ . '/../src/Application/Container/Autowiring/AutowireCompilationState.php',

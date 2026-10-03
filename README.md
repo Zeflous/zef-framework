@@ -12,8 +12,8 @@
   <img src="https://img.shields.io/badge/RoadRunner-4.1-1f2937?style=for-the-badge" alt="RoadRunner 4.1">
   <img src="https://img.shields.io/badge/Architecture-Hexagonal-38bdf8?style=for-the-badge" alt="Hexagonal">
   <br>
-  <img src="https://img.shields.io/badge/Kelas%20PSR--4-1154-818cf8?style=for-the-badge" alt="1154 kelas">
-  <img src="https://img.shields.io/badge/Test%20PHPUnit-3806-c084fc?style=for-the-badge" alt="3806 test">
+  <img src="https://img.shields.io/badge/Kelas%20PSR--4-1155-818cf8?style=for-the-badge" alt="1155 kelas">
+  <img src="https://img.shields.io/badge/Test%20PHPUnit-3808-c084fc?style=for-the-badge" alt="3808 test">
   <img src="https://img.shields.io/badge/Coverage%20gate-%E2%89%A5%2090%25-22c55e?style=for-the-badge" alt="Coverage gate 90%">
   <img src="https://img.shields.io/badge/Mutation%20gate-MSI%20%E2%89%A5%2085-f59e0b?style=for-the-badge" alt="Mutation gate MSI 85">
   <br>
@@ -419,7 +419,7 @@ zef-framework/
 ├── app/Bootstrap.php            # aplikasi demo (createApp + provider)
 ├── modules/                     # modul: Core, Health
 ├── plugins/                     # plugin contoh: Toko
-├── tests/                       # 220 berkas PHP — suite PHPUnit native + self-test
+├── tests/                       # 222 berkas PHP — suite PHPUnit native + self-test
 ├── benchmarks/ContainerBench.php
 ├── deploy/                      # Dockerfile · docker-compose.yml · k8s/
 ├── docs/                        # 42 CHANGELOG + panduan (lihat bagian Dokumentasi)
@@ -497,8 +497,8 @@ Sebuah perubahan tidak dianggap selesai sebelum **gerbang independen** hijau. "T
 
 <table width="100%">
   <tr><th align="left">#</th><th align="left">Gerbang</th><th align="left">Perintah</th><th align="left">Ambang / bukti</th></tr>
-  <tr><td>1</td><td>Syntax</td><td><kbd>composer lint</kbd></td><td><code>893</code> berkas first-party, 0 kegagalan</td></tr>
-  <tr><td>2</td><td>Suite PHPUnit native</td><td><kbd>composer test</kbd></td><td><code>3806</code> test · <code>141097</code> assertion · 6 skipped</td></tr>
+  <tr><td>1</td><td>Syntax</td><td><kbd>composer lint</kbd></td><td><code>895</code> berkas first-party, 0 kegagalan</td></tr>
+  <tr><td>2</td><td>Suite PHPUnit native</td><td><kbd>composer test</kbd></td><td><code>3808</code> test · <code>141105</code> assertion · 5 skipped</td></tr>
   <tr><td>3</td><td>Coverage</td><td><kbd>composer coverage:gate</kbd></td><td>ambang statement <b>90%</b> (diukur Xdebug)</td></tr>
   <tr><td>4</td><td>Mutation testing</td><td><kbd>composer mutation</kbd></td><td><code>--min-msi=85 --min-covered-msi=90</code></td></tr>
   <tr><td>5</td><td>Analisis statis</td><td><kbd>composer stan</kbd></td><td>PHPStan level <b>max</b> + strict-rules, baseline ter-ratchet</td></tr>
@@ -507,8 +507,8 @@ Sebuah perubahan tidak dianggap selesai sebelum **gerbang independen** hijau. "T
 </table>
 
 ```bash
-composer lint            # Linted 893 PHP files — 0 failure(s).
-composer test            # Tests: 3806, Assertions: 141097, Skipped: 6
+composer lint            # Linted 895 PHP files — 0 failure(s).
+composer test            # Tests: 3808, Assertions: 141105, Skipped: 5
 php bin/zef --self-test  # PASSED: 501  FAILED: 0
 ```
 
