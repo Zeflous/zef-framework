@@ -248,6 +248,39 @@ jobs:
       - name: Rector (dry-run)
         run: vendor/bin/rector process --dry-run --no-progress-bar
 
+  zero-composer:
+    # Zero-composer path guard (audit v24). Every other job runs
+    # `composer install` first, so a class present under src/ but missing from
+    # the hand-maintained static classmap (autoload/zef_autoload.php) passes CI
+    # while the documented "no Composer" install path fatals at runtime — the
+    # v2.36.0 defect where `php bin/zef route:list` died with
+    # "Class Zef\Framework\Console\Inspector\RouteLister not found".
+    # This job deliberately installs NOTHING: it exercises bin/zef on the raw
+    # checkout, exactly as a zero-composer user does.
+    name: Zero-composer boot path
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
+        with:
+          php-version: "8.4"
+          coverage: none
+          extensions: mbstring, dom, xml, xmlwriter
+
+      - name: Assert vendor/ is absent (true zero-composer run)
+        run: test ! -d vendor
+
+      - name: Framework self-test (static classmap only)
+        run: php bin/zef --self-test
+
+      - name: route:list resolves on the static classmap
+        run: php bin/zef route:list --json > /dev/null
+
   platform-windows:
     # Issue #92: platform coverage restoration. The archive-era matrix
     # (collapsed in PR #22, finding F-03) is rebuilt as dedicated
