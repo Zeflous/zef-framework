@@ -91,9 +91,12 @@ final class ZefCliDispatchTest extends TestCase
     /** Guard produksi dapat di-*override* secara eksplisit lewat `--force`. */
     public function testTinkerForceOverridesProductionGuard(): void
     {
+        // ZEF_SECURITY_CSRF=0: guard yang diuji di sini adalah flag --force,
+        // bukan kebijakan CSRF — tanpa opt-out ini, boot production yang
+        // fail-closed pada secret yang hilang menelan verdict test (exit 255).
         [$exitCode, $output] = $this->runCli(
             ['tinker', '-e', 'echo 7;', '--force'],
-            ['ZEF_ENV' => 'production'],
+            ['ZEF_ENV' => 'production', 'ZEF_SECURITY_CSRF' => '0'],
         );
 
         self::assertSame(0, $exitCode, "tinker --force must exit 0:\n{$output}");

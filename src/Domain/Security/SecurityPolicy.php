@@ -69,7 +69,6 @@ final readonly class SecurityPolicy
         ?EnvInterface $env = null,
     ): self {
         $env ??= new Env();
-        $csrfDefault = true;
         $csrfRaw = $env->readString('ZEF_SECURITY_CSRF');
         $csrfExplicit = trim($csrfRaw) !== '';
         // v2.31.0 (audit C-11): boolean parsing is now STRICT and fail-closed.
@@ -77,21 +76,21 @@ final readonly class SecurityPolicy
         // like 'enabled'/'on'/'yes' into FALSE, switching CSRF off because of
         // one typo. Recognized words (incl. 'enabled'/'disabled') map plainly;
         // anything else refuses to boot.
-        $csrfEnabled = $csrfExplicit
-            ? self::envBoolStrict('ZEF_SECURITY_CSRF', $csrfRaw, $logger)
-            : $csrfDefault;
+        $csrfEnabled = $csrfExplicit ? self::envBoolStrict('ZEF_SECURITY_CSRF', $csrfRaw, $logger) : true;
         $csrfSecret = $env->readString('ZEF_SECURITY_CSRF_SECRET');
-        if ($csrfEnabled && $csrfSecret === '' && $csrfExplicit) {
-            throw new SecurityPolicyException(
-                'ZEF_SECURITY_CSRF=1 requires ZEF_SECURITY_CSRF_SECRET (>= 32 bytes).'
-            );
-        }
+        // Enabled without a secret: an explicit ZEF_SECURITY_CSRF=1 has always
+        // refused to boot, and a missing secret in production refuses too — a
+        // browser-facing control is never silently disabled there. Development
+        // keeps the ergonomic disable-with-warning fallback below.
         if ($csrfEnabled && $csrfSecret === '') {
+            if ($csrfExplicit || self::isProduction($env)) {
+                throw new SecurityPolicyException($csrfExplicit
+                    ? 'ZEF_SECURITY_CSRF=1 requires ZEF_SECURITY_CSRF_SECRET (>= 32 bytes).'
+                    : 'ZEF_SECURITY_CSRF_SECRET must be set (>= 32 bytes) when CSRF is enabled in production.');
+            }
             $csrfEnabled = false;
-            $msg = sprintf(
-                '[ZEF][security] ZEF_SECURITY_CSRF_SECRET is not set; CSRF protection disabled. %s',
-                'Set a secret of at least 32 bytes in production.'
-            );
+            $advice = 'Set a secret of at least 32 bytes in production.';
+            $msg = '[ZEF][security] ZEF_SECURITY_CSRF_SECRET is not set; CSRF protection disabled. ' . $advice;
             if ($logger instanceof LoggerInterface) {
                 $logger->warning($msg);
             } else {
@@ -122,6 +121,16 @@ final readonly class SecurityPolicy
             csrfTokenTtlSeconds: self::envNonNegativeInt('ZEF_SECURITY_CSRF_TTL', 0, $env),
             csrfSpaMode: self::envBool($env, 'ZEF_SECURITY_CSRF_SPA', false, $logger),
         );
+    }
+
+    /**
+     * ZEF_ENV is already the runtime's production guard convention (CLI and
+     * maker). Keep development ergonomic, but never silently disable a
+     * browser-facing control in production because a secret was omitted.
+     */
+    private static function isProduction(EnvInterface $env): bool
+    {
+        return in_array(strtolower(trim($env->readString('ZEF_ENV'))), ['production', 'prod'], true);
     }
 
     private function assertRateLimitBounds(int $maxRequests, int $windowSeconds, int $maxKeys): void
