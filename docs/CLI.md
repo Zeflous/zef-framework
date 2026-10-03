@@ -52,7 +52,7 @@ dilaporkan adalah **keadaan runtime nyata**, bukan hasil parsing statis.
 
 | Perintah | Keluaran |
 |----------|----------|
-| `bin/zef route:list` | tabel rute: METHOD, PATH, NAME, HANDLER, MODULE, PRIO + jumlah |
+| `bin/zef route:list` | tabel rute: METHOD, PATH, NAME, HANDLER, MODULE, PRIO, MIDDLEWARE, HOST + jumlah; `--json` untuk keluaran terstruktur |
 | `bin/zef module:list` | modul terdaftar dari `ModuleRegistry` pasca-boot |
 | `bin/zef plugin:list` | plugin yang ditemukan di `plugins/` (sumber kebenaran: disk) |
 | `bin/zef config:show [key] [--reveal]` | dump config teragregasi; lookup *dotted key* opsional; nilai ber-key sensitif otomatis di-mask |
